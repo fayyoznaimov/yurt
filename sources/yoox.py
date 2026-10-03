@@ -44,7 +44,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote, unquote
 
-from .base import (BROWSER_UA, Product, Query, classify_type, discount_pct, norm_brand,
+from .base import (BROWSER_UA, MAX_IMAGES, Product, Query, classify_type, discount_pct, norm_brand,
                    polite_sleep)
 
 SOURCE = "yoox"
@@ -179,6 +179,33 @@ def image_url(variant_id: str, shot: str) -> str:
     return f"{BASE}/images/items/{variant_id[:2]}/{variant_id.lower()}_14_{shot}.jpg?{IMG_PARAMS}"
 
 
+def hit_attrs(h: dict) -> dict:
+    """Описательные свойства товара из выдачи — как есть, по-итальянски (переводит describe.py).
+
+    dynamicAttributes — словарь списков {"Collo-nck": ["Girocollo-grcll"], "Categorie-ctgr": ["Scarpe-clztr",
+    "Scarpe-clztr > Stringate-strngt"]}; суффиксы «-код» и иерархию «A > B» describe.py разбирает сам."""
+    model = h.get("model") or {}
+    cats = model.get("categories") or {}
+    out = {
+        "composition": h.get("composition"),
+        "colorLabel": h.get("colorLabel"),
+        "color": h.get("color"),                       # ["Marrone-836D5C", "Marrone-836D5C > Testa di moro-7A485E"]
+        "mainMaterial": model.get("mainMaterial"),
+        "seasonality": model.get("seasonality"),
+        "macro": cats.get("macro"),
+        "micro": cats.get("micro"),
+        "modelGender": model.get("gender"),
+        "modelName": (model.get("modelName") or "").strip() or None,
+        "sizeCodes": h.get("refinementSizeCodes"),      # ["Footwear", "Footwear > 1"] / ["International", …]
+        "dynamicAttributes": h.get("dynamicAttributes") or None,
+    }
+    # всё прочее описательное, что может появиться в выдаче (на случай расширения формата YOOX)
+    for k in ("description", "details", "fit", "pattern", "neckline", "sleeves", "closure"):
+        if h.get(k):
+            out[k] = h[k]
+    return {k: v for k, v in out.items() if v not in (None, "", [], {})}
+
+
 def parse_hit(h: dict, gender: str, query: Query, names: dict[str, str]) -> Product | None:
     """Один товар из выдачи -> Product или None (б/у / не тот бренд / не тот тип / скидка меньше
     query.discount_min). При discount_min = 0 товар без уценки тоже берётся: price_old и discount_pct = None."""
@@ -223,10 +250,12 @@ def parse_hit(h: dict, gender: str, query: Query, names: dict[str, str]) -> Prod
         discount_pct=disc,
         sizes=sizes,
         colors=[color] if color else [c.get("name") for c in h.get("availableColors") or [] if c.get("name")],
-        images=[image_url(vid, s) for s in _shots(h)[:2]],   # потом заменяются на локальные файлы
+        # все ракурсы (до MAX_IMAGES); часть потом заменяется на скачанные файлы
+        images=[image_url(vid, s) for s in _shots(h)[:MAX_IMAGES]],
         url=f"{BASE}/it/{vid}/item",
         in_stock=True,
         style_code=str(model.get("id") or "") or None,
+        attrs=hit_attrs(h),
     )
 
 
@@ -384,7 +413,7 @@ def _save_images(page, products: list[Product], limit: int) -> None:
                 failed += 1
             polite_sleep(0.3, 0.8)
         if local:
-            p.images = local
+            p.images = local + p.images[len(local):]      # остальные ракурсы — по ссылке
     print(f"[yoox] фото: скачано {got}, уже были {cached}, не удалось {failed} (остальные — ссылки на yoox.com)")
 
 

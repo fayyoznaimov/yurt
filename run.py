@@ -1,21 +1,33 @@
 """Собрать товары со всех источников, посчитать цену в сумах и обновить сайт.
 
-    python run.py                 # все источники из config.json
-    python run.py --only trendyol # один источник
-    python run.py --offline       # не ходить на сайты, пересчитать из data/raw_*.json
+    python run.py                          # все источники из config.json
+    python run.py --only trendyol          # один источник (можно несколько: --only pcardin_tr,cacharel_tr)
+    python run.py --offline                # не ходить на сайты, пересчитать из data/raw_*.json
+    python run.py --only pcardin_tr --accept-drop   # принять резкое падение числа товаров (распродажа кончилась)
+
+Каждый запуск сравнивается с прошлым (sync_state.py, data/state.json): распроданные товары ещё
+sync.keep_sold_out_days дней видны на сайте с пометкой «Нет в наличии», закончившиеся размеры
+показываются зачёркнутыми (sizes_out), что изменилось — в data/changes/. Если источник упал или его
+заблокировали, его товары НЕ пропадают: берутся прошлые данные data/raw_<источник>.json.
 """
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import importlib
 import json
+import os
 import re
+import shutil
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
+import describe
+import sync_state
 from pricing import load_rates, sell_price_uzs
 from sources import ADAPTERS
 from sources.base import Product, Query
@@ -23,10 +35,26 @@ from sources.base import Product, Query
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 SITE = ROOT / "site"
-CODE_PREFIX = {"pcardin_tr": "PC", "cacharel_tr": "CC", "trendyol": "TY", "yoox": "YX"}
+PUB_IMG = "img/p"        # фото для сайта под нейтральными именами: site/img/p/<код>-<n>.jpg
 # адаптер -> код источника, который стоит в товарах (product.source) и в source_filters
-PRODUCT_SOURCE = {"yoox_import": "yoox"}
+PRODUCT_SOURCE = {"yoox_import": "yoox", "feed_yoox": "yoox"}   # feed_yoox — партнёрский фид (не включать вместе с yoox_import)
 TOP_BRANDS = 25          # сколько брендов печатать в сводке, остальные — одной строкой
+# Поля товара на публичном сайте (products.js / products.json). Только то, что видит покупатель:
+# никаких магазинов-источников, ссылок, исходных названий, валют, закупочных цен и маржи.
+# sizes — размеры в наличии; sizes_out — размеры, которые недавно были, а теперь закончились.
+PUBLIC_FIELDS = ("id", "brand", "title", "type", "gender", "origin", "price_uzs", "discount_pct", "sizes",
+                 "sizes_out", "size_system", "color", "composition", "details", "description", "images",
+                 "in_stock", "fetched_at", "first_seen")
+# first_seen — когда товар впервые появился на сайте (из data/state.json); по нему лента «Новинки».
+# Закупочные данные по коду товара — в products-admin.js (не выкладывается, нужен для ?admin=1).
+ADMIN_FIELDS = ("source", "source_item_id", "url", "title_original", "category_original", "price_now",
+                "price_old", "currency", "cost_uzs", "margin_uzs")
+# Настройки слежения (config.json → sync); чего нет в config — берётся отсюда.
+SYNC_DEFAULTS = {"keep_sold_out_days": 3, "auto_deploy": False, "every_hours": 6,
+                 "max_drop_pct": 50, "verify_limit": 120, "carry_days": 7}
+STATUS_RU = {"ok": "обновлён", "partial": "собран не полностью", "stale": "НЕ ОБНОВИЛСЯ — прошлые данные",
+             "nodata": "новых данных нет — прошлые",
+             "failed": "ошибка, данных нет", "raw": "из data/raw (не собирался)"}
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -41,6 +69,12 @@ def _clean(d: dict | None) -> dict:
     return {k: v for k, v in (d or {}).items() if not str(k).startswith("_")}
 
 
+def sync_cfg(cfg: dict) -> dict:
+    out = dict(SYNC_DEFAULTS)
+    out.update(_clean(cfg.get("sync")))
+    return out
+
+
 def filters_for(source: str, cfg: dict) -> dict:
     """Фильтры для товаров источника: filters, поверх них source_filters[source]."""
     f = _clean(cfg.get("filters"))
@@ -48,35 +82,178 @@ def filters_for(source: str, cfg: dict) -> dict:
     return f
 
 
-def collect(source: str, cfg: dict) -> list[dict]:
-    """Запускает один адаптер. Ошибка одного источника не роняет остальные."""
+def _when(ts) -> str:
+    dt = sync_state.parse_ts(ts)
+    return dt.astimezone().strftime("%d.%m %H:%M") if dt else "?"
+
+
+def _age_days(ts) -> float:
+    dt = sync_state.parse_ts(ts)
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 86400 if dt else 1e9
+
+
+def raw_path(source: str) -> Path:
+    return DATA / f"raw_{source}.json"
+
+
+def meta_path(source: str) -> Path:
+    return DATA / f"raw_{source}.meta.json"
+
+
+def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: set[str] | None = None,
+            accept_drop: bool = False) -> tuple[list[dict], dict]:
+    """Запускает один адаптер. Ошибка одного источника не роняет остальные и не стирает его товары.
+
+    Возвращает (строки, info). info["status"]: ok — собрано; partial — собрано не всё (блокировка посреди
+    обхода, пропущенные страницы, подозрительно мало товаров): чего нет в выдаче, остаётся как было;
+    stale — адаптер упал, взяты прошлые данные; failed — упал, прошлых данных нет.
+    Товары с нашего сайта (watch), которых нет в выдаче, перепроверяются по ссылке (verify адаптера):
+    распроданными считаются только подтверждённые (info["gone_ids"])."""
+    prev_rows = prev_rows if prev_rows is not None else load_raw(source)
+    watch = set(watch or ())
+    sc = sync_cfg(cfg)
     module_name, opts, _country = ADAPTERS[source]
     f = filters_for(product_source(source), cfg)
-    so = cfg.get("source_opts", {}).get(source, {})
+    so = dict(cfg.get("source_opts", {}).get(source, {}))
+    by_prev = {str(r["source_item_id"]): r for r in prev_rows}
+    if source == "yoox_import" and watch:   # чтобы адаптер мог сказать, пропал ли товар из новых файлов YOOX
+        so["_watch"] = {i: {k: by_prev[i].get(k) for k in ("brand", "gender", "price_now", "fetched_at")}
+                        for i in watch if i in by_prev}
     query = Query(
         brands=f.get("brands", []), types=f.get("types", []), genders=f.get("genders", []),
         discount_min=f.get("discount_min", 0),
         max_pages=so.get("max_pages") or cfg.get("crawl", {}).get("max_pages", 3),
         source_opts=so,
     )
+    info = {"status": "ok", "note": "", "gone_ids": [], "absence_means_gone": True, "verified": 0,
+            "carried": 0, "collected_at": sync_state.iso(sync_state.now_utc())}
     t0 = time.time()
     try:
         module = importlib.import_module(module_name)
+        if isinstance(getattr(module, "LAST_RUN", None), dict):
+            module.LAST_RUN.clear()
         items: list[Product] = module.fetch(query, **opts)
         rows = [p.to_dict() for p in items]
-        (DATA / f"raw_{source}.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
-        with_disc = sum(1 for r in rows if r.get("discount_pct"))
-        print(f"[{source}] собрано {len(rows)} товаров (со скидкой {with_disc}) за {time.time() - t0:.0f} с")
-        return rows
     except Exception as e:
-        print(f"[{source}] ОШИБКА, источник пропущен: {e}")
         traceback.print_exc(limit=3)
-        return []
+        if prev_rows:
+            info.update(status="stale", note=f"{e.__class__.__name__}: {e}")
+            newest = max((r.get("fetched_at") or "" for r in prev_rows), default="")
+            print(f"[{source}] ВНИМАНИЕ: источник не обновился ({e}). Беру прошлые данные data/raw_{source}.json "
+                  f"({len(prev_rows)} шт., собраны {_when(newest)}) — товары с сайта НЕ удаляю, данные устаревшие.")
+            return prev_rows, info
+        info.update(status="failed", note=f"{e.__class__.__name__}: {e}")
+        print(f"[{source}] ОШИБКА, прошлых данных нет — источник пропущен: {e}")
+        return [], info
+
+    run = dict(getattr(module, "LAST_RUN", None) or {})
+    if run.get("no_new_data") and not rows:
+        info.update(status="nodata", note="новых данных нет")
+        print(f"[{source}] новых данных нет — оставляю прошлые ({len(prev_rows)} шт.)")
+        return prev_rows, info
+    info["absence_means_gone"] = bool(run.get("absence_means_gone", True))
+    gone_ids = [str(x) for x in (run.get("gone_ids") or [])]
+    partial, reason = bool(run.get("partial")), str(run.get("reason") or "")
+    n_fetched = len(rows)
+    drop = float(sc["max_drop_pct"] or 0)
+    if (not partial and not run.get("skipped") and not run.get("no_drop_check") and not accept_drop and drop > 0 and len(prev_rows) >= 20
+            and n_fetched < len(prev_rows) * (1 - drop / 100)):
+        partial = True
+        reason = (f"собрано {n_fetched} вместо прежних {len(prev_rows)} — похоже на сбой или блокировку; если распродажа "
+                  f"правда закончилась, запустите: python run.py --only {source} --accept-drop")
+
+    # Товары с нашего сайта, которых нет в выдаче (или у которых пропали размеры), — перепроверяем по ссылке.
+    by_new = {str(r["source_item_id"]): r for r in rows}
+    verify = getattr(module, "verify", None)
+    if callable(verify):
+        info["absence_means_gone"] = False          # распроданы только подтверждённые
+        missing = [by_prev[i] for i in sorted(watch) if i not in by_new and i in by_prev]
+        unsized = [by_new[i] for i in sorted(watch)
+                   if i in by_new and not by_new[i].get("sizes") and (by_prev.get(i) or {}).get("sizes")]
+        limit = int(sc["verify_limit"] or 0)
+        todo = (missing + unsized)[:limit]
+        if todo:
+            print(f"[{source}] перепроверяю по ссылкам {len(todo)} товаров с сайта "
+                  f"(нет в выдаче: {len(missing)}, без размеров: {len(unsized)}"
+                  + (f", лимит {limit}" if len(missing) + len(unsized) > limit else "") + ")")
+            try:
+                res = verify(todo, query, **opts) or {}
+            except Exception as e:
+                print(f"[{source}] перепроверка не удалась: {e}")
+                res = {}
+            n_gone = n_ok = 0
+            n_dead = sum(1 for r in todo if str(r["source_item_id"]) in res and res[str(r["source_item_id"])] is None)
+            # Защита для запусков без человека (GitHub Actions): если «распродано» сразу больше max_drop_pct %
+            # товаров источника на сайте, скорее всего сайт отдаёт машине чужие страницы (гео/блокировка),
+            # а не распродажа. Такие товары не помечаем; правда распродано — запустите с --accept-drop.
+            suspicious = (not accept_drop and n_dead >= 10 and len(watch) and drop > 0
+                          and n_dead > len(watch) * drop / 100)
+            if suspicious:
+                print(f"[{source}] ВНИМАНИЕ: перепроверка говорит «нет в наличии» у {n_dead} из {len(watch)} товаров "
+                      f"с сайта — похоже на сбой/блокировку, распроданными не помечаю "
+                      f"(если правда: python run.py --only {source} --accept-drop)")
+                partial, reason = True, f"перепроверка: подозрительно много «нет в наличии» ({n_dead})"
+            for r in todo:
+                i = str(r["source_item_id"])
+                if i not in res:
+                    continue
+                info["verified"] += 1
+                if res[i] is None:
+                    if suspicious:
+                        continue
+                    gone_ids.append(i)
+                    by_new.pop(i, None)
+                    n_gone += 1
+                else:
+                    by_new[i] = res[i]
+                    n_ok += 1
+            print(f"[{source}] перепроверено {info['verified']} из {len(todo)}: нет в наличии {n_gone}, "
+                  f"в наличии {n_ok}, не удалось проверить {len(todo) - info['verified']}")
+        # не перепроверенные, но есть в выдаче без размеров — прежние размеры (в выдаче их просто нет)
+        for i in watch:
+            if i in by_new and i not in gone_ids and not by_new[i].get("sizes") and (by_prev.get(i) or {}).get("sizes"):
+                by_new[i] = dict(by_new[i], sizes=by_prev[i]["sizes"])
+    if not info["absence_means_gone"]:
+        # товары с сайта, которых нет в выдаче и распродажа которых не подтверждена, — оставляем как были,
+        # но не дольше sync.carry_days с последнего раза, когда их видели
+        for i in watch:
+            if i not in by_new and i not in gone_ids and i in by_prev                     and _age_days(by_prev[i].get("fetched_at")) <= float(sc["carry_days"]):
+                by_new[i] = by_prev[i]
+                info["carried"] += 1
+    if partial:
+        info["absence_means_gone"] = False
+        kept_before = len(by_new)
+        for i, r in by_prev.items():
+            if i not in by_new and i not in gone_ids:
+                by_new[i] = r
+        info["carried"] += len(by_new) - kept_before
+        info.update(status="partial", note=reason)
+        print(f"[{source}] ВНИМАНИЕ: собрано не всё ({reason}). Товары, которых нет в этой выдаче, оставляю "
+              f"как были ({len(by_new) - kept_before} шт.), распроданными их не считаю.")
+    rows = list(by_new.values())
+    info["gone_ids"] = sorted(set(gone_ids))
+
+    text = json.dumps(rows, ensure_ascii=False, indent=1)
+    raw_path(source).write_text(text, encoding="utf-8")
+    meta = {"source": source, "status": info["status"], "collected_at": info["collected_at"], "note": info["note"],
+            "fetched": n_fetched, "rows": len(rows), "verified": info["verified"], "carried": info["carried"],
+            "absence_means_gone": info["absence_means_gone"], "gone_ids": info["gone_ids"],
+            "raw_sha1": sync_state.file_sha1(raw_path(source))}
+    sync_state.write_json(meta_path(source), meta, indent=1)
+    with_disc = sum(1 for r in rows if r.get("discount_pct"))
+    print(f"[{source}] собрано {n_fetched} товаров, в данных {len(rows)} (со скидкой {with_disc}) за {time.time() - t0:.0f} с"
+          + (f"; из прошлых оставлено {info['carried']}" if info["carried"] else "")
+          + (f"; распродано (подтверждено) {len(info['gone_ids'])}" if info["gone_ids"] else ""))
+    return rows, info
 
 
 def load_raw(source: str) -> list[dict]:
-    p = DATA / f"raw_{source}.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    p = raw_path(source)
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    except ValueError as e:
+        print(f"[{source}] data/raw_{source}.json не читается ({e}) — считаю пустым")
+        return []
 
 
 def brand_key(s: str) -> str:
@@ -134,6 +311,77 @@ def stats(items: list[dict]) -> dict | None:
             "discount_avg": round(sum(disc) / len(disc), 1) if disc else 0}
 
 
+def public_id(source: str, item_id: str, n: int = 7) -> str:
+    """Нейтральный код товара для покупателя: первые 7 символов base32(sha1("источник:id")).
+    Не меняется между запусками и ничего не говорит о магазине (никаких YX-/TY-/PC-/CC-)."""
+    digest = hashlib.sha1(f"{source}:{item_id}".encode("utf-8")).digest()
+    return base64.b32encode(digest).decode("ascii")[:n]
+
+
+def publish_images(code: str, images: list[str], used: set[str]) -> list[str]:
+    """Локальные фото (site/img/yoox/<id в магазине>_1.jpg) -> site/img/p/<код>-<n>.jpg: в адресе фото на сайте
+    не должно быть ни имени магазина, ни его номера товара. Жёсткая ссылка, если можно, иначе копия.
+    Внешние ссылки (CDN магазинов) остаются как есть."""
+    out = []
+    for n, img in enumerate(images, 1):
+        if img.startswith(("http://", "https://", "//")):
+            out.append(img)
+            continue
+        src = SITE / img
+        if not src.exists():
+            # оригинала нет (в облаке нет site/img/yoox), но копия уже выложена — берём её (её дал gh-pages)
+            name = f"{code}-{n}{src.suffix.lower() or '.jpg'}"
+            if (SITE / PUB_IMG / name).is_file():
+                used.add(name)
+                out.append(f"{PUB_IMG}/{name}")
+            continue
+        name = f"{code}-{n}{src.suffix.lower() or '.jpg'}"
+        dst = SITE / PUB_IMG / name
+        used.add(name)
+        if not (dst.exists() and dst.stat().st_size == src.stat().st_size):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                dst.unlink()
+            try:
+                os.link(src, dst)
+            except OSError:
+                shutil.copyfile(src, dst)
+        out.append(f"{PUB_IMG}/{name}")
+    return out
+
+
+def keep_published_images(images: list[str], used: set[str]) -> list[str]:
+    """Фото карточки распроданного товара (уже лежат в site/img/p): не удалять и не ссылаться на пропавшие."""
+    out = []
+    for img in images or []:
+        if img.startswith(("http://", "https://", "//")):
+            out.append(img)
+        elif img.startswith(PUB_IMG + "/") and (SITE / img).exists():
+            used.add(img.split("/")[-1])
+            out.append(img)
+    return out
+
+
+def _utc(ts: str | None) -> str | None:
+    """Время сбора в одном формате для всех источников: «2026-10-03T09:44:14Z»."""
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError):
+        return ts
+
+
+def cleanup_images(used: set[str]) -> int:
+    """Удаляет из site/img/p фото товаров, которых больше нет на сайте."""
+    folder = SITE / PUB_IMG
+    removed = 0
+    for f in (folder.glob("*") if folder.exists() else []):
+        if f.is_file() and f.name not in used:
+            f.unlink()
+            removed += 1
+    return removed
+
+
 def plural(n: int, forms: tuple[str, str, str]) -> str:
     """plural(3, ("бренд", "бренда", "брендов")) -> "бренда"."""
     a, b = n % 100, n % 10
@@ -150,23 +398,80 @@ def stats_line(st: dict) -> str:
     return s
 
 
+def previous_site() -> tuple[dict, dict]:
+    """Прошлые карточки сайта и закупочные данные по коду — снимки для распроданных товаров."""
+    pub, adm = {}, {}
+    try:
+        data = json.loads((SITE / "products.json").read_text(encoding="utf-8"))
+        pub = {p["id"]: p for p in data.get("products") or [] if isinstance(p, dict) and p.get("id")}
+    except (OSError, ValueError, KeyError):
+        pass
+    try:
+        text = (SITE / "products-admin.js").read_text(encoding="utf-8").strip()
+        text = text[text.index("{"):].rstrip().rstrip(";")
+        adm = {k: v for k, v in json.loads(text).items() if not k.startswith("_")}
+    except (OSError, ValueError):
+        pass
+    return pub, adm
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", help="код источника из sources/__init__.py")
+    ap.add_argument("--only", help="код источника из sources/__init__.py; несколько — через запятую")
     ap.add_argument("--offline", action="store_true", help="не ходить на сайты, взять data/raw_*.json")
+    ap.add_argument("--accept-drop", action="store_true",
+                    help="принять резкое падение числа товаров у источника (распродажа правда закончилась)")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    sc = sync_cfg(cfg)
     DATA.mkdir(exist_ok=True)
-    sources = [args.only] if args.only else cfg["sources"]
+    sources = {s.strip() for s in args.only.split(",") if s.strip()} if args.only else set(cfg["sources"])
+    unknown = sources - set(ADAPTERS)
+    if unknown:
+        raise SystemExit(f"Неизвестные источники: {', '.join(sorted(unknown))}. Есть: {', '.join(ADAPTERS)}")
 
+    # два run.py одновременно испортили бы state.json и файлы сайта — второй ждёт первого
+    lock = sync_state.Lock(DATA / "run.lock", "run.py " + " ".join(sys.argv[1:]), max_age_s=4 * 3600)
+    if not lock.acquire(wait_s=45 * 60):
+        raise SystemExit("Другой запуск run.py не закончился за 45 минут — выхожу. "
+                         "Если он завис, удалите data/run.lock.")
+    try:
+        build(cfg, sc, sources, args)
+    finally:
+        lock.release()
+
+
+def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
+    state = sync_state.load(DATA)
     rows: list[dict] = []
+    src_info: dict[str, dict] = {}       # по коду источника в товаре (yoox, trendyol, …)
     for s in cfg["sources"]:
+        psrc = product_source(s)
+        prev = load_raw(s)
         if s in sources and not args.offline:
-            rows += collect(s, cfg)
+            got, info = collect(s, cfg, prev, sync_state.watched(state, psrc), args.accept_drop)
+            info["changed"] = info["status"] in ("ok", "partial")
         else:
-            rows += load_raw(s)
+            got = prev
+            info = {"status": "raw", "note": "", "gone_ids": [], "absence_means_gone": False}
+            sha = sync_state.file_sha1(raw_path(s))
+            last = (state["sources"].get(psrc) or {}).get("raw_sha1")
+            # данные источника поменялись с прошлой сборки (собраны другим запуском или правлены руками)?
+            info["changed"] = bool(sha and last and sha != last)
+            if info["changed"]:
+                meta = sync_state.read_json(meta_path(s), {})
+                if meta.get("raw_sha1") == sha:          # файл записан run.py — верим его выводам
+                    info["absence_means_gone"] = bool(meta.get("absence_means_gone"))
+                    info["gone_ids"] = list(meta.get("gone_ids") or [])
+                else:                                    # правлен вручную — файл и есть новая выдача
+                    info["absence_means_gone"] = True
+        info["gone_ids"] = set(info.get("gone_ids") or [])
+        info["present"] = {str(r["source_item_id"]): r for r in got}
+        info["adapter"] = s
+        src_info[psrc] = info
+        rows += got
 
     # дубли внутри источника
     rows = list({(r["source"], r["source_item_id"]): r for r in rows}.values())
@@ -199,15 +504,59 @@ def main() -> None:
         "filters": eff,
     }
 
-    # Публичные файлы — без закупочных данных: ссылки на источник, себестоимость и маржа
-    # уходят в products-admin.js, который НЕ выкладывается на хостинг (нужен только для ?admin=1).
-    private = ("url", "cost_uzs", "margin_uzs")
-    public, admin = [], {}
+    # Публичные файлы — только то, что видит покупатель (PUBLIC_FIELDS): без магазинов, ссылок, исходных
+    # названий и закупочных цен. Всё это — в products-admin.js по нейтральному коду товара; этот файл
+    # НЕ выкладывается на хостинг (нужен только для ?admin=1).
+    describe.MISSING.clear()
+    live, admin = [], {}
+    used_imgs: set[str] = set()
     for r in kept:
-        r["code"] = f"{CODE_PREFIX.get(r['source'], r['source'][:2].upper())}-{r['source_item_id']}"
-        admin[f"{r['source']}:{r['source_item_id']}"] = {k: r[k] for k in private}
-        public.append({k: v for k, v in r.items() if k not in private})
-    public_summary = {k: v for k, v in summary.items() if k != "filters"}
+        n = 7
+        code = public_id(r["source"], r["source_item_id"], n)
+        while code in admin:          # совпадение 7 символов почти невозможно, но на всякий случай
+            n += 1
+            code = public_id(r["source"], r["source_item_id"], n)
+        d = describe.describe(r)
+        pub = {
+            "id": code, "brand": r["brand"], "title": d["title"], "type": r.get("type"), "gender": r.get("gender"),
+            "origin": r["country"], "price_uzs": r["price_uzs"], "discount_pct": r.get("discount_pct"),
+            "sizes": r.get("sizes") or [], "sizes_out": [], "size_system": d["size_system"], "color": d["color"],
+            "composition": d["composition"], "details": d["details"], "description": d["description"],
+            "images": publish_images(code, r.get("images") or [], used_imgs),
+            "in_stock": r.get("in_stock", True), "fetched_at": _utc(r.get("fetched_at")),
+        }
+        live.append((pub, r))
+        orig = {"title_original": r.get("title"), "category_original": r.get("category")}
+        admin[code] = {k: orig[k] if k in orig else r.get(k) for k in ADMIN_FIELDS}
+
+    # Сравнение с прошлым запуском: распроданные, закончившиеся размеры (sizes_out), цены.
+    prev_pub, prev_adm = previous_site()
+    sold_pub, sold_adm, changes = sync_state.update(
+        state, live=live, sources=src_info, prev_public=prev_pub, prev_admin=prev_adm,
+        keep_days=float(sc["keep_sold_out_days"]))
+    for pub, _ in live:
+        pub["first_seen"] = (state["items"].get(pub["id"]) or {}).get("first_seen")
+    public = [{k: pub.get(k) for k in PUBLIC_FIELDS} for pub, _ in live]
+    for pub in sold_pub:              # распроданные — в конце, с пометкой in_stock=false
+        if pub.get("id") in admin:
+            continue
+        pub["images"] = keep_published_images(pub.get("images") or [], used_imgs)
+        public.append({k: pub.get(k, [] if k == "sizes_out" else None) for k in PUBLIC_FIELDS})
+        if pub["id"] in sold_adm:
+            admin[pub["id"]] = sold_adm[pub["id"]]
+    removed = cleanup_images(used_imgs)
+
+    sources_report = {s: {"status": i["status"], "note": i.get("note") or "", "adapter": i["adapter"],
+                          "collected_at": i.get("collected_at"), "verified": i.get("verified", 0),
+                          "carried": i.get("carried", 0), "confirmed_gone": len(i["gone_ids"])}
+                      for s, i in src_info.items()}
+    # публичная сводка: без курсов, фильтров и разбивки по источникам
+    public_summary = {"generated_at": summary["generated_at"], "total": summary["total"],
+                      "by_brand": summary["by_brand"]}
+    # служебное для режима ?admin=1 — курсы, сводка по источникам, действующие фильтры, свежесть источников
+    admin["_meta"] = {"generated_at": summary["generated_at"], "rates": summary["rates"],
+                      "by_source": summary["by_source"], "filters": eff, "sources": sources_report,
+                      "sold_out_shown": len(public) - len(live)}
 
     payload = {"summary": public_summary, "site": cfg.get("site", {}), "products": public}
     SITE.mkdir(exist_ok=True)
@@ -216,12 +565,31 @@ def main() -> None:
     (SITE / "products.js").write_text("window.DEALS = " + json.dumps(payload, ensure_ascii=False) + ";", encoding="utf-8")
     (SITE / "products-admin.js").write_text("window.DEALS_ADMIN = " + json.dumps(admin, ensure_ascii=False) + ";", encoding="utf-8")
 
-    print(f"\nВсего товаров: {len(rows)}, подошло под фильтры: {len(kept)}")
+    # память о запуске: после файлов сайта, чтобы при сбое состояние не убежало вперёд сайта
+    for s, i in src_info.items():
+        rec = state["sources"].setdefault(s, {})
+        rec.update(raw_sha1=sync_state.file_sha1(raw_path(i["adapter"])), status=i["status"], note=i.get("note") or "")
+        if i["status"] in ("ok", "partial"):
+            rec["collected_at"] = i.get("collected_at")
+    sync_state.save(DATA, state)
+    changes_file = None
+    if not changes["baseline"] and (sync_state.any_changes(changes)
+                                    or any(i["status"] in ("stale", "failed", "partial") for i in src_info.values())):
+        changes_file = sync_state.write_changes(DATA, changes, sources_report)
+
+    print(f"\nВсего товаров: {len(rows)}, подошло под фильтры: {len(kept)}"
+          + (f"; распроданных на сайте с пометкой: {len(public) - len(live)}" if len(public) > len(live) else ""))
     print("Курсы ЦБ:", ", ".join(f"1 {k} = {v:,.2f} сум" for k, v in summary["rates"].items()))
     print("По источникам (подошло из собранного):")
     for s in sorted(seen_by_source):
         st = summary["by_source"].get(s)
-        print(f"  {s:<14} {len(by_source.get(s, [])):>5} из {seen_by_source[s]:<5}" + (f" · {stats_line(st)}" if st else ""))
+        i = src_info.get(s) or {}
+        flag = "" if i.get("status") in ("ok", "raw", None) else f"  [{STATUS_RU.get(i['status'], i['status'])}]"
+        print(f"  {s:<14} {len(by_source.get(s, [])):>5} из {seen_by_source[s]:<5}" + (f" · {stats_line(st)}" if st else "") + flag)
+    stale = [s for s, i in src_info.items() if i["status"] in ("stale", "failed")]
+    if stale:
+        print("ВНИМАНИЕ, не обновились (на сайте прошлые данные): "
+              + ", ".join(f"{s} ({src_info[s].get('note') or '?'})" for s in stale))
     if by_brand:
         print(f"По брендам ({len(by_brand)}):")
         top = sorted(by_brand, key=lambda b: (-len(by_brand[b]), b.lower()))
@@ -231,6 +599,24 @@ def main() -> None:
         if rest:
             print(f"  …ещё {len(rest)} {plural(len(rest), ('бренд', 'бренда', 'брендов'))} "
                   f"({sum(len(by_brand[b]) for b in rest)} шт)")
+    n_pub = len(public)
+    print(f"Карточки: цвет переведён у {sum(1 for p in public if p['color'])} из {n_pub}, "
+          f"состав — у {sum(1 for p in public if p['composition'])}, "
+          f"с пунктами описания — {sum(1 for p in public if p['details'])}; "
+          f"своих фото в site/{PUB_IMG}: {len(used_imgs)}" + (f" (удалено старых {removed})" if removed else ""))
+    miss = describe.missing_report()
+    if miss:
+        print("Не переведено (добавьте в словари describe.py), самые частые:")
+        print("\n".join(miss))
+    print()
+    print("\n".join(sync_state.summary_lines(changes, float(sc["keep_sold_out_days"]), len(public) - len(live))))
+    if changes_file:
+        print(f"Подробно: {changes_file.relative_to(ROOT)}")
+    try:                              # тексты продавца: site/content.json -> site/content.js
+        import content
+        content.build()
+    except (SystemExit, Exception) as e:   # сломанный content.json не должен ронять обновление товаров
+        print(f"ВНИМАНИЕ: тексты сайта не обновлены — {e}")
     print(f"\nСайт обновлён: {SITE / 'index.html'}")
 
 

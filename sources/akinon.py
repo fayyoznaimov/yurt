@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit
 
 import requests
 
-from .base import BROWSER_UA, Product, Query, classify_type, discount_pct, polite_sleep
+from .base import BROWSER_UA, MAX_IMAGES, Product, Query, classify_type, discount_pct, polite_sleep
 
 SITES = {
     "pcardin_tr": {
@@ -93,6 +94,9 @@ _STYLE_RE = re.compile(r"-(\d{6,10})-([a-z0-9]{2,8})/?$", re.I)
 _DEC = json.JSONDecoder()
 
 TIMEOUT = 60
+# Итог последнего fetch() для run.py: partial — собрано не всё (блокировка / пропущенные страницы),
+# тогда отсутствие товара в выдаче не значит, что он распродан; skipped — источник сознательно пропущен.
+LAST_RUN: dict = {}
 
 
 class SiteBlocked(RuntimeError):
@@ -175,7 +179,29 @@ def _images(p: dict) -> list[str]:
             url = "https:" + url
         if url.startswith("http") and url not in out:
             out.append(url)
-    return out[:4]
+    return out[:MAX_IMAGES]
+
+
+# Какие свойства товара сохранять в Product.attrs (переводит describe.py): все filterable_*, кроме
+# служебных, и несколько integration_* / текстовых полей с составом и сезоном.
+ATTR_SKIP = {"filterable_brand", "filterable_size", "filterable_secondary_size", "filterable_gender"}
+ATTR_EXTRA = ("integration_fabric_fiber", "integration_fabric_blends", "integration_season",
+              "deri_bilgi", "elyaf_bilgi", "product_name_new", "mensei")
+
+
+def _attrs(p: dict) -> dict:
+    """{"filterable_fit": "Slim Fit", "filterable_neck_type": "Polo Yaka", "integration_fabric_fiber": "%100 Pamuk", …}.
+    Для filterable_* берём подпись (label) — она понятнее значения: «Slim Fit» вместо «Slim», «Tişört» вместо «T-Shirt»."""
+    raw = p.get("attributes") or {}
+    out = {}
+    for k, v in raw.items():
+        if not ((k.startswith("filterable_") and k not in ATTR_SKIP) or k in ATTR_EXTRA):
+            continue
+        label = _kw_label(p, k) if k.startswith("filterable_") else None
+        val = label or v
+        if isinstance(val, (str, int, float)) and str(val).strip() and not str(val).startswith("$"):
+            out[k] = re.sub(r"\s+", " ", str(val)).strip()
+    return out
 
 
 def _sizes(p: dict) -> tuple[list[str], bool]:
@@ -245,6 +271,7 @@ def to_product(p: dict, site: str, cfg: dict, gender_fallback: str | None) -> Pr
         url=cfg["base"] + (path if path.startswith("/") else "/" + path),
         in_stock=in_stock,
         style_code=style_code,
+        attrs=_attrs(p),
     )
 
 
@@ -314,6 +341,7 @@ def _section_params(cfg: dict, query: Query) -> list[tuple[dict, str | None]]:
 
 def fetch(query: Query, **opts) -> list[Product]:
     site = opts.get("site")
+    LAST_RUN.clear()
     if site not in SITES:
         raise ValueError(f"akinon: неизвестный site={site!r}, ожидается один из {list(SITES)}")
     cfg = dict(SITES[site])
@@ -323,12 +351,15 @@ def fetch(query: Query, **opts) -> list[Product]:
 
     if not query.wants_brand(cfg["brand"]):
         print(f"[{site}] бренд {cfg['brand']} не в фильтре — пропускаю")
+        LAST_RUN["skipped"] = True
         return []
     if query.genders and cfg["only_gender"] and cfg["only_gender"] not in query.genders:
         print(f"[{site}] на сайте только {cfg['only_gender']}, а нужно {query.genders} — пропускаю")
+        LAST_RUN["skipped"] = True
         return []
     if query.genders and not {"men", "women"} & set(query.genders):
         print(f"[{site}] нужного пола {query.genders} на сайте нет — пропускаю")
+        LAST_RUN["skipped"] = True
         return []
 
     client = _Client(site, cfg)
@@ -392,8 +423,99 @@ def fetch(query: Query, **opts) -> list[Product]:
         if not pages_ok:
             raise RuntimeError(f"[{site}] источник недоступен: {e}") from e
         print(f"[{site}] {e}; останавливаюсь, отдаю уже собранное")
+        LAST_RUN.update(partial=True, reason=f"доступ закрыт посреди обхода: {e}")
 
     if not pages_ok:
         raise RuntimeError(f"[{site}] не удалось разобрать ни одной страницы: " + "; ".join(errors or ["нет данных"]))
+    if errors and not LAST_RUN.get("partial"):
+        LAST_RUN.update(partial=True, reason=f"пропущено страниц с ошибкой: {len(errors)}")
     print(f"[{site}] итого: {len(found)} товаров со скидкой, запросов: {client.requests_made}")
     return list(found.values())
+
+
+# ---------- перепроверка товаров по ссылке (для run.py) ----------
+
+def parse_pdp(rsc: str, pk: str) -> dict | None:
+    """Цена и размеры в наличии со страницы товара (RSC-поток). None — страница не разобрана."""
+    i = rsc.find('{"product":{"pk":%s,' % pk)
+    if i < 0:
+        return None
+    try:
+        p = _DEC.raw_decode(rsc, i)[0]["product"]
+        now = float(p["price"])
+        old = float(p["retail_price"]) if p.get("retail_price") not in (None, "") else None
+    except (ValueError, KeyError, TypeError):
+        return None
+    key = '"variants":[{"attribute_key":"integration_size"'
+    variants = None
+    j = rsc.find(key)
+    while j >= 0:                  # блок размеров именно этого товара (тот же base_code), а не рекомендаций
+        try:
+            cand = _DEC.raw_decode(rsc, j + len('"variants":'))[0]
+        except ValueError:
+            cand = None
+        codes = {str(((o or {}).get("product") or {}).get("base_code") or "")
+                 for v in (cand or []) if isinstance(v, dict) for o in (v.get("options") or []) if isinstance(o, dict)}
+        if cand and str(p.get("base_code") or "") in codes:
+            variants = cand
+            break
+        j = rsc.find(key, j + 1)
+    sizes, has_size_variant = _sizes({"extra_data": {"variants": variants or []}})
+    if has_size_variant:
+        in_stock = bool(sizes)
+    else:
+        in_stock = bool(p.get("in_stock"))
+        sizes = ["one size"] if in_stock else []
+    return {"price_now": now, "price_old": old, "discount_pct": discount_pct(now, old),
+            "sizes": sizes, "in_stock": in_stock}
+
+
+def verify(rows: list[dict], query: Query | None = None, **opts) -> dict[str, dict | None]:
+    """Перепроверка товаров, которых нет в выдаче распродажи (или у которых пропали размеры), по их ссылкам.
+    Возвращает {id: обновлённая строка | None — точно нет (404 / нет в наличии)}; кого нет в ответе — неизвестно."""
+    site = opts.get("site")
+    cfg = SITES.get(site)
+    if not cfg:
+        return {}
+    client = _Client(site, cfg)
+    out: dict[str, dict | None] = {}
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for r in rows:
+        vid, url = str(r.get("source_item_id")), str(r.get("url") or "")
+        if not url.startswith(cfg["base"]):
+            continue
+        if client.requests_made:
+            polite_sleep()
+        client.requests_made += 1
+        try:
+            resp = client.session.get(url, timeout=TIMEOUT)
+        except requests.RequestException as e:
+            print(f"[{site}] перепроверка {vid}: сеть ({e.__class__.__name__}), пропускаю")
+            continue
+        if resp.status_code in (403, 429):
+            print(f"[{site}] перепроверка остановлена: сайт ответил {resp.status_code}")
+            break
+        if resp.status_code in (404, 410):
+            if resp.history:                           # 404 после перенаправления (гео / другая витрина) —
+                continue                               # не доказательство распродажи
+            out[vid] = None
+            continue
+        if resp.status_code != 200:
+            continue
+        resp.encoding = "utf-8"
+        canon = canonical_url(resp.text)
+        if canon and urlsplit(canon).netloc.lower() != client.host:
+            continue                                   # чужая страница из общего кэша
+        try:
+            info = parse_pdp(rsc_text(resp.text), vid)
+        except ValueError:
+            info = None
+        if info is None:
+            continue
+        if not info["in_stock"]:
+            out[vid] = None
+            continue
+        row = dict(r)
+        row.update(info, fetched_at=now_iso)
+        out[vid] = row
+    return out

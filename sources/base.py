@@ -70,6 +70,8 @@ def polite_sleep(lo: float = 1.5, hi: float = 3.5) -> None:
     time.sleep(random.uniform(lo, hi))
 
 
+MAX_IMAGES = 8           # сколько фото товара хранить (все ракурсы, но не больше)
+
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -104,10 +106,13 @@ class Product:
     discount_pct: float | None
     sizes: list[str]          # размеры в наличии
     colors: list[str]
-    images: list[str]         # абсолютные URL или пути относительно site/ (например "img/yoox/123.jpg")
+    images: list[str]         # абсолютные URL или пути относительно site/ (например "img/yoox/123.jpg"), до 8 шт.
     url: str                  # ссылка на товар на сайте-источнике
     in_stock: bool = True
     style_code: str | None = None
+    # сырые описательные свойства как на сайте-источнике (состав, цвет, крой, воротник, рукав…);
+    # describe.py переводит их в русский текст для карточки. Наружу (products.js) не выкладываются.
+    attrs: dict = field(default_factory=dict)
     fetched_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
     def to_dict(self) -> dict:

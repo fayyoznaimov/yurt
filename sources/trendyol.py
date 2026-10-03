@@ -20,6 +20,9 @@
     Sepette), старая цена — зачёркнутая (strikethroughPrice).
   * Размеры есть только на странице товара: для лучших N товаров (source_opts.pdp_limit)
     читаем window["__envoy_product-image-gallery__PROPS"].product.
+  * Свойства товара («Materyal», «Kalıp», «Yaka Tipi», «Kol Boyu», «Desen»…) — тоже только на странице
+    товара, в JSON-LD (ProductGroup.additionalProperty: [{"name": "Kalıp", "unitText": "Slim Fit"}, …]).
+    В карточке листинга их нет (проверено 03.10.2026) — там только название и категория.
 
 Настройки (config.json → source_opts.trendyol):
   brand_slugs        {"Pierre Cardin": "pierre-cardin-x-b122", ...} — обязательно
@@ -35,10 +38,11 @@ from __future__ import annotations
 import json
 import re
 import sys
+from datetime import datetime, timezone
 
 import requests
 
-from .base import BROWSER_UA, TYPE_ORDER, Product, Query, classify_type, discount_pct, norm_brand, polite_sleep
+from .base import BROWSER_UA, MAX_IMAGES, TYPE_ORDER, Product, Query, classify_type, discount_pct, norm_brand, polite_sleep
 
 if hasattr(sys.stdout, "reconfigure") and (sys.stdout.encoding or "").lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8")  # турецкие буквы в выводе не роняют cp1251-консоль
@@ -47,6 +51,8 @@ BASE = "https://www.trendyol.com"
 CDN = "https://cdn.dsmcdn.com"
 PAGE_SIZE = 36
 STOREFRONT_COOKIES = {"storefrontId": "1", "countryCode": "TR", "language": "tr", "platform": "web"}
+# Итог последнего fetch() для run.py (см. sources/akinon.py): partial / skipped / reason.
+LAST_RUN: dict = {}
 LISTING_KEY = 'window["__single-search-result__PROPS"]='
 GALLERY_KEY = 'window["__envoy_product-image-gallery__PROPS"]='
 
@@ -294,6 +300,34 @@ def _crawl_section(client: _Client, query: Query, brand: str, slug_text: str, br
         pi += 1
 
 
+def _card_attrs(p: dict) -> dict:
+    """Свойства из карточки листинга, если Trendyol их туда положит (сейчас там их нет)."""
+    out = {}
+    raw = p.get("attributes") or p.get("attributeList") or []
+    if isinstance(raw, dict):
+        raw = [{"name": k, "value": v} for k, v in raw.items()]
+    for a in raw if isinstance(raw, list) else []:
+        if isinstance(a, dict):
+            k = a.get("name") or a.get("key") or (a.get("attribute") or {}).get("name")
+            v = a.get("value") or a.get("unitText") or (a.get("attributeValue") or {}).get("name")
+            if isinstance(k, str) and isinstance(v, (str, int, float)) and str(v).strip():
+                out[k.strip()] = str(v).strip()
+    return out
+
+
+def _ld_product(html: str) -> dict | None:
+    """JSON-LD товара (ProductGroup / Product) со страницы товара."""
+    for m in re.finditer(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', html, re.S):
+        try:
+            ld = json.loads(m.group(1))
+        except ValueError:
+            continue
+        for obj in (ld if isinstance(ld, list) else [ld]):
+            if isinstance(obj, dict) and obj.get("@type") in ("ProductGroup", "Product"):
+                return obj
+    return None
+
+
 def _card_to_product(p: dict, brand: str, gender: str | None, image_size: str) -> Product | None:
     now, old = _prices(p)
     disc = discount_pct(now, old)
@@ -320,6 +354,7 @@ def _card_to_product(p: dict, brand: str, gender: str | None, image_size: str) -
     colors = [name[cm.start():cm.end()].strip().title()] if cm else []
 
     imgs = [i for i in (p.get("images") or []) if isinstance(i, str)] or ([p["image"]] if p.get("image") else [])
+    attrs = _card_attrs(p)
     one_size = bool(p.get("isOneSize")) or _tr_lower(p.get("variantValue")) in ("tek ebat", "std", "standart")
     in_stock = not (p.get("tagStockBar") or {}).get("isSoldOut")
 
@@ -337,21 +372,25 @@ def _card_to_product(p: dict, brand: str, gender: str | None, image_size: str) -
         discount_pct=disc,
         sizes=["one size"] if one_size and in_stock else [],
         colors=colors,
-        images=[_image(i, image_size) for i in imgs[:8]],
+        images=[_image(i, image_size) for i in imgs[:MAX_IMAGES]],
         url=url if url.startswith("http") else BASE + (url if url.startswith("/") else "/" + url),
         in_stock=in_stock,
         style_code=style_code,
+        attrs=attrs,
     )
 
 
-def _pdp_details(client: _Client, url: str) -> dict | None:
-    """Размеры в наличии, пол, цвет и продавец со страницы товара."""
+def _pdp_details(client: _Client, url: str, info: dict | None = None) -> dict | None:
+    """Размеры в наличии, пол, цвет и продавец со страницы товара. info["status"] — HTTP-код ответа."""
+    info = info if info is not None else {}
     r = client.get(url)
+    info["status"] = r.status_code
     if r.is_redirect:
         loc = r.headers.get("location") or ""
         if "-p-" not in loc:
             return None
         r = client.get(loc if loc.startswith("http") else BASE + loc)
+        info["status"] = r.status_code
         if r.is_redirect:
             return None
     if r.status_code != 200:
@@ -370,20 +409,22 @@ def _pdp_details(client: _Client, url: str) -> dict | None:
             if size not in sizes:
                 sizes.append(size)
     color = None
-    m = re.search(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', r.text, re.S)
-    if m:
-        try:
-            ld = json.loads(m.group(1))
-        except ValueError:
-            ld = None
-        if isinstance(ld, dict):
-            # "color" бывает кодом ("142331"); тогда берём свойство «Renk» (цветовая группа)
-            renk = [a.get("unitText") or a.get("value") for a in ld.get("additionalProperty") or []
-                    if isinstance(a, dict) and a.get("name") == "Renk"]
-            for c in [ld.get("color")] + renk:
-                if isinstance(c, str) and re.search(r"[^\W\d_]", c):
-                    color = re.sub(r"^\d+\s*[-_.]\s*", "", c.strip())  # "01-Siyah" -> "Siyah"
-                    break
+    attrs: dict[str, str] = {}
+    ld = _ld_product(r.text)
+    if ld:
+        # свойства товара: [{"name": "Kalıp", "unitText": "Slim Fit"}, {"name": "Materyal", "unitText": "%100 Pamuk"} …]
+        for a in ld.get("additionalProperty") or []:
+            if isinstance(a, dict) and isinstance(a.get("name"), str):
+                v = a.get("unitText") or a.get("value")
+                if isinstance(v, (str, int, float)) and str(v).strip():
+                    attrs[a["name"].strip()] = re.sub(r"\s+", " ", str(v)).strip()
+        # "color" бывает кодом ("142331"); тогда берём свойство «Renk» (цветовая группа)
+        for c in [ld.get("color"), attrs.get("Renk")]:
+            if isinstance(c, str) and re.search(r"[^\W\d_]", c):
+                color = re.sub(r"^\d+\s*[-_.]\s*", "", c.strip())  # "01-Siyah" -> "Siyah"
+                break
+        if color:
+            attrs.setdefault("ld_color", color)
     g = _tr_lower((prod.get("gender") or {}).get("name"))
     merchant = ml.get("merchant") or {}
     return {
@@ -393,10 +434,13 @@ def _pdp_details(client: _Client, url: str) -> dict | None:
         "color": str(color).strip() if color else None,
         "category_path": (prod.get("category") or {}).get("hierarchy"),
         "merchant": merchant.get("name"),
+        "attrs": attrs,
+        "images": [i for i in (prod.get("images") or []) if isinstance(i, str)],
     }
 
 
 def fetch(query: Query, **opts) -> list[Product]:
+    LAST_RUN.clear()
     so = query.source_opts or {}
     slugs: dict = so.get("brand_slugs") or {}
     lpd = int(so.get("lowest_price_days", 0) or 0)
@@ -412,10 +456,12 @@ def fetch(query: Query, **opts) -> list[Product]:
     brands = [b for b in slugs if query.wants_brand(b)]
     if not brands:
         print("[trendyol] нет брендов для обхода")
+        LAST_RUN["skipped"] = True
         return []
     sections = _sections(query)
     if not sections:
         print(f"[trendyol] нет разделов под типы {query.types} / пол {query.genders}")
+        LAST_RUN["skipped"] = True
         return []
 
     client = _Client()
@@ -472,10 +518,13 @@ def fetch(query: Query, **opts) -> list[Product]:
             raise
         print(f"[trendyol] {e} — останавливаюсь, отдаю то, что успел собрать")
         pdp_limit = 0
+        LAST_RUN.update(partial=True, reason=f"доступ ограничен посреди обхода: {e}")
 
     if not client.listings_ok and failed_sections:
         raise RuntimeError(f"trendyol: ни одна страница листинга не разобрана ({failed_sections} разделов с ошибкой) — "
                            "сайт недоступен или сменил формат")
+    if failed_sections and not LAST_RUN.get("partial"):
+        LAST_RUN.update(partial=True, reason=f"разделов с ошибкой: {failed_sections}")
     print(f"[trendyol] карточек бренда: {seen}, подходят по скидке ≥{query.discount_min}%: {len(found)}"
           + (f", отсеяно по продавцу: {skipped_seller}" if skipped_seller else ""))
 
@@ -499,6 +548,11 @@ def fetch(query: Query, **opts) -> list[Product]:
         prod.gender = prod.gender or d["gender"]
         if d["color"] and not prod.colors:  # оттенок из названия точнее цветовой группы
             prod.colors = [d["color"]]
+        prod.attrs.update(d["attrs"])
+        if d["category_path"]:
+            prod.attrs["category_path"] = d["category_path"]
+        if len(d["images"]) > len(prod.images):     # на странице товара фото бывает больше, чем в карточке
+            prod.images = [_image(i, image_size) for i in d["images"][:MAX_IMAGES]]
         if not prod.type and d["category_path"]:
             prod.type = _type_of(d["category_path"].split("/")[-1], prod.title) or classify_type(_tr_lower(d["category_path"]))
         print(f"[trendyol] PDP {n}/{len(todo)} {prod.source_item_id}: продавец {d['merchant'] or '?'}, "
@@ -508,4 +562,37 @@ def fetch(query: Query, **opts) -> list[Product]:
     no_sizes = sum(1 for p in out if not p.sizes)
     if no_sizes:
         print(f"[trendyol] без размеров (страница товара не открывалась, pdp_limit={pdp_limit}): {no_sizes}")
+    return out
+
+
+def verify(rows: list[dict], query: Query | None = None, **opts) -> dict[str, dict | None]:
+    """Перепроверка товаров по ссылке (страница товара): размеры в наличии сейчас.
+    {id: обновлённая строка | None — точно нет (404 / нет в наличии)}; кого нет в ответе — неизвестно.
+    Цена здесь не обновляется (её даёт только листинг)."""
+    client = _Client()
+    out: dict[str, dict | None] = {}
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for r in rows:
+        vid, url = str(r.get("source_item_id")), str(r.get("url") or "")
+        if not url.startswith(BASE):
+            continue
+        info: dict = {}
+        try:
+            d = _pdp_details(client, url, info)
+        except SourceBlocked as e:
+            print(f"[trendyol] перепроверка остановлена: {e}")
+            break
+        except Exception as e:
+            print(f"[trendyol] перепроверка {vid}: {e.__class__.__name__}, пропускаю")
+            continue
+        if d is None:
+            if info.get("status") in (404, 410):
+                out[vid] = None
+            continue
+        if not d["in_stock"]:
+            out[vid] = None
+            continue
+        row = dict(r)
+        row.update(sizes=d["sizes"], in_stock=True, fetched_at=now_iso)
+        out[vid] = row
     return out

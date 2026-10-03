@@ -1,0 +1,11 @@
+# Пересчёт цен по свежему курсу ЦБ: каждый день в 09:00 по Ташкенту.
+[Unit]
+Description=yurt: пересчёт цен по курсу ЦБ в 09:00 (Ташкент)
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Tashkent
+Persistent=true
+Unit=yurt-job@fx.service
+
+[Install]
+WantedBy=timers.target

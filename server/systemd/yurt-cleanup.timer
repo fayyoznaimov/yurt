@@ -1,0 +1,11 @@
+# Уборка: старые журналы, файлы «входящих», фото ушедших товаров — по воскресеньям в 04:30 (Ташкент).
+[Unit]
+Description=yurt: еженедельная уборка
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00 Asia/Tashkent
+Persistent=true
+Unit=yurt-job@cleanup.service
+
+[Install]
+WantedBy=timers.target

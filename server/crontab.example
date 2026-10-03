@@ -1,0 +1,10 @@
+# То же, что systemd-таймеры, — если systemd нет или удобнее cron. Установить: crontab -u yurt server/crontab.example
+# (пути — как ставит server/setup.sh; поменяйте, если ставили иначе). Время — по CRON_TZ; его понимает cronie
+# (RHEL/Fedora), а cron в Debian/Ubuntu — нет: там время по поясу сервера (timedatectl set-timezone Asia/Tashkent).
+CRON_TZ=Asia/Tashkent
+SHELL=/bin/bash
+# переменные из /etc/yurt/yurt.env подхватываются через set -a
+5 */3 * * *  set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh update  >/dev/null 2>&1
+*/15 * * * *       set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh yoox    >/dev/null 2>&1
+0 9 * * *          set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh fx      >/dev/null 2>&1
+30 4 * * 0         set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh cleanup >/dev/null 2>&1

@@ -1,0 +1,11 @@
+# Новые файлы YOOX во «входящих»: проверка каждые 15 минут (нет файлов — задание сразу выходит).
+[Unit]
+Description=yurt: импорт новых файлов YOOX каждые 15 минут
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=false
+Unit=yurt-job@yoox.service
+
+[Install]
+WantedBy=timers.target

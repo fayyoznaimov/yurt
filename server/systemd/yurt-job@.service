@@ -1,0 +1,20 @@
+# Одно задание каталога: yurt-job@update / @yoox / @fx / @cleanup (server/yurt-run.sh <задание>).
+# @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: задание %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+ExecStart=/usr/bin/env bash @APP@/server/yurt-run.sh %i
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

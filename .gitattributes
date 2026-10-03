@@ -1,0 +1,4 @@
+# Скрипты и юниты для Linux-сервера — всегда с LF (иначе bash/systemd на сервере их не поймут)
+*.sh text eol=lf
+server/** text eol=lf
+.github/** text eol=lf
