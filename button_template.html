@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кнопка YOOX</title>
+<!-- Шаблон. Не открывайте его как кнопку: запустите python make_button.py — он впишет поиски
+     из config.json и сохранит готовую страницу yoox-knopka.html. -->
+<style>
+  :root { --bg: #f6f5f2; --ink: #16161a; --muted: #5d5d66; --card: #fff; --line: #e3e1db; --accent: #3b5bdb; --warn: #b4540a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111218; --ink: #ececf1; --muted: #a0a0ad; --card: #1a1c24; --line: #2b2e3a; --accent: #7d95ff; --warn: #f0a050; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  h2 { font-size: 20px; margin: 32px 0 12px; }
+  p.lead { color: var(--muted); margin: 0 0 28px; }
+  .btnwrap { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; text-align: center; margin-bottom: 28px; }
+  a.bm { display: inline-block; padding: 12px 22px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none; cursor: grab; }
+  .hint { color: var(--muted); font-size: 14px; margin-top: 12px; }
+  ol, ul { padding-left: 22px; } li { margin: 0 0 10px; }
+  code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; overflow-wrap: anywhere; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13px; overflow-x: auto; }
+  .note { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; color: var(--muted); }
+  .warn { border-left-color: var(--warn); color: var(--ink); }
+  .info { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; }
+  .info .meta { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+  .info ul { margin: 0 0 10px; }
+  .info .brands { color: var(--muted); font-size: 14px; margin: 0; }
+  .info a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Кнопка «Сохранить YOOX»</h1>
+  <p class="lead">YOOX не пускает программы, но открывается у вас в браузере. Эта кнопка сама проходит по вашим поискам на YOOX (категория, известные бренды, цена, сначала дешёвые), забирает <b>все</b> подходящие товары со всех страниц и сохраняет их в файл. Дальше <code>run.py</code> добавит их на сайт вместе с турецкими товарами.</p>
+
+  <div class="btnwrap">
+    <a class="bm" id="bm" href="#">Сохранить YOOX</a>
+    <div class="hint">Перетащите эту кнопку мышкой на панель закладок Chrome.<br>Панели не видно? Нажмите <code>Ctrl+Shift+B</code>.</div>
+  </div>
+
+  <h2>Что встроено в кнопку</h2>
+  <!--INFO--><p class="note warn">Кнопка ещё не собрана: запустите <code>python make_button.py</code> и откройте получившийся файл <code>yoox-knopka.html</code>.</p><!--/INFO-->
+  <p class="note warn">Поменяли поиски или бренды в <code>config.json</code>? Запустите <code>python make_button.py</code>, откройте <code>yoox-knopka.html</code> заново и <b>ещё раз перетащите кнопку</b> на панель закладок (старую закладку удалите). Закладка помнит те поиски, которые были в момент перетаскивания.</p>
+
+  <h2>Как пользоваться</h2>
+  <ol>
+    <li>Откройте в Chrome любую страницу каталога YOOX, например <code>yoox.com/it/uomo/shoponline/t-shirt_c</code>.</li>
+    <li>Нажмите закладку <b>«Сохранить YOOX»</b> и выберите:
+      <ul>
+        <li><b>1 — все мои поиски.</b> Кнопка по очереди откроет каждый поиск из списка выше, отметит в нём ваши бренды, поставит цену и сортировку и пролистает все страницы.</li>
+        <li><b>2 — только эта выдача.</b> Сначала сами поставьте фильтры на YOOX (бренды, цена, сортировка «сначала дешёвые»), потом нажмите кнопку: она сохранит все страницы этой выдачи.</li>
+      </ul>
+    </li>
+    <li>Подождите: внизу справа видно, какой поиск и какая страница сейчас. Между страницами пауза 3–6 секунд, чтобы не нагружать YOOX. Кнопка <b>«Стоп»</b> останавливает сбор после текущей страницы и всё равно сохраняет то, что уже собрано.</li>
+    <li>Файл <code>yoox_…json</code> сохранится в папку «Загрузки». В окошке будет итог: сколько товаров по каждому поиску и какие бренды на YOOX не нашлись.</li>
+    <li>Запустите <code>python run.py</code>: товары YOOX появятся на сайте с ценой в сумах. Фильтры и маржа берутся из <code>config.json</code>.</li>
+  </ol>
+  <p class="note">Файлы старше 3 дней программа не берёт: цены и наличие на YOOX быстро меняются. Срок задаётся в <code>config.json</code> → <code>source_opts.yoox_import.max_age_days</code>.</p>
+
+  <h2>Как добавить свой поиск</h2>
+  <p>Поиски лежат в <code>config.json</code> → <code>source_opts.yoox_import.searches</code>. Пример:</p>
+<pre>{
+  "name": "Поло мужские, 50–80 €",
+  "url": "https://www.yoox.com/it/uomo/shoponline/polo_c",
+  "brands": "known",
+  "price": [50, 80],
+  "sort": "PriceAsc"
+}</pre>
+  <ul>
+    <li><code>url</code> — адрес категории на YOOX: откройте категорию на сайте и скопируйте ссылку. Можно и страницу одного бренда, например <code>…/uomo/shoponline/tombolini_d</code>.</li>
+    <li><code>brands</code> — <code>"known"</code>: все бренды из <code>known_brands</code>; или свой список, например <code>["Boss", "Hugo"]</code>; или <code>"url"</code>: ссылка как есть (страница бренда или бренды, уже отмеченные в ссылке). Если <code>brands</code> не указан: для страницы бренда и ссылки с отмеченными брендами — как есть, иначе <code>"known"</code>. Если ни один бренд не нашёлся, поиск пропускается — вся категория целиком не скачивается.</li>
+    <li>Бренды кнопка ищет в списке брендов самой выдачи на YOOX. В этом списке только 350 самых частых названий, поэтому бренд, у которого в выдаче 1–2 вещи, может не найтись — в итоге он будет в строке «нет брендов». Если у бренда на YOOX несколько линий (Giorgio Armani и Emporio Armani), берётся линия с точно таким названием; если её в списке нет, берётся вся группа, и итог об этом скажет. Больше 20 брендов YOOX за один раз не принимает — тогда кнопка соберёт выдачу в несколько приёмов.</li>
+    <li><code>price</code> — цена в евро «от и до». <code>sort</code> — <code>"PriceAsc"</code> (сначала дешёвые), <code>"BestDeals"</code> (лучшие скидки), <code>"Latest"</code> (новинки).</li>
+    <li>Лимиты: <code>max_pages_per_search</code> — сколько страниц по 60 товаров брать в одном поиске; за одно нажатие кнопка открывает не больше <code>max_total_pages</code> страниц (по умолчанию 80).</li>
+  </ul>
+</main>
+
+<script>
+// Код закладки. Читает только данные каталога, которые YOOX сам встроил в страницу
+// (<script id="__NEXT_DATA__">), — те же, что видит браузер. Никаких ключей и обходов защиты:
+// страницы запрашиваются по одной, с паузой 3–6 с, при ошибке сбор останавливается.
+async function yooxGrab(opts) {
+  opts = opts || {};
+  // Поиски и бренды вписывает make_button.py из config.json (source_opts.yoox_import).
+  var CFG = /*CONFIG*/null/*END*/;
+  CFG = CFG || {};
+  var SEARCHES = CFG.searches || [], KNOWN = CFG.known_brands || [];
+  var PER = Math.max(1, Math.min(200, parseInt(CFG.max_pages_per_search, 10) || 15));
+  if (opts.maxPages) PER = Math.max(1, Math.min(PER, parseInt(opts.maxPages, 10) || 1));
+  var TOTAL = Math.max(1, parseInt(CFG.max_total_pages, 10) || 80);
+  var MAXB = Math.max(1, Math.min(20, parseInt(opts.maxBrands, 10) || 20));   // брендов в одном адресе
+  var VER = CFG.version || "без настроек";
+
+  if (!/(^|\.)yoox\.com$/.test(location.hostname)) {
+    alert("Кнопка работает только на сайте YOOX.\n\nОткройте в этом браузере страницу каталога yoox.com " +
+      "(например yoox.com/it/uomo/shoponline/t-shirt_c) и нажмите закладку «Сохранить YOOX» там.");
+    return;
+  }
+  if (window.__yooxGrabBusy) { alert("Кнопка уже собирает товары в этой вкладке. Дождитесь конца или нажмите «Стоп»."); return; }
+
+  // ---------- режим
+  var mode = parseInt(opts.mode, 10);
+  if (!mode) {
+    var names = SEARCHES.map(function (s) { return s.name; }).join("; ");
+    if (names.length > 180) names = names.slice(0, 180) + "…";
+    var ans = prompt("Сохранить YOOX (кнопка от " + VER + ")\n\n" +
+      "1 — все мои поиски (" + SEARCHES.length + " шт." + (SEARCHES.length ? ": " + names : ", в кнопке их нет") + ")\n" +
+      "2 — только эта выдача, все страницы\n\nВведите 1 или 2:", SEARCHES.length ? "1" : "2");
+    if (ans === null) return;
+    mode = parseInt(String(ans).trim(), 10);
+  }
+  if (mode !== 1 && mode !== 2) { alert("Нужно ввести 1 или 2."); return; }
+  if (mode === 1 && !SEARCHES.length) {
+    alert("В кнопке нет поисков. Добавьте их в config.json → source_opts.yoox_import.searches, " +
+      "запустите python make_button.py и перетащите кнопку заново.\n\nПока можно выбрать 2 — только эта выдача.");
+    return;
+  }
+
+  // ---------- разбор страницы
+  function extract(doc) {   // основной результат выдачи (тот, где товары) + счётчики брендов
+    var el = doc.getElementById("__NEXT_DATA__");
+    if (!el) return null;
+    var d;
+    try { d = JSON.parse(el.textContent); } catch (e) { return null; }
+    var ir = ((((d || {}).props || {}).pageProps || {}).algoliaServerState || {}).initialResults;
+    if (!ir) return null;
+    var all = [];
+    Object.keys(ir).forEach(function (k) {
+      (ir[k].results || []).forEach(function (r) { all.push({ index: k, r: r }); });
+    });
+    if (!all.length) return null;
+    var m = all.reduce(function (a, b) { return (b.r.hits || []).length > (a.r.hits || []).length ? b : a; });
+    var bf = {};
+    all.forEach(function (x) {
+      var f = (x.r.facets || {})["model.brand"] || {};
+      Object.keys(f).forEach(function (k) { bf[k] = Math.max(bf[k] || 0, +f[k] || 0); });
+    });
+    return { index: m.index, r: m.r, brands: bf };
+  }
+  function clean(m) {       // что сохраняем: товары без служебных полей, без фасетов (размер файла)
+    return { index: m.index, page: m.r.page, nbPages: m.r.nbPages, nbHits: m.r.nbHits, hitsPerPage: m.r.hitsPerPage,
+      hits: (m.r.hits || []).map(function (h) {
+        var c = Object.assign({}, h); delete c._highlightResult; delete c._rankingInfo; delete c._snippetResult; return c;
+      }) };
+  }
+  // Адрес выдачи: base + свои параметры. Кодируем как сам YOOX (%20, brand%5B0%5D), без «+».
+  function makeUrl(base, set, dropBrands) {
+    var u = new URL(base, location.origin);
+    u.protocol = location.protocol; u.host = location.host;   // тот же сайт, иначе браузер не даст прочитать ответ
+    var q = [];
+    u.searchParams.forEach(function (v, k) {
+      if (k in set || k === "page" || (dropBrands && /^brand\[\d*\]$/.test(k))) return;
+      q.push([k, v]);
+    });
+    Object.keys(set).forEach(function (k) {
+      if (set[k] !== null && set[k] !== undefined) q.push([k, String(set[k])]);
+    });
+    return u.origin + u.pathname + (q.length ? "?" + q.map(function (p) {
+      return encodeURIComponent(p[0]) + "=" + encodeURIComponent(p[1]);
+    }).join("&") : "");
+  }
+  function deptOf(url) {    // donna / uomo — у каждой страницы свой: в одном файле бывают оба раздела
+    var u = new URL(url, location.origin);
+    var m = u.pathname.match(/\/(donna|uomo)(\/|$)/);
+    if (m) return m[1];
+    return { women: "donna", men: "uomo" }[u.searchParams.get("dept[0]") || u.searchParams.get("area") || ""] || null;
+  }
+
+  // ---------- бренды: названия из config → ключи фильтра YOOX
+  // Ключ YOOX: «BOSS-31015 > BOSS-31015» или «GIORGIO ARMANI-150 > EMPORIO ARMANI-128» (группа > линия).
+  // Берём только ключи из списка брендов этой же выдачи: адрес с ключами из чужого списка YOOX не принял
+  // (открыл главную раздела). В списке — 350 самых частых ключей, совсем редкие бренды в него не попадают.
+  function norm(s) {        // «OFF-WHITE™» → «offwhite», «Dolce & Gabbana» → «dolceandgabbana»
+    return String(s || "").replace(/[\u2122\u00ae\u00a9]/g, "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "");
+  }
+  function bare(part) { return String(part).replace(/-\d+\s*$/, "").trim(); }
+  function parseKeys(f) {
+    return Object.keys(f || {}).map(function (k) {
+      var parts = k.split(/\s+>\s+/);
+      return { key: k, n: +f[k] || 0, top: parts.length === 1,
+        leaf: norm(bare(parts[parts.length - 1])), parent: parts.length > 1 ? norm(bare(parts[0])) : null };
+    });
+  }
+  // Порядок: линия с точным названием (Giorgio Armani → только линия Giorgio Armani, без Emporio) →
+  // бренд верхнего уровня → все линии группы с таким названием. Если линии с точным названием в списке
+  // нет, а у группы есть другие линии, берётся вся группа — это видно в итоге (groups).
+  function resolve(own, wanted) {
+    var F = parseKeys(own);
+    var out = { keys: [], matched: [], groups: [], unmatched: [], facetSize: F.length,
+      facetMin: F.length ? Math.min.apply(null, F.map(function (p) { return p.n; })) : 0 };
+    var seen = {}, done = {};
+    wanted.forEach(function (name) {
+      var w = norm(name);
+      if (!w || done[w]) return;
+      done[w] = 1;
+      var hit = F.filter(function (p) { return !p.top && p.leaf === w; });
+      var group = false;
+      if (!hit.length) {
+        group = F.some(function (p) { return p.parent === w && p.leaf !== w; });
+        hit = F.filter(function (p) { return p.top && p.leaf === w; });
+        if (!hit.length) hit = F.filter(function (p) { return p.parent === w; });
+      }
+      if (!hit.length) { out.unmatched.push(name); return; }
+      out.matched.push(name);
+      if (group) out.groups.push(name);
+      hit.forEach(function (p) { if (!seen[p.key]) { seen[p.key] = 1; out.keys.push(p.key); } });
+    });
+    return out;
+  }
+
+  // ---------- окошко с ходом работы и кнопкой «Стоп»
+  var stopped = false, finished = false, wake = null, aborted = "", fetches = 0, total = 0;
+  var pages = [], reps = [];
+  var box = document.createElement("div");
+  box.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:440px;max-height:70vh;overflow:auto;" +
+    "background:#16161a;color:#fff;font:14px/1.45 system-ui,sans-serif;padding:12px 16px;border-radius:10px;" +
+    "box-shadow:0 6px 24px rgba(0,0,0,.3);text-align:left";
+  var txt = document.createElement("div");
+  txt.style.whiteSpace = "pre-line";
+  var btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = "Стоп";
+  btn.style.cssText = "margin-top:10px;padding:6px 14px;border:0;border-radius:999px;background:#fff;color:#16161a;" +
+    "font:600 13px system-ui,sans-serif;cursor:pointer";
+  btn.onclick = function () {
+    if (finished) { box.remove(); return; }
+    stopped = true; btn.disabled = true; btn.textContent = "Останавливаю после этой страницы…";
+    if (wake) wake();
+  };
+  box.appendChild(txt); box.appendChild(btn);
+  document.body.appendChild(box);
+  function status(t) { txt.textContent = "YOOX → сайт · кнопка от " + VER + "\n" + t; }
+
+  // ---------- загрузка страниц: по одной, пауза 3–6 с, без повторов
+  function sleep(ms) {
+    return new Promise(function (res) {
+      var t = setTimeout(function () { wake = null; res(); }, ms);
+      wake = function () { clearTimeout(t); wake = null; res(); };
+    });
+  }
+  async function load(url) {
+    if (fetches > 0) await sleep(3000 + Math.random() * 3000);
+    if (stopped) return { stop: true };
+    fetches++;
+    var r;
+    try { r = await fetch(url, { credentials: "include" }); }
+    catch (e) { return { err: "страница не загрузилась (" + e.message + ")" }; }
+    if (!r.ok) return { err: "YOOX ответил HTTP " + r.status, status: r.status };
+    var got = new URL(r.url || url, location.origin).pathname;
+    if (r.redirected && got !== new URL(url, location.origin).pathname) {
+      return { err: "YOOX открыл другую страницу (" + got + ") — такой фильтр он не принял" };
+    }
+    var m = extract(new DOMParser().parseFromString(await r.text(), "text/html"));
+    return m ? { m: m } : { err: "на странице нет данных каталога" };
+  }
+  function blocked(x) {     // 403/429/503 — YOOX просит притормозить: дальше не идём совсем
+    if (x.status === 403 || x.status === 429 || x.status === 503)
+      aborted = (x.err || x.err0 || "YOOX ответил HTTP " + x.status) + " — сбор остановлен, попробуйте позже";
+  }
+  function newRep(name, url) {
+    return { name: name, url: url, items: 0, pages: 0, nbHits: null,
+      matched: [], groups: [], unmatched: [], notes: [] };
+  }
+
+  // Все страницы одной выдачи, но не больше cap страниц. label — «часть 2 из 3», если бренды разбиты.
+  async function collect(rep, base, set, dropBrands, fallbackDoc, cap, label) {
+    var nb = 0;
+    for (var p = 1; ; p++) {
+      if (stopped || aborted) break;
+      if (fetches >= TOTAL) { rep.notes.push("достигнут общий лимит " + TOTAL + " страниц за одно нажатие"); break; }
+      var url = makeUrl(base, Object.assign({}, set, { page: p > 1 ? p : null }), dropBrands);
+      status(rep.name + (label || "") + "\nстраница " + p + (nb ? " из " + Math.min(nb, cap) : "") +
+        " · товаров собрано: " + total + (fetches ? "" : "\n(между страницами пауза 3–6 с)"));
+      var x = await load(url);
+      if (x.stop) break;
+      if (x.err && p === 1 && fallbackDoc) {
+        var dm = extract(document);
+        if (dm) { rep.notes.push("взята открытая страница (" + x.err + ")"); x = { m: dm, status: x.status, err0: x.err }; url = location.href; }
+      }
+      if (x.err) { rep.notes.push((label ? label.trim() + ", " : "") + "стр. " + p + ": " + x.err); blocked(x); break; }
+      var c = clean(x.m);
+      if (p === 1) { rep.nbHits = (rep.nbHits || 0) + (c.nbHits || 0); nb = c.nbPages; }
+      if (!c.hits.length) break;
+      if (p === 1 && dropBrands) {     // фильтр брендов должен реально сработать, иначе соберём всю категорию
+        var want = {}; Object.keys(set).forEach(function (k) { if (/^brand\[\d*\]$/.test(k)) want[set[k]] = 1; });
+        if (Object.keys(want).length) {
+          var ok = c.hits.filter(function (h) {
+            var mb = (h.model || {}).brand; mb = Array.isArray(mb) ? mb : (mb ? [mb] : []);
+            return mb.some(function (b) { return want[b]; });
+          }).length;
+          if (ok < c.hits.length * 0.8) {
+            rep.notes.push((label ? label.trim() + ": " : "") + "YOOX не применил фильтр брендов (" + ok + " из " +
+              c.hits.length + " товаров нужных брендов) — эта выдача пропущена");
+            rep.nbHits -= (c.nbHits || 0);
+            break;
+          }
+        }
+      }
+      if (c.page != null && c.page !== p - 1 && url !== location.href) {
+        rep.notes.push("YOOX не перелистнул на стр. " + p + " — остановлено"); break;
+      }
+      pages.push({ url: url, search_name: rep.name, dept: deptOf(url), results: [c] });
+      rep.pages++; rep.items += c.hits.length; total += c.hits.length;
+      blocked(x);
+      var last = c.page != null ? c.page + 1 : p;
+      if (last >= c.nbPages) break;
+      if (p >= cap) { rep.notes.push((label ? label.trim() + ": " : "") + "достигнут лимит " + cap + " стр. (в выдаче " + c.nbPages + " стр.)"); break; }
+    }
+  }
+
+  window.__yooxGrabBusy = true;
+  try {
+    if (mode === 2) {
+      var h1 = document.querySelector("h1");
+      var rep2 = newRep("Эта выдача" + (h1 && h1.textContent.trim() ? ": " + h1.textContent.trim().slice(0, 60) : ""), location.href);
+      reps.push(rep2);
+      await collect(rep2, location.href, {}, false, true, PER, "");
+    } else {
+      for (var i = 0; i < SEARCHES.length; i++) {
+        if (opts.only && opts.only.indexOf(i) < 0) continue;   // для проверки: только эти поиски
+        var s = SEARCHES[i] || {}, rep = newRep(s.name || "Поиск " + (i + 1), s.url);
+        reps.push(rep);
+        if (stopped || aborted) { rep.notes.push("не запускался"); continue; }
+        if (fetches >= TOTAL) { rep.notes.push("не запускался: достигнут общий лимит " + TOTAL + " страниц"); continue; }
+        if (!s.url) { rep.notes.push("в config.json нет адреса url — пропущен"); continue; }
+        var set = {};
+        if (s.price && s.price.length === 2) {
+          set.price = (s.price[0] == null ? 0 : +s.price[0]) + ":" + (s.price[1] == null ? 100000 : +s.price[1]);
+        }
+        if (s.sort != null) set.sortBy = s.sort;
+        // brands не задан: страница бренда (…/tombolini_d) или ссылка с отмеченными брендами — как есть, иначе known
+        var asIs = /[?&]brand(\[|%5B)/i.test(s.url) || /_m?d\/?$/i.test(new URL(s.url, location.origin).pathname);
+        var bm = s.brands == null || s.brands === "" ? (asIs ? "url" : "known") : s.brands;
+        var parts = [null];
+        if (bm !== "url") {
+          var wanted = bm === "known" ? KNOWN : (Array.isArray(bm) ? bm : [bm]);
+          if (!wanted.length) { rep.notes.push("список брендов пуст — поиск пропущен"); continue; }
+          status(rep.name + "\nищу бренды в этой категории… · товаров собрано: " + total);
+          var x = await load(makeUrl(s.url, set, true));    // та же выдача без фильтра брендов
+          if (x.stop) { rep.notes.push("остановлено"); continue; }
+          if (x.err) { rep.notes.push("список брендов: " + x.err); blocked(x); continue; }
+          var rs = resolve(x.m.brands, wanted);
+          rep.matched = rs.matched; rep.groups = rs.groups; rep.unmatched = rs.unmatched; rep.brand_keys = rs.keys;
+          rep.category_hits = x.m.r.nbHits; rep.facet_size = rs.facetSize; rep.facet_min = rs.facetMin;
+          if (!rs.keys.length) { rep.notes.push("ни одного из брендов нет в этой категории — поиск пропущен"); continue; }
+          // Не больше MAXB брендов в одном адресе: с 19 YOOX работает, адрес с 22 он не принял (там были
+          // и чужие ключи — какая из причин, не выяснено). Больше брендов — несколько выдач подряд.
+          parts = [];
+          for (var b = 0; b < rs.keys.length; b += MAXB) parts.push(rs.keys.slice(b, b + MAXB));
+          if (parts.length > 1) rep.notes.push("брендов больше " + MAXB + " — выдача собирается частями: " + parts.length);
+        }
+        for (var q = 0; q < parts.length && !stopped && !aborted; q++) {
+          var left = PER - rep.pages;
+          if (left <= 0) { rep.notes.push("остальные бренды не собраны: достигнут лимит " + PER + " стр. на поиск"); break; }
+          var share = Math.max(1, Math.ceil(left / (parts.length - q)));   // поровну на оставшиеся части брендов
+          var set2 = Object.assign({}, set);
+          if (parts[q]) parts[q].forEach(function (k, n) { set2["brand[" + n + "]"] = k; });
+          await collect(rep, s.url, set2, bm !== "url", false, share,
+            parts.length > 1 ? " (бренды, часть " + (q + 1) + " из " + parts.length + ")" : "");
+        }
+      }
+    }
+  } catch (e) {
+    aborted = "ошибка в кнопке: " + (e && e.message || e);
+  }
+  window.__yooxGrabBusy = false;
+  finished = true;
+
+  // ---------- итог
+  var uniq = {}, depts = {};
+  pages.forEach(function (pg) {
+    depts[pg.dept || "?"] = 1;
+    pg.results[0].hits.forEach(function (h) { uniq[h.variantId || h.objectID] = 1; });
+  });
+  depts = Object.keys(depts);
+  var lines = reps.map(function (r) {
+    var l = "• " + r.name + ": " + r.items + " шт." + (r.pages ? " (" + r.pages + " стр." +
+      (r.nbHits != null ? ", всего в выдаче " + r.nbHits : "") + ")" : "");
+    if (r.unmatched.length) {
+      l += "\n   нет брендов: " + r.unmatched.join(", ") + (r.facet_size >= 350
+        ? " (YOOX перечисляет только 350 самых частых брендов; у этих здесь не больше " + r.facet_min + " шт.)"
+        : " (в этой категории и цене их нет)");
+    }
+    if (r.groups.length) l += "\n   взята вся группа бренда со всеми линиями (линии с точно таким названием в списке нет): " +
+      r.groups.join(", ");
+    r.notes.filter(function (n, i, a) { return a.indexOf(n) === i; }).forEach(function (n) { l += "\n   – " + n; });
+    return l;
+  });
+  if (aborted) lines.push("! " + aborted);
+  if (stopped) lines.push("Остановлено кнопкой «Стоп».");
+  var payload = { source: "yoox", saved_at: new Date().toISOString(), version: CFG.version || null,
+    mode: mode === 1 ? "searches" : "page", page_url: mode === 2 ? location.href : null,
+    dept: depts.length === 1 && depts[0] !== "?" ? depts[0] : null,
+    searches: reps.map(function (r) {
+      return { name: r.name, url: r.url, items: r.items, pages: r.pages, nbHits: r.nbHits,
+        matched: r.matched, groups: r.groups, unmatched: r.unmatched,
+        brand_keys: r.brand_keys || null, notes: r.notes };
+    }),
+    pages: pages };
+
+  if (opts.dryRun) {        // для проверки: вернуть сводку без скачивания файла
+    box.remove();
+    var h0 = pages.length ? pages[0].results[0].hits[0] : null;
+    return { mode: payload.mode, version: payload.version, fetches: fetches, pages: pages.length, total: total,
+      unique: Object.keys(uniq).length, depts: depts, bytes: JSON.stringify(payload).length, stopped: stopped, aborted: aborted,
+      searches: reps, report: lines.join("\n"),
+      pageInfo: pages.map(function (pg) {
+        var pr = pg.results[0].hits.map(function (h) { return +((h.modelBestOfferByPrice || {}).currentPrice) || 0; });
+        return { search: pg.search_name, dept: pg.dept, page: pg.results[0].page, n: pr.length,
+          min: Math.min.apply(null, pr), max: Math.max.apply(null, pr), url: pg.url };
+      }),
+      sample: h0 && { id: h0.variantId, brand: (h0.model || {}).brand, price: h0.modelBestOfferByPrice } };
+  }
+  btn.disabled = false; btn.textContent = "Закрыть";
+  if (!total) { status("Ничего не сохранено.\n" + lines.join("\n")); return; }
+
+  var t = new Date(), p2 = function (n) { return String(n).padStart(2, "0"); };
+  var name = "yoox_" + t.getFullYear() + p2(t.getMonth() + 1) + p2(t.getDate()) + "_" + p2(t.getHours()) + p2(t.getMinutes()) + p2(t.getSeconds()) + ".json";
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  status("Сохранено " + total + " товаров (" + Object.keys(uniq).length + " разных, " + pages.length + " стр.) в «Загрузки» → " +
+    name + "\n" + lines.join("\n") + "\nДальше: python run.py");
+}
+// В закладку — без отступов и строк-комментариев, чтобы ссылка была короче (многострочных строк в коде нет).
+var bmCode = yooxGrab.toString().split("\n").map(function (l) { return l.trim(); })
+  .filter(function (l) { return l && l.indexOf("//") !== 0; }).join("\n");
+document.getElementById("bm").href = "javascript:" + encodeURIComponent("void (" + bmCode + ")()");
+document.getElementById("bm").addEventListener("click", function (e) {
+  e.preventDefault();
+  alert("Эту кнопку не нажимают здесь — перетащите её на панель закладок, а нажимайте на странице YOOX.");
+});
+</script>
+</body>
+</html>

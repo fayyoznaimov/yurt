@@ -1,0 +1,451 @@
+{
+  "_help": "Что искать и как считать цену. После правки запустите: python run.py. YOOX — через кнопку «Сохранить YOOX» (yoox-knopka.html).",
+  "sources": [
+    "pcardin_tr",
+    "cacharel_tr",
+    "trendyol",
+    "yoox_import"
+  ],
+  "filters": {
+    "brands": [
+      "Cacharel",
+      "Lufian",
+      "Pierre Cardin",
+      "Cabani",
+      "Kip",
+      "Ramsey",
+      "Paul & Shark",
+      "U.S. Polo Assn."
+    ],
+    "types": [],
+    "genders": [],
+    "discount_min": 40,
+    "price_uzs_min": 0,
+    "price_uzs_max": 5000000,
+    "only_with_sizes": true
+  },
+  "source_filters": {
+    "_help": "Свои фильтры для отдельного источника поверх filters. Цена price_min/price_max — в валюте источника (для YOOX в евро).",
+    "yoox": {
+      "brands": [],
+      "discount_min": 0,
+      "price_min": 40,
+      "price_max": 250,
+      "price_uzs_max": 50000000,
+      "genders": [
+        "men"
+      ],
+      "types": [
+        "обувь",
+        "сумки",
+        "джинсы",
+        "толстовки",
+        "футболки и поло",
+        "пиджаки и костюмы",
+        "платья",
+        "юбки",
+        "шорты",
+        "рубашки",
+        "свитеры и кардиганы",
+        "куртки и пальто",
+        "брюки",
+        "аксессуары"
+      ]
+    },
+    "trendyol": {
+      "genders": [
+        "men"
+      ]
+    }
+  },
+  "pricing": {
+    "fx_markup_pct": 2,
+    "margin_pct": 25,
+    "min_margin_uzs": 300000,
+    "round_to_uzs": 10000,
+    "cargo_uzs_per_item": {
+      "TR": 40000,
+      "IT": 160000
+    },
+    "fx_manual": {}
+  },
+  "crawl": {
+    "max_pages": 3
+  },
+  "source_opts": {
+    "trendyol": {
+      "brand_slugs": {
+        "Cacharel": "cacharel-x-b320",
+        "Lufian": "lufian-x-b364",
+        "Pierre Cardin": "pierre-cardin-x-b122",
+        "Cabani": "cabani-x-b104711",
+        "Kip": "kip-x-b329",
+        "Ramsey": "ramsey-x-b185",
+        "Paul & Shark": "paul-shark-x-b145397",
+        "U.S. Polo Assn.": "u-s-polo-assn-x-b101990"
+      },
+      "pdp_limit": 120,
+      "official_only": false,
+      "lowest_price_days": 0
+    },
+    "yoox": {
+      "brand_slugs": {
+        "Emporio Armani": "emporio armani",
+        "Giorgio Armani": "giorgio armani"
+      },
+      "headless": false,
+      "sort": "BestDeals",
+      "max_images": 60
+    },
+    "pcardin_tr": {
+      "sections": [
+        "/garage-sale/"
+      ],
+      "max_pages": 10
+    },
+    "cacharel_tr": {
+      "sections": [
+        "/outlet/",
+        "/online-ozel-urunler/"
+      ],
+      "max_pages": 10
+    },
+    "yoox_import": {
+      "folder": "",
+      "max_age_days": 3,
+      "download_images": true,
+      "max_images": 200,
+      "max_pages_per_search": 3,
+      "known_brands": [
+        "Doucal's",
+        "Tod's",
+        "Boss",
+        "Emporio Armani",
+        "Armani Exchange",
+        "Giorgio Armani",
+        "EA7",
+        "Tombolini",
+        "Filippo De Laurentiis",
+        "Montecore",
+        "Moorer",
+        "Paul & Shark",
+        "Liu Jo Man",
+        "Bally",
+        "Hackett",
+        "Barba Napoli",
+        "Gran Sasso",
+        "Michael Kors Mens",
+        "Karl Lagerfeld",
+        "Tramarossa",
+        "Jacob Cohën",
+        "Harmont & Blaine",
+        "On",
+        "Lacoste",
+        "Canali",
+        "Kiton",
+        "Bugatti",
+        "Boggi Milano",
+        "Dolce&Gabbana",
+        "Gucci",
+        "Dior",
+        "Eleventy"
+      ],
+      "searches": [
+        {
+          "name": "Doucal's — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/doucal's_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Tod's — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/tod's_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Boss — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/boss_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Emporio Armani — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/emporio%20armani_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Armani Exchange — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/armani%20exchange_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Giorgio Armani — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/giorgio%20armani_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "EA7 — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/ea7_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Tombolini — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/tombolini_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Filippo De Laurentiis — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/filippo%20de%20laurentiis_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Montecore — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/montecore_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Moorer — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/moorer_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Paul & Shark — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/paul%20&%20shark_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Liu Jo Man — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/liu%20%E2%80%A2jo%20man_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Bally — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/bally_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Hackett — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/hackett_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Barba Napoli — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/barba%20napoli_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Gran Sasso — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/gran%20sasso_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Michael Kors Mens — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/michael%20kors%20mens_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Karl Lagerfeld — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/karl%20lagerfeld_md",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Tramarossa — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/tramarossa_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Jacob Cohën — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/jacob%20coh%D1%91n_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Harmont & Blaine — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/harmont%20&%20blaine_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "On — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/on_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Lacoste — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/lacoste_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Canali — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/canali_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Kiton — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/kiton_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Bugatti — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/bugatti_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Boggi Milano — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/boggi%20milano_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Dolce&Gabbana — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/dolce&gabbana_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Gucci — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/gucci_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Dior — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/dior_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        },
+        {
+          "name": "Eleventy — мужское",
+          "url": "https://www.yoox.com/it/uomo/shoponline/eleventy_d",
+          "price": [
+            40,
+            250
+          ],
+          "sort": "PriceAsc"
+        }
+      ],
+      "max_total_pages": 110
+    }
+  },
+  "site": {
+    "title": "Брендовые вещи со скидкой",
+    "contact_url": "https://t.me/your_username",
+    "contact_label": "Заказать в Telegram"
+  }
+}

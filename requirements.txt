@@ -1,0 +1,8 @@
+# Установка (Windows):
+#   python -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements.txt
+#   .venv\Scripts\python -m playwright install chromium    # браузер нужен только источнику yoox
+# Запуск:
+#   .venv\Scripts\python run.py
+requests>=2.31
+playwright>=1.47
