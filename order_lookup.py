@@ -5,7 +5,8 @@
 
 Находит в тексте коды товаров (7 знаков: латиница и цифры, регистр не важен) и для каждого печатает:
 бренд, название, нашу цену, магазин-источник, ссылку, цену в магазине, себестоимость/маржу и текущие
-размеры. Данные — site/products.json и закрытый site/products-admin.js (как у order_api.py).
+размеры. Данные — каталог сайта (site/data/ или site/products.json) и закрытые site/admin/ или
+site/products-admin.js (как у order_api.py, через catalog_files.py).
 """
 from __future__ import annotations
 
@@ -69,7 +70,7 @@ def main() -> int:
     cat = Catalog(ROOT / "site")
     cat.refresh()
     if not cat.products:
-        print("Нет site/products.json — сначала python run.py")
+        print("Каталога нет (ни site/data/manifest.json, ни site/products.json) — сначала python run.py")
         return 1
     codes, unknown = extract_codes(text, set(cat.products))
     if not codes:

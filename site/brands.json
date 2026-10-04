@@ -12,7 +12,10 @@
   "invert_ok": false
  },
  "Barba Napoli": {
-  "logo": null
+  "logo": "img/brands/barba-napoli.png",
+  "source": "https://www.barbanapoli.com/",
+  "license": "логотип с официального сайта бренда; товарный знак Barba Napoli",
+  "invert_ok": true
  },
  "Boggi Milano": {
   "logo": "img/brands/boggi-milano.png",
@@ -39,7 +42,10 @@
   "invert_ok": true
  },
  "Cabani": {
-  "logo": null
+  "logo": "img/brands/cabani.png",
+  "source": "https://cabanishoes.com/",
+  "license": "логотип с официального сайта бренда (подпись WHOLESALE обрезана); товарный знак Cabani",
+  "invert_ok": true
  },
  "Cacharel": {
   "logo": "img/brands/cacharel.svg",
@@ -102,7 +108,10 @@
   "invert_ok": true
  },
  "Eleventy": {
-  "logo": null
+  "logo": "img/brands/eleventy.png",
+  "source": "https://www.eleventymilano.com/",
+  "license": "логотип с официального сайта бренда; товарный знак Eleventy",
+  "invert_ok": true
  },
  "Emporio Armani": {
   "logo": "img/brands/emporio-armani.svg",
@@ -111,7 +120,10 @@
   "invert_ok": true
  },
  "Filippo De Laurentiis": {
-  "logo": null
+  "logo": "img/brands/filippo-de-laurentiis.svg",
+  "source": "https://www.filippodelaurentiis.it/",
+  "license": "логотип с официального сайта бренда; товарный знак Filippo De Laurentiis",
+  "invert_ok": true
  },
  "Giorgio Armani": {
   "logo": "img/brands/giorgio-armani.svg",
@@ -174,7 +186,10 @@
   "invert_ok": true
  },
  "Karl Lagerfeld Jeans": {
-  "logo": null
+  "logo": "img/brands/karl-lagerfeld.svg",
+  "source": "https://www.karllagerfeld.com/",
+  "license": "Logo from the brand's official website (inline SVG); trademark of the brand owner (nominative use only) (общий логотип Karl Lagerfeld)",
+  "invert_ok": true
  },
  "Kenzo": {
   "logo": "img/brands/kenzo.svg",
@@ -207,7 +222,10 @@
   "invert_ok": true
  },
  "Lufian": {
-  "logo": null
+  "logo": "img/brands/lufian.png",
+  "source": "https://www.lufian.com/",
+  "license": "логотип с официального сайта бренда; товарный знак Lufian",
+  "invert_ok": true
  },
  "Michael Kors Mens": {
   "logo": "img/brands/michael-kors-mens.svg",
@@ -237,7 +255,10 @@
   "invert_ok": true
  },
  "Paul & Shark": {
-  "logo": null
+  "logo": "img/brands/paul-shark.jpg",
+  "source": "https://commons.wikimedia.org/wiki/File:PS_Logo.jpg",
+  "license": "CC BY-SA 4.0 (Wikimedia Commons); товарный знак Paul & Shark",
+  "invert_ok": false
  },
  "Pierre Cardin": {
   "logo": "img/brands/pierre-cardin.png",
@@ -264,7 +285,10 @@
   "invert_ok": true
  },
  "Tombolini": {
-  "logo": null
+  "logo": "img/brands/tombolini.png",
+  "source": "https://uomo.pittimmagine.com/108/exhibitors/T/tombolini",
+  "license": "логотип бренда со страницы участника Pitti Uomo; товарный знак Tombolini",
+  "invert_ok": true
  },
  "Tommy Hilfiger": {
   "logo": "img/brands/tommy-hilfiger.svg",
@@ -285,6 +309,21 @@
   "invert_ok": false
  },
  "Versace Jeans Couture": {
-  "logo": null
+  "logo": "img/brands/versace-jeans-couture.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Versace-3.svg",
+  "license": "Public domain (Wikimedia Commons), логотип Versace; товарный знак Gianni Versace S.r.l.",
+  "invert_ok": true
+ },
+ "Liu Jo": {
+  "logo": "img/brands/liu-jo-man.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Liu_Jo_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Michael Kors": {
+  "logo": "img/brands/michael-kors-mens.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Michael_Kors_Logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
  }
 }

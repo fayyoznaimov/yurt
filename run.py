@@ -26,6 +26,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+import catalog_files
 import describe
 import sync_state
 from pricing import load_rates, sell_price_uzs
@@ -231,6 +232,14 @@ def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: 
         print(f"[{source}] ВНИМАНИЕ: собрано не всё ({reason}). Товары, которых нет в этой выдаче, оставляю "
               f"как были ({len(by_new) - kept_before} шт.), распроданными их не считаю.")
     rows = list(by_new.values())
+    # бренд убрали из списка — его прошлые товары тоже уходят, а не висят «из прошлых»
+    bkey = lambda s: re.sub(r"[\W_]+", "", str(s or "").lower())
+    wanted = {bkey(b) for b in f.get("brands", [])}
+    if wanted:
+        n_before = len(rows)
+        rows = [r for r in rows if bkey(r.get("brand")) in wanted]
+        if len(rows) < n_before:
+            print(f"[{source}] убраны товары брендов не из списка: {n_before - len(rows)}")
     info["gone_ids"] = sorted(set(gone_ids))
 
     text = json.dumps(rows, ensure_ascii=False, indent=1)
@@ -415,20 +424,19 @@ def stats_line(st: dict) -> str:
     return s
 
 
-def previous_site() -> tuple[dict, dict]:
-    """Прошлые карточки сайта и закупочные данные по коду — снимки для распроданных товаров."""
+def previous_site():
+    """Прошлые карточки сайта и закупочные данные по коду — снимки для распроданных товаров.
+    Каталог частями (site/data/, site/admin/) или старые products.json / products-admin.js — catalog_files;
+    подробности и закупка читаются только для тех кодов, к которым обратятся (распроданные)."""
     pub, adm = {}, {}
     try:
-        data = json.loads((SITE / "products.json").read_text(encoding="utf-8"))
-        pub = {p["id"]: p for p in data.get("products") or [] if isinstance(p, dict) and p.get("id")}
-    except (OSError, ValueError, KeyError):
-        pass
+        pub = catalog_files.PublicCatalog(SITE)
+    except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
+        print(f"Прошлые карточки сайта не прочитаны ({e.__class__.__name__}: {e}) — снимков распроданных не будет")
     try:
-        text = (SITE / "products-admin.js").read_text(encoding="utf-8").strip()
-        text = text[text.index("{"):].rstrip().rstrip(";")
-        adm = {k: v for k, v in json.loads(text).items() if not k.startswith("_")}
-    except (OSError, ValueError):
-        pass
+        adm = catalog_files.AdminCatalog(SITE)
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"Прошлые закрытые данные не прочитаны ({e.__class__.__name__}: {e})")
     return pub, adm
 
 
@@ -575,12 +583,11 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
                       "by_source": summary["by_source"], "filters": eff, "sources": sources_report,
                       "sold_out_shown": len(public) - len(live)}
 
-    payload = {"summary": public_summary, "site": cfg.get("site", {}), "products": public}
+    # Каталог частями: site/data/ (манифест, индекс, подробности; см. catalog_files.py), закрытое — site/admin/.
+    # При ≤ catalog_files.LEGACY_MAX товаров дополнительно products.js / products.json / products-admin.js
+    # целиком (index.html двойным щелчком); больше — products.js только с оглавлением частей.
     SITE.mkdir(exist_ok=True)
-    (SITE / "products.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    # products.js — чтобы сайт открывался и двойным щелчком по index.html (без сервера)
-    (SITE / "products.js").write_text("window.DEALS = " + json.dumps(payload, ensure_ascii=False) + ";", encoding="utf-8")
-    (SITE / "products-admin.js").write_text("window.DEALS_ADMIN = " + json.dumps(admin, ensure_ascii=False) + ";", encoding="utf-8")
+    layout = catalog_files.write_site(SITE, public_summary, cfg.get("site", {}), public, admin)
 
     # память о запуске: после файлов сайта, чтобы при сбое состояние не убежало вперёд сайта
     for s, i in src_info.items():
@@ -627,6 +634,13 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
         print("\n".join(miss))
     print()
     print("\n".join(sync_state.summary_lines(changes, float(sc["keep_sold_out_days"]), len(public) - len(live))))
+    print(f"Файлы каталога: индекс {layout['index_files']} ч. ({layout['index_bytes'] / 1e6:.1f} МБ, сжато "
+          f"{layout['index_gz'] / 1e6:.1f} МБ; первая часть — {layout['head_count']} товаров), подробности "
+          f"{layout['detail_files']} файлов ({layout['detail_gz'] / 1e6:.1f} МБ сжато), закрытое site/admin/ — "
+          f"{layout['admin_files']} файлов" + ("; products.js/json целиком — тоже" if layout["legacy"] else
+                                             "; products.js — только оглавление (каталог больше "
+                                             f"{catalog_files.LEGACY_MAX:,} товаров)")
+          + (f"; удалено устаревших частей: {layout['stale_removed']}" if layout["stale_removed"] else ""))
     if changes_file:
         print(f"Подробно: {changes_file.relative_to(ROOT)}")
     try:                              # тексты продавца: site/content.json -> site/content.js

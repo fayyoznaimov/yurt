@@ -1,7 +1,13 @@
 """Турецкие магазины на платформе Akinon «Project Zero» (Next.js App Router).
 
-    fetch(query, site="pcardin_tr")   # pierrecardin.com.tr, раздел Garage Sale
-    fetch(query, site="cacharel_tr")  # cacharel.com.tr, Outlet + «Online'a Özel» (только мужское)
+    fetch(query, site="pcardin_tr")   # pierrecardin.com.tr — весь каталог (мужское + женское)
+    fetch(query, site="cacharel_tr")  # cacharel.com.tr — весь каталог (на сайте только мужское)
+
+Весь каталог: сначала широкие разделы (sections: «/erkek-1/», «/kadin-1/», «/garage-sale/»…) целиком,
+потом все категории из карты сайта (sitemap.xml → sitemap/categories-1) — они почти всегда подмножество
+широких, поэтому категория бросается, как только две страницы подряд не дали новых товаров. Товары
+сводятся по pk. В конце — сверка с картой товаров (sitemap/products-1): сколько из неё нашлось в листингах.
+Скидка не обязательна (price_old = None, если её нет). Детское и парфюмерия не берутся.
 
 Каталог отдаётся обычным HTML; данные лежат в RSC-потоке Next.js —
 куски self.__next_f.push([1,"..."]) с экранированным JSON. Склеиваем куски,
@@ -13,12 +19,15 @@ robots.txt запрещает /c/*, ?search_text=, sorter=, ps=, price=,
 attributes_filterable_* — их не используем. Разрешены page= и category_ids=.
 
 Дополнительно в config.json → source_opts.<источник> можно задать:
-    "sections": ["/garage-sale/"]   # свои разделы (пути) вместо стандартных
+    "sections": ["/erkek-1/", ...]  # свои широкие разделы (пути) вместо стандартных — обходятся целиком
+    "discover": true                # добавить категории из sitemap.xml (по умолчанию да)
+    "max_pages": 200                # потолок страниц на один раздел
 """
 from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit
 
@@ -30,7 +39,7 @@ SITES = {
     "pcardin_tr": {
         "base": "https://www.pierrecardin.com.tr",
         "brand": "Pierre Cardin",
-        "sections": ["/garage-sale/"],
+        "sections": ["/erkek-1/", "/kadin-1/", "/garage-sale/"],
         # фасет category_ids по полу (проверено: сочетается с page=)
         "gender_facet": {"men": 2, "women": 27},
         "only_gender": None,
@@ -39,7 +48,8 @@ SITES = {
     "cacharel_tr": {
         "base": "https://www.cacharel.com.tr",
         "brand": "Cacharel",
-        "sections": ["/outlet/", "/online-ozel-urunler/"],
+        "sections": ["/tum-erkek-urunleri-1/", "/outlet/", "/online-ozel-urunler/", "/erkek-aksesuar/",
+                     "/erkek-ayakkabi/"],
         "gender_facet": None,
         "only_gender": "men",  # на сайте только мужская одежда
         # category_ids: 14 = Koleksiyon (одежда), 2 = Ayakkabı & Aksesuar
@@ -48,6 +58,8 @@ SITES = {
 }
 
 SHOES_ACC_TYPES = {"обувь", "аксессуары", "сумки"}
+# не одежда — в каталог не берём (по filterable_product_base_type / названию)
+EXCLUDE_RE = re.compile(r"parf[üu]m|kozmetik|deodorant|kolonya|\bedt\b|\bedp\b", re.I)
 
 # filterable_product_base_type (значение и подпись) -> ключ base.TYPE_ORDER.
 # classify_type путает часть турецких названий («Ceket» = пиджак, а не куртка;
@@ -226,7 +238,7 @@ def to_product(p: dict, site: str, cfg: dict, gender_fallback: str | None) -> Pr
     old = float(p["retail_price"]) if p.get("retail_price") not in (None, "") else None
     disc = discount_pct(now, old)
     if disc is None:
-        return None
+        old = None            # без скидки: цена одна
 
     title = re.sub(r"\s+", " ", str(p.get("name") or "")).strip()
     if not title:
@@ -305,8 +317,9 @@ class _Client:
             except SiteBlocked:
                 raise
             except requests.RequestException as e:
-                if attempt == 2:
-                    raise
+                resp = getattr(e, "response", None)
+                if attempt == 2 or (resp is not None and resp.status_code in (404, 410)):
+                    raise                      # 404 — раздела нет, повторять незачем
                 print(f"[{self.site}] сетевая ошибка ({e}), повтор через паузу")
                 polite_sleep(5, 8)
                 continue
@@ -339,6 +352,53 @@ def _section_params(cfg: dict, query: Query) -> list[tuple[dict, str | None]]:
     return [({}, None)]
 
 
+_LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+
+
+def _sitemap_locs(client: "_Client", name: str) -> list[str]:
+    """Адреса из карты сайта: name = "categories" / "products" (sitemap.xml → sitemap/<name>-N)."""
+    try:
+        index = client._get(client.cfg["base"] + "/sitemap.xml")
+    except SiteBlocked:
+        raise
+    except Exception as e:
+        print(f"[{client.site}] sitemap.xml не прочитан: {e}")
+        return []
+    out: list[str] = []
+    for sm in _LOC_RE.findall(index):
+        if f"/sitemap/{name}-" not in sm:
+            continue
+        try:
+            out += _LOC_RE.findall(client._get(sm))
+        except SiteBlocked:
+            raise
+        except Exception as e:
+            print(f"[{client.site}] {sm} не прочитан: {e}")
+    return out
+
+
+def _category_paths(client: "_Client", seeds: list[str]) -> list[str]:
+    """Категории из карты сайта, которые можно обходить (robots.txt: не /c/*, без фильтров и параметров)."""
+    out = []
+    for loc in _sitemap_locs(client, "categories"):
+        u = urlsplit(loc)
+        path = u.path if u.path.endswith("/") else u.path + "/"
+        if (u.netloc.lower() != client.host or u.query or path.startswith("/c/") or "attributes" in path
+                or path == "/" or path in seeds or path in out):
+            continue
+        out.append(path)
+    return out
+
+
+def _path_gender(path: str) -> str | None:
+    p = path.lower()
+    if re.search(r"(^|[/-])(kadin|women)", p):
+        return "women"
+    if re.search(r"(^|[/-])(erkek|men)([/-]|$)", p):
+        return "men"
+    return None
+
+
 def fetch(query: Query, **opts) -> list[Product]:
     site = opts.get("site")
     LAST_RUN.clear()
@@ -348,6 +408,7 @@ def fetch(query: Query, **opts) -> list[Product]:
     so = query.source_opts or {}
     if so.get("sections"):
         cfg["sections"] = list(so["sections"])
+    discover = bool(so.get("discover", True))
 
     if not query.wants_brand(cfg["brand"]):
         print(f"[{site}] бренд {cfg['brand']} не в фильтре — пропускаю")
@@ -364,61 +425,104 @@ def fetch(query: Query, **opts) -> list[Product]:
 
     client = _Client(site, cfg)
     found: dict[str, Product] = {}
+    seen_pk: set[str] = set()          # все pk из листингов (и отброшенные) — для «новых товаров нет»
+    seen_url: set[str] = set()
     pages_ok, errors = 0, []
+    skipped = {"детское": 0, "не одежда": 0, "чужой бренд": 0}
     max_pages = max(1, int(query.max_pages or 1))
+    t0 = time.time()
+
+    def crawl(path: str, params: dict, facet_gender: str | None, seed: bool) -> None:
+        nonlocal pages_ok
+        gender_fallback = facet_gender or cfg["only_gender"] or _path_gender(path)
+        page, num_pages, idle = 1, None, 0
+        while page <= max_pages and (num_pages is None or page <= num_pages):
+            q = dict(params)
+            if page > 1:
+                q["page"] = page
+            label = f"{path}{'?' + urlencode(q) if q else ''}"
+            try:
+                html = client.page(path, q)
+                if html is None:
+                    errors.append(f"{label}: дважды пришла страница другого магазина (общий кэш)")
+                    page += 1
+                    continue
+                pagination, items = parse_listing(html)
+            except SiteBlocked:
+                raise
+            except requests.HTTPError as e:
+                if not seed and page == 1 and e.response is not None and e.response.status_code in (404, 410):
+                    return                       # категория из карты сайта больше не существует
+                errors.append(f"{label}: {e}")
+                print(f"[{site}] {label}: ошибка, раздел прерван: {e}")
+                return
+            except Exception as e:  # одна плохая страница не роняет весь источник
+                if not seed and page == 1:
+                    return                       # не листинг (посадочная страница вроде /erkek/)
+                errors.append(f"{label}: {e}")
+                print(f"[{site}] {label}: ошибка, раздел прерван: {e}")
+                return
+            cur = int(pagination.get("current_page") or page)
+            num_pages = int(pagination.get("num_pages") or 1)
+            if cur != page:  # сайт вернул другую страницу — дальше выдачи нет
+                break
+            pages_ok += 1
+            new = 0
+            for it in items:
+                pk = str(it.get("pk"))
+                if pk in seen_pk:
+                    continue
+                new += 1
+                seen_pk.add(pk)
+                seen_url.add(str(it.get("absolute_url") or "").strip("/"))
+                try:
+                    attrs = it.get("attributes") or {}
+                    brand_attr = attrs.get("filterable_brand")
+                    if brand_attr and _tr_lower(brand_attr) != _tr_lower(cfg["brand"]):
+                        skipped["чужой бренд"] += 1
+                        continue
+                    base = f"{attrs.get('filterable_product_base_type') or ''} {_kw_label(it, 'filterable_product_base_type') or ''}"
+                    if EXCLUDE_RE.search(_tr_lower(base)) or EXCLUDE_RE.search(_tr_lower(it.get("name"))):
+                        skipped["не одежда"] += 1
+                        continue
+                    prod = to_product(it, site, cfg, gender_fallback)
+                except Exception as e:  # битый товар — пропускаем
+                    print(f"[{site}] товар {it.get('pk')} пропущен: {e}")
+                    continue
+                if prod is None:
+                    continue
+                if prod.gender == "kids":
+                    skipped["детское"] += 1
+                    continue
+                if (prod.discount_pct or 0) < query.discount_min:
+                    continue
+                if query.genders and prod.gender and prod.gender not in query.genders:
+                    continue
+                found.setdefault(prod.source_item_id, prod)
+            idle = 0 if new else idle + 1
+            if seed or page == 1 or new:
+                print(f"[{site}] {label} стр. {page}/{num_pages} (всего {pagination.get('total_count')}): "
+                      f"товаров {len(items)}, новых {new}; в каталоге {len(found)}", flush=True)
+            if not seed and idle >= 2:            # категория — подмножество уже обойдённого
+                break
+            page += 1
 
     try:
         for path in cfg["sections"]:
             for params, facet_gender in _section_params(cfg, query):
-                gender_fallback = facet_gender or cfg["only_gender"]
-                page, num_pages = 1, None
-                while page <= max_pages and (num_pages is None or page <= num_pages):
-                    q = dict(params)
-                    if page > 1:
-                        q["page"] = page
-                    label = f"{path}{'?' + urlencode(q) if q else ''}"
-                    try:
-                        html = client.page(path, q)
-                        if html is None:
-                            errors.append(f"{label}: дважды пришла страница другого магазина (общий кэш)")
-                            page += 1
-                            continue
-                        pagination, items = parse_listing(html)
-                    except SiteBlocked:
-                        raise
-                    except Exception as e:  # одна плохая страница не роняет весь источник
-                        errors.append(f"{label}: {e}")
-                        print(f"[{site}] {label}: ошибка, страница пропущена: {e}")
-                        break
-                    cur = int(pagination.get("current_page") or page)
-                    num_pages = int(pagination.get("num_pages") or 1)
-                    if cur != page:  # сайт вернул другую страницу — дальше выдачи нет
-                        print(f"[{site}] {label}: сайт отдал страницу {cur} вместо {page}, раздел закончен")
-                        break
-                    pages_ok += 1
-
-                    kept = skipped_brand = 0
-                    for it in items:
-                        try:
-                            brand_attr = (it.get("attributes") or {}).get("filterable_brand")
-                            if brand_attr and _tr_lower(brand_attr) != _tr_lower(cfg["brand"]):
-                                skipped_brand += 1
-                                continue
-                            prod = to_product(it, site, cfg, gender_fallback)
-                        except Exception as e:  # битый товар — пропускаем
-                            print(f"[{site}] товар {it.get('pk')} пропущен: {e}")
-                            continue
-                        if prod is None or (prod.discount_pct or 0) < query.discount_min:
-                            continue
-                        if query.genders and prod.gender and prod.gender not in query.genders:
-                            continue
-                        found.setdefault(prod.source_item_id, prod)
-                        kept += 1
-                    if items and skipped_brand == len(items):
-                        print(f"[{site}] {label}: все товары чужого бренда — похоже на чужую страницу")
-                    print(f"[{site}] {label} стр. {page}/{num_pages} (всего {pagination.get('total_count')}): "
-                          f"товаров {len(items)}, со скидкой ≥{query.discount_min:g}%: {kept}")
-                    page += 1
+                crawl(path, params, facet_gender, True)
+        extra = _category_paths(client, cfg["sections"]) if discover else []
+        if extra:
+            print(f"[{site}] категорий из карты сайта: {len(extra)} — проверяю, нет ли в них новых товаров")
+        for path in extra:
+            crawl(path, {}, None, False)
+        if discover:
+            urls = {urlsplit(u).path.strip("/") for u in _sitemap_locs(client, "products")}
+            if urls:
+                hit = len(urls & seen_url)
+                print(f"[{site}] сверка с картой товаров: {len(urls)} в sitemap, из них в листингах {hit} "
+                      f"({hit * 100 // max(1, len(urls))}%; в карте сайта в основном старые/распроданные товары); "
+                      f"всего в листингах {len(seen_pk)} товаров")
     except SiteBlocked as e:
         if not pages_ok:
             raise RuntimeError(f"[{site}] источник недоступен: {e}") from e
@@ -429,7 +533,11 @@ def fetch(query: Query, **opts) -> list[Product]:
         raise RuntimeError(f"[{site}] не удалось разобрать ни одной страницы: " + "; ".join(errors or ["нет данных"]))
     if errors and not LAST_RUN.get("partial"):
         LAST_RUN.update(partial=True, reason=f"пропущено страниц с ошибкой: {len(errors)}")
-    print(f"[{site}] итого: {len(found)} товаров со скидкой, запросов: {client.requests_made}")
+    n_disc = sum(1 for p in found.values() if p.discount_pct)
+    n_stock = sum(1 for p in found.values() if p.in_stock)
+    print(f"[{site}] итого: {len(found)} товаров (в наличии {n_stock}, со скидкой {n_disc}), "
+          f"страниц {pages_ok}, запросов {client.requests_made}, {time.time() - t0:.0f} с"
+          + "".join(f"; {k}: {v}" for k, v in skipped.items() if v))
     return list(found.values())
 
 

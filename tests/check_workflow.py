@@ -226,8 +226,13 @@ def check(path: Path = WF) -> list[str]:
         if firsts != sorted(firsts) or len(firsts) != 4:
             errs.append(f"{jname}: порядок шагов должен быть {want}, а он {seq}")
     deploy = (ROOT / "deploy.py").read_text(encoding="utf-8")
-    if "products-admin.js" not in re.search(r"FORBIDDEN\s*=\s*\[(.*?)\]", deploy, re.S).group(1):
+    forbidden = re.search(r"FORBIDDEN\s*=\s*\[(.*?)\]", deploy, re.S).group(1)
+    if "products-admin.js" not in forbidden:
         errs.append("deploy.py: products-admin.js не в FORBIDDEN")
+    if '"admin"' not in forbidden:
+        errs.append("deploy.py: папка site/admin/ (закрытые части) не в FORBIDDEN")
+    if re.search(r"PUBLIC_DIRS\s*=\s*\[[^\]]*admin", deploy):
+        errs.append("deploy.py: site/admin/ в публикуемых папках!")
     if re.search(r"PUBLIC_FILES\s*=\s*\[[^\]]*products-admin", deploy):
         errs.append("deploy.py: products-admin.js в публикуемых файлах!")
     if "noindex" not in deploy:

@@ -1,7 +1,7 @@
 """Память каталога между запусками в облаке (GitHub Actions): зашифрованный архив в ветке `data`.
 
     python datastore.py init-key        # один раз: создать ключ шифрования (~/.yurt/data_key.txt)
-    python datastore.py pull            # data/ ← ветка data (+ site/products.json из gh-pages)
+    python datastore.py pull            # data/ ← ветка data (+ прошлые карточки site/data/ из gh-pages)
     python datastore.py push            # ветка data ← data/ (только если данные изменились)
     python datastore.py push --dry-run  # собрать коммит, но не отправлять
     python datastore.py status          # что лежит в ветке data
@@ -81,13 +81,17 @@ def bundle_files(root: Path = ROOT) -> list[Path]:
     admin = root / "site" / "products-admin.js"     # закупочные данные распроданных карточек (?admin=1)
     if admin.is_file():
         out.append(admin)
+    adir = root / "site" / "admin"                  # то же, когда каталог большой: по частям (catalog_files.py)
+    if adir.is_dir():
+        out += sorted(p for p in adir.glob("*.js") if p.is_file())
     return out
 
 
 def allowed_member(name: str) -> bool:
     if name.startswith("/") or ".." in Path(name).parts or "\\" in name:
         return False
-    return name.startswith("data/") or name == "site/products-admin.js"
+    return (name.startswith("data/") or name == "site/products-admin.js"
+            or (name.startswith("site/admin/") and name.count("/") == 2 and name.endswith(".js")))
 
 
 def content_hash(files: list[Path], root: Path = ROOT) -> str:
@@ -282,10 +286,15 @@ def cmd_pull(args) -> int:
 
 
 def _site_from_dir(pages: Path) -> None:
-    """Опубликованный сайт (рабочая копия gh-pages) -> site/: прошлые карточки и уже выложенные фото."""
+    """Опубликованный сайт (рабочая копия gh-pages) -> site/: прошлые карточки и уже выложенные фото.
+    Каталог частями — data/ (манифест + части), старый формат — products.json."""
     src = pages / "products.json"
     if src.is_file():
         shutil.copy2(src, SITE / "products.json")
+    if (pages / "data" / "manifest.json").is_file():
+        if (SITE / "data").exists():
+            shutil.rmtree(SITE / "data")
+        shutil.copytree(pages / "data", SITE / "data")
     pdir = pages / "img" / "p"
     if pdir.is_dir():
         dst = SITE / "img" / "p"
@@ -295,15 +304,27 @@ def _site_from_dir(pages: Path) -> None:
             if f.is_file() and not (dst / f.name).exists():
                 shutil.copy2(f, dst / f.name)
                 n += 1
-        print(f"Из опубликованного сайта: products.json, фото img/p (+{n})")
+        print(f"Из опубликованного сайта: каталог (data/ или products.json), фото img/p (+{n})")
 
 
 def _site_from_branch(remote: str) -> None:
-    """Только products.json из gh-pages: run.py берёт из него карточки для «Нет в наличии»."""
+    """Прошлые карточки из gh-pages (data/ частями или products.json): run.py берёт из них «Нет в наличии»."""
     sha = fetch_branch(remote, "gh-pages")
     if not sha:
         return
     entries = tree_entries(sha)
+    if "data" in entries:
+        files = {}
+        for line in git_out("ls-tree", "-r", sha, "--", "data").splitlines():
+            meta, name = line.split("\t", 1)
+            files[name] = meta.split()[2]
+        if "data/manifest.json" in files:
+            if (SITE / "data").exists():
+                shutil.rmtree(SITE / "data")
+            for name, blob in files.items():
+                (SITE / name).parent.mkdir(parents=True, exist_ok=True)
+                (SITE / name).write_bytes(read_blob(blob))
+            print(f"site/data/ взят из опубликованного сайта (gh-pages): {len(files)} файлов")
     if "products.json" in entries:
         SITE.mkdir(exist_ok=True)
         (SITE / "products.json").write_bytes(read_blob(entries["products.json"]))
@@ -451,8 +472,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("init-key", help="создать ключ шифрования")
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("pull", help="взять данные из ветки data")
-    p.add_argument("--site-from", help="папка с рабочей копией gh-pages: взять products.json и img/p")
-    p.add_argument("--site-from-branch", action="store_true", help="взять products.json из ветки gh-pages")
+    p.add_argument("--site-from", help="папка с рабочей копией gh-pages: взять каталог (data/ или products.json) и img/p")
+    p.add_argument("--site-from-branch", action="store_true", help="взять каталог (data/ или products.json) из ветки gh-pages")
     p.add_argument("--no-backup", action="store_true")
     p = sub.add_parser("push", help="записать данные в ветку data")
     p.add_argument("--by", default="local", help="кто пишет: ci / local (для manifest.json)")

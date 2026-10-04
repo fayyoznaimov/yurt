@@ -34,6 +34,7 @@ on:
       - describe.py
       - pricing.py
       - run.py
+      - catalog_files.py
       - sync_state.py
 
 permissions:

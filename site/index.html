@@ -479,6 +479,14 @@ img { display: block; max-width: 100%; }
 
 .pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
 .count-m { display: none; margin: 0 6px 0 0; font-size: 13px; color: var(--muted); white-space: nowrap; }
+/* каталог догружается частями: тихая строка под фильтрами */
+.load-note { margin: 0 0 14px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.load-note::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--cobalt); animation: sk-pulse 1.4s ease-in-out infinite; }
+.load-note.off::before { animation: none; background: var(--muted); }
+/* окно товара: описание ещё грузится */
+.pv-ld i { display: block; height: 12px; margin: 10px 0 0; border-radius: 3px; background: var(--media); animation: sk-pulse 1.4s ease-in-out infinite; }
+.pv-ld i:nth-child(2) { width: 86%; }
+.pv-ld i:nth-child(3) { width: 58%; }
 @media (max-width: 899.98px) {
   .toolbar .count { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .filters-btn { flex: 1 1 0; justify-content: center; min-width: 0; }
@@ -1121,9 +1129,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 </style>
 <script>
 /* Самое раннее: режим заставки (до первой отрисовки, без мигания) и загрузка каталога в фоновом потоке.
-   Worker сам скачивает products.json (поток байтов → прогресс), разбирает JSON и отдаёт товары порциями —
-   главный поток не стоит ни на разборе 24 МБ, ни на одном большом structured clone.
-   file:// и старые браузеры — window.__YL.fail, страница грузит products.js как раньше. */
+   Каталог лежит частями (data/manifest.json + data/i/*.js, см. catalog_files.py): Worker берёт манифест,
+   затем «голову» (первые экраны витрины и новинки) и часть товара из прямой ссылки ?p=, потом остальные части
+   по 3 сразу. Каждая часть — поток байтов (прогресс), JSON.parse здесь же, числовые столбцы уходят на главный
+   поток типизированными массивами без копирования. Нет манифеста (старый сайт) — products.json целиком, как раньше.
+   file:// и старые браузеры — window.__YL.fail, страница грузит products.js (весь каталог или оглавление частей). */
 (function () {
   var d = document.documentElement, q = location.search, t0 = performance.now();
   function get(st, k) { try { return window[st].getItem(k); } catch (e) { return null; } }
@@ -1153,7 +1163,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       var n = performance.now();
       if (n - last > 50) L.gaps.push([Math.round(last), Math.round(n - last)]);
       last = n;
-      if (n - t0 < 8000) ch.port2.postMessage(0);
+      if (n - t0 < 30000) ch.port2.postMessage(0);
     };
     ch.port2.postMessage(0);
   }
@@ -1161,28 +1171,127 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       !window.Blob || !window.URL || !URL.createObjectURL || !window.TextDecoder || !window.ReadableStream) { L.fail = true; return; }
 
   function worker() {
-    var SLICE = 500;    // товаров в одном сообщении (~0,5 МБ): разбор на главном потоке ~5–10 мс
+    var SLICE = 500;    // старый формат: товаров в одном сообщении (~0,5 МБ)
     var normSrc = null, waiting = null;
+    var M = null, base = "", queue = [], active = 0, headDone = false, left = 0;
+    function hash32(s) {
+      var h = 2166136261;
+      for (var k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    }
+    function shardOf(id) {
+      var b = hash32(id) & ((M.buckets || 256) - 1);
+      for (var k = 1; k < M.shards.length; k++) { var r = M.shards[k].b; if (r && b >= r[0] && b <= r[1]) return k; }
+      return -1;
+    }
+    // ответ -> текст, по дороге — сколько байтов пришло (не чаще раза в 40 мс)
+    function readText(r, onBytes) {
+      if (!r.body || !r.body.getReader) return r.text();
+      var rd = r.body.getReader(), dec = new TextDecoder(), parts = [], n = 0, last = 0;
+      var pump = function () {
+        return rd.read().then(function (x) {
+          if (x.done) { parts.push(dec.decode()); onBytes(n, true); return parts.join(""); }
+          n += x.value.byteLength;
+          parts.push(dec.decode(x.value, { stream: true }));
+          var now = performance.now();
+          if (now - last > 40) { last = now; onBytes(n, false); }
+          return pump();
+        });
+      };
+      return pump();
+    }
+    // числовые столбцы -> типизированные массивы (передаются без копирования); размеры — плоско + смещения
+    function pack(sh) {
+      var tr = [], i, a, t;
+      ["b", "ty", "g", "o", "c", "ss", "ip", "is", "ni"].forEach(function (k) {
+        if (sh[k]) { var t = new Int32Array(sh[k]); sh[k] = t; tr.push(t.buffer); }
+      });
+      ["p", "d", "f"].forEach(function (k) {
+        var a = sh[k];
+        if (!a) return;
+        var t = new Float64Array(a.length);
+        for (var i = 0; i < a.length; i++) t[i] = a[i] == null ? NaN : a[i];
+        sh[k] = t; tr.push(t.buffer);
+      });
+      if (sh.td) { t = new Int32Array(sh.t); sh.t = t; tr.push(t.buffer); }
+      a = sh.s;
+      if (a) {
+        var off = new Uint32Array(a.length + 1), tot = 0;
+        for (i = 0; i < a.length; i++) { off[i] = tot; tot += a[i].length; }
+        off[a.length] = tot;
+        var val = new Uint16Array(tot), k = 0;
+        for (i = 0; i < a.length; i++) for (var j = 0; j < a[i].length; j++) val[k++] = a[i][j];
+        sh.s = null; sh.so = off; sh.sv = val; tr.push(off.buffer, val.buffer);
+      }
+      return tr;
+    }
+    function fetchShard(k, tries) {
+      active++;
+      var t0 = performance.now(), s = M.shards[k];
+      fetch(base + "data/" + s.file).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status + " " + s.file);
+        return readText(r, function (n, done) { postMessage({ t: "sp", k: k, n: n, done: done }); });
+      }).then(function (text) {
+        var t1 = performance.now();
+        if (text.lastIndexOf("__DS(", 0) === 0) text = text.slice(text.indexOf("\n") + 1, text.lastIndexOf("\n)"));
+        var sh = JSON.parse(text);
+        text = null;
+        var tr = pack(sh), t2 = performance.now();
+        postMessage({ t: "shard", k: k, sh: sh, dlMs: t1 - t0, parseMs: t2 - t1 }, tr);
+        active--; left--;
+        if (k === 0) headDone = true;
+        next();
+      }).catch(function (err) {
+        active--;
+        if (!tries) { setTimeout(function () { fetchShard(k, 1); }, 800); return; }
+        left--;
+        postMessage({ t: "serr", k: k, m: String(err && err.message || err) });
+        if (k === 0) headDone = true;
+        next();
+      });
+    }
+    // голова и часть из прямой ссылки — сразу; остальные — после головы, по 3 одновременно
+    function next() {
+      while (headDone && queue.length && active < 3) fetchShard(queue.shift());
+      if (!left) postMessage({ t: "send" });
+    }
+    function startShards(m) {
+      fetch(base + "data/manifest.json", { cache: "no-cache" }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (man) {
+        if (!man || man.layout !== 1 || !man.shards || !man.shards.length) throw new Error("манифест не того формата");
+        M = man;
+        postMessage({ t: "manifest", m: M });
+        var pk = m.prio ? shardOf(m.prio) : -1;
+        left = M.shards.length;
+        for (var k = 1; k < M.shards.length; k++) if (k !== pk) queue.push(k);
+        fetchShard(0);
+        if (pk > 0) fetchShard(pk);
+      }).catch(function (err) {
+        postMessage({ t: "nomanifest", m: String(err && err.message || err) });
+        legacy(base + "products.json");
+      });
+    }
     self.onmessage = function (e) {
+      var m = e.data || {};
       // код normalize присылает главный скрипт страницы (один источник правды): товары готовятся здесь, не в главном потоке
-      if (e.data && e.data.norm) { normSrc = e.data.norm; if (waiting) waiting(); return; }
+      if (m.norm) { normSrc = m.norm; if (waiting) waiting(); return; }
+      if (m.prio != null && m.base == null) {    // страница просит эту часть раньше остальных (открыли товар по ссылке)
+        var i = queue.indexOf(m.prio);
+        if (i > 0) { queue.splice(i, 1); queue.unshift(m.prio); }
+        return;
+      }
+      if (m.base != null) { base = m.base; startShards(m); return; }
+      if (m.url) legacy(m.url);
+    };
+    // старый формат: products.json целиком
+    function legacy(url) {
       var t0 = performance.now(), n = 0;
-      fetch(e.data.url, { cache: "no-cache" }).then(function (r) {
+      fetch(url, { cache: "no-cache" }).then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         postMessage({ t: "head", len: +r.headers.get("content-length") || 0, enc: (r.headers.get("content-encoding") || "").toLowerCase() });
-        if (!r.body || !r.body.getReader) return r.text();
-        var rd = r.body.getReader(), dec = new TextDecoder(), parts = [], lastPost = 0;
-        var pump = function () {
-          return rd.read().then(function (x) {
-            if (x.done) { parts.push(dec.decode()); return parts.join(""); }
-            n += x.value.byteLength;
-            parts.push(dec.decode(x.value, { stream: true }));
-            var now = performance.now();
-            if (now - lastPost > 40) { lastPost = now; postMessage({ t: "p", n: n }); }
-            return pump();
-          });
-        };
-        return pump();
+        return readText(r, function (x, done) { n = x; if (!done) postMessage({ t: "p", n: x }); });
       }).then(function (text) {
         var tDl = performance.now();
         postMessage({ t: "p", n: n || text.length, done: true, ms: tDl - t0 });
@@ -1210,7 +1319,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         // код normalize обычно уже пришёл; если нет — ждём его не дольше 2 с, потом отдаём как есть
         if (normSrc) send(); else { waiting = send; setTimeout(function () { if (waiting) waiting(); }, 2000); }
       }).catch(function (err) { postMessage({ t: "err", m: String(err && err.message || err) }); });
-    };
+    }
   }
   try {
     var src = URL.createObjectURL(new Blob(["(" + worker + ")()"], { type: "text/javascript" }));
@@ -1222,7 +1331,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       L.msg.push([m.t, Math.round((performance.now() - s) * 10) / 10]);
     };
     w.onerror = function (e) { if (e && e.preventDefault) e.preventDefault(); L.emit({ t: "err", m: (e && e.message) || "worker" }); };
-    w.postMessage({ url: new URL("products.json", location.href).href });
+    // товар из прямой ссылки (#/?p=КОД) — его часть каталога грузится вместе с головой
+    var pm = /[?&]p=([A-Za-z0-9]{4,16})(&|$)/.exec(location.hash);
+    L.prio = pm ? pm[1].toUpperCase() : "";
+    w.postMessage({ base: new URL(".", location.href).href, prio: L.prio });
     L.worker = w; L.src = src;
   } catch (e) { L.fail = true; }
 })();
@@ -1458,6 +1570,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
           </label>
         </div>
         <div class="pills" id="pills" aria-label="Выбранные фильтры"></div>
+        <p class="load-note" id="loadNote" hidden></p>
         <h2 class="sr">Товары</h2>
         <div class="grid" id="grid" tabindex="-1" aria-busy="true">
           <div class="card sk" aria-hidden="true"><div class="media"></div><i></i><i></i><i></i></div>
@@ -1640,6 +1753,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   var soldCount = 0;       // товары «Нет в наличии» (in_stock: false) — скрыты, пока не включён переключатель
   var brandsOpen = false;
   var READY = false, curView = null, homeDone = false;
+  // каталог частями (data/manifest.json): MAN — манифест, FACETS — бренды/типы/размеры всего каталога (из манифеста),
+  // ALL — пришли все части, COMPLETE — и ни одна не потерялась (только тогда «нет в каталоге» — правда)
+  var MAN = null, FACETS = null, ALL = false, COMPLETE = false, START_DONE = false;
+  var EMPTY = [];          // общий пустой список (размеры, пункты описания) — не изменяется
   var state = freshState();
 
   function freshState() {
@@ -1699,13 +1816,17 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     for (var k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619); }
     return h >>> 0;
   }
+  // ключ сортировки размера; размеров в каталоге — сотни разных, поэтому ключи запоминаются
+  var SIZE_KEYS = new Map();
   function sizeKey(s) {
+    var r = SIZE_KEYS.get(s);
+    if (r) return r;
     var u = s.toUpperCase().replace(/\s+/g, "");
     var li = LETTER_SIZES.indexOf(u);
-    if (li >= 0) return [0, li, u];
     var n = parseFloat(u.replace(",", "."));
-    if (/^\d/.test(u) && isFinite(n)) return [1, n, u];
-    return [2, 0, u];
+    r = li >= 0 ? [0, li, u] : /^\d/.test(u) && isFinite(n) ? [1, n, u] : [2, 0, u];
+    SIZE_KEYS.set(s, r);
+    return r;
   }
   function cmpSize(a, b) {
     var x = sizeKey(a), y = sizeKey(b);
@@ -2020,13 +2141,14 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var root = $("pl"), bar = $("plBar"), pct = $("plPct"), line = $("plLine");
     var lineBar = line ? line.firstElementChild : null;
     var mode = L.mode, shown = 0, raf = 0, timer = 0, finished = false, gone = mode !== "full", revealed = false;
+    var overall = -1, keepLine = false;     // каталог частями: линия сверху — доля всех частей (overall), не только первой
     var est = +lsGet("shop.bytes") || 0, parseEst = +lsGet("shop.parseMs") || 400;
     var parseStart = 0, creepTau = 0, revealFns = [];
     function paint() {
       raf = 0;
       var s = "scaleX(" + shown.toFixed(4) + ")";
       if (bar) bar.style.transform = s;
-      if (lineBar) lineBar.style.transform = s;
+      if (lineBar) lineBar.style.transform = overall >= 0 ? "scaleX(" + overall.toFixed(4) + ")" : s;
       if (pct) pct.textContent = Math.round(shown * 100) + "%";
     }
     function to(f) {
@@ -2094,7 +2216,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       mode: mode,
       busy: function () { return !gone; },              // заставка ещё закрывает страницу
       onReveal: function (fn) { if (revealed) fn(); else revealFns.push(fn); },
-      head: function (len, enc) {
+      head: function (len, enc, exact) {
+        if (exact) { est = len; return; }                              // первая часть каталога: размер из манифеста
         if (!est) est = len && !enc ? len : len ? len * 12 : 24e6;   // gzip/br: распакованный ~ в 12–13 раз больше
         if (len && !enc && len > est) est = len;
       },
@@ -2112,7 +2235,21 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       chunk: function (k, n) { to(0.9 + 0.08 * (n ? k / n : 1)); },
       creep: function () { creepTau = Math.max(400, (+lsGet("shop.loadMs") || 1500) / 2); ticking(true); },   // products.js: байтов не видно
       step: function (f) { to(f); },
-      finish: function (failed) {
+      // часть каталога ещё грузится (keep) — линия сверху остаётся и показывает общий прогресс до bgDone()
+      overall: function (f) {
+        if (f <= overall) return;
+        overall = f;
+        if (!raf) raf = requestAnimationFrame(paint);
+      },
+      bgDone: function () {
+        if (!keepLine) return;
+        keepLine = false;
+        overall = 1;
+        paint();
+        status("Каталог загружен");
+        exitLine();
+      },
+      finish: function (failed, keep) {
         if (finished) return;
         finished = true;
         ticking(false);
@@ -2120,8 +2257,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         paint();
         var ms = Math.round(performance.now() - L.t0);
         if (!failed) lsSet("shop.loadMs", ms);
-        status(failed ? "Каталог не загрузился" : "Каталог загружен");
-        exitLine();
+        keepLine = !!keep && !failed && !!line;
+        status(failed ? "Каталог не загрузился" : keepLine ? "Загружаем остальной каталог…" : "Каталог загружен");
+        if (keepLine) line.classList.add("on"); else exitLine();
         if (mode === "full" && !gone) {
           if (ms < 300) { exitFull(true); return; }                    // кэш и быстрый разбор — заставку не показываем
           var wait = Math.max(0, L.t0 + 1150 - performance.now());     // дать знаку дорисоваться, но не дольше
@@ -2162,7 +2300,34 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   })();
 
   /* ---------- загрузка данных ---------- */
+  // Каталог частями (catalog_files.py): data/manifest.json — оглавление, словари и счётчики по всему каталогу;
+  // data/i/*.js — индекс (часть 0 — «голова»: первые экраны витрины и новинки), data/d/*.js — подробности по
+  // корзинам id (по открытию карточки). Витрина работает с первой части, остальные дописываются по мере прихода.
   function valid(d) { return d && typeof d === "object" && Array.isArray(d.products); }
+
+  var HTTP = /^https?:$/.test(location.protocol) && !!window.fetch;
+  // файлы частей — JSON в обёртке «__DS("ключ",\n{...}\n);»: по http текст разбирается как JSON,
+  // по file:// файл подключается <script> и сам вызывает window.__DS
+  var DS_WAIT = {};
+  window.__DS = function (key, obj) { var w = DS_WAIT[key]; if (w) { delete DS_WAIT[key]; w(obj); } };
+  function loadDS(src, key) {
+    return new Promise(function (resolve, reject) {
+      DS_WAIT[key] = resolve;
+      loadScript(src).then(function () {
+        if (DS_WAIT[key] === resolve) { delete DS_WAIT[key]; reject(new Error("в " + src + " нет данных")); }
+      }, function (e) { if (DS_WAIT[key] === resolve) delete DS_WAIT[key]; reject(e); });
+    });
+  }
+  function unwrapText(t) { return t.lastIndexOf("__DS(", 0) === 0 ? t.slice(t.indexOf("\n") + 1, t.lastIndexOf("\n)")) : t; }
+  // один файл данных; bust — без кэша (закрытые файлы site/admin/ меняются при каждой сборке и имён с хэшем не имеют)
+  function getData(path, key, bust) {
+    var url = path + (bust ? "?t=" + Date.now() : "");
+    if (!HTTP) return loadDS(url, key);
+    return fetch(url, bust ? { cache: "no-store" } : undefined).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status + " " + path);
+      return r.text();
+    }).then(function (t) { return JSON.parse(unwrapText(t)); });
+  }
 
   function loadData() {
     if (valid(window.DEALS)) return Promise.resolve({ data: window.DEALS, demo: false });
@@ -2176,18 +2341,155 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return viaScript();
   }
 
-  // старый путь: file:// и браузеры без Worker/потоков — products.js (разбор на главном потоке), затем products.json, затем пример
+  // старый путь: file:// и браузеры без Worker/потоков — products.js: весь каталог (≤ 30 тыс.) или оглавление частей
+  // (window.DEALS_MANIFEST) — тогда части подключаются <script> по одной; затем products.json, затем пример
   function viaScript() {
     PL.creep();
     var viaJs = loadScript("products.js").then(function () {
-      if (!valid(window.DEALS)) throw new Error("products.js без window.DEALS");
-      return { data: window.DEALS, demo: false };
+      if (valid(window.DEALS)) return { data: window.DEALS, demo: false };
+      if (window.DEALS_MANIFEST && window.DEALS_MANIFEST.shards) return viaScriptShards(window.DEALS_MANIFEST);
+      throw new Error("products.js без window.DEALS");
     });
     return viaJs.catch(function () { return loadJsonOrSample(); });
   }
 
-  // товары приходят из Worker порциями; каждая порция — отдельная задача: разбор сообщения + normalize
+  /* ---- поток частей каталога: общий для Worker и для <script> ---- */
+  var DECODE_SLICE = 2500;     // строк индекса за одну задачу главного потока (~5–10 мс)
+  var FEED = { total: 0, nDone: 0, failed: 0, done: {}, queue: [], busy: false, pending: [], bytes: {}, bytesTotal: 0,
+    resolve0: null, reject0: null, ask: null, prioK: -1, prefetchId: "" };
   var loadStats = { via: "", chunks: 0, chunkMax: 0 };
+
+  function setManifest(m) {
+    MAN = m;
+    FACETS = m.facets || null;
+    FEED.total = m.shards.length;
+    FEED.bytesTotal = m.shards.reduce(function (a, s) { return a + (s.bytes || 0); }, 0) || 1;
+    loadStats.shards = m.shards.length;
+    loadStats.indexBytes = FEED.bytesTotal;
+    // товар из прямой ссылки: его подробности — сразу, параллельно с частями индекса
+    var pm = /[?&]p=([A-Za-z0-9]{4,16})(&|$)/.exec(location.hash);
+    if (pm) FEED.prefetchId = pm[1].toUpperCase();
+    if (FEED.prefetchId) prefetchDetailId(FEED.prefetchId);
+  }
+  function shardIndexFor(id) {
+    if (!MAN) return -1;
+    var b = hash32(id) & ((MAN.buckets || 256) - 1);
+    for (var k = 1; k < MAN.shards.length; k++) { var r = MAN.shards[k].b; if (r && b >= r[0] && b <= r[1]) return k; }
+    return -1;
+  }
+  // товар из ссылки, которого ещё нет: его часть — вне очереди (и в Worker, и в очереди разбора)
+  function askShard(id) {
+    var k = shardIndexFor(id);
+    if (k < 0 || FEED.done[k]) return;
+    FEED.prioK = k;
+    if (FEED.ask) FEED.ask(k);
+    for (var i = 1; i < FEED.queue.length; i++) if (FEED.queue[i].k === k) { FEED.queue.unshift(FEED.queue.splice(i, 1)[0]); break; }
+  }
+  function bytesDone() { var n = 0; for (var k in FEED.bytes) n += FEED.bytes[k]; return n; }
+  function bgProgress() { PL.overall(Math.min(1, bytesDone() / FEED.bytesTotal)); }
+
+  function feedShard(k, sh) {
+    var job = { k: k, sh: sh };
+    if (k === 0 || k === FEED.prioK) FEED.queue.unshift(job); else FEED.queue.push(job);
+    if (k === 0) FEED.queue.sort(function (a, b) { return (a.k === 0 ? 0 : 1) - (b.k === 0 ? 0 : 1); });
+    pumpFeed();
+  }
+  // часть (столбцы) -> товары: порциями, каждая — своя задача; между порциями браузер рисует и отвечает
+  function pumpFeed() {
+    if (FEED.busy) return;
+    var job = FEED.queue.shift();
+    if (!job) return;
+    FEED.busy = true;
+    var out = [], i = 0, n = job.sh.n || 0;
+    (function step() {
+      // порциями по 250 строк, пока задача не заняла ~10 мс (на медленном телефоне — меньше строк за задачу)
+      var t = performance.now(), stop = Math.min(n, i + DECODE_SLICE);
+      try {
+        while (i < stop) {
+          var e2 = Math.min(stop, i + 250);
+          decodeRows(job.sh, i, e2, out);
+          i = e2;
+          if (performance.now() - t > 10) break;
+        }
+      } catch (e) { if (window.console) console.error(e); i = n; }
+      var end = i;
+      var dt = performance.now() - t;
+      loadStats.chunks++;
+      loadStats.chunkMax = Math.max(loadStats.chunkMax, Math.round(dt * 10) / 10);
+      (loadStats.slices = loadStats.slices || []).push([job.k, end, Math.round(dt * 10) / 10]);
+      if (job.k === 0) PL.chunk(i, n);
+      if (i < n) { nextTask().then(step); return; }
+      job.sh = null;
+      FEED.busy = false;
+      shardDecoded(job.k, out);
+      nextTask().then(pumpFeed);
+    })();
+  }
+  // строки индекса -> те же объекты, что из products.json, и через тот же normalize
+  var IDX_SETS = new Map();
+  function decodeRows(sh, from, to, out) {
+    var D = MAN.dict, unit = MAN.price_unit || 1, scale = MAN.disc_scale || 10, ep = MAN.seen_epoch || 0, su = MAN.seen_unit || 1;
+    var pre = sh.ipd || D.imgpre || [null], suf = D.imgsuf || [null], SZ = D.size || [null], td = sh.td, i, j;
+    if (!sh._out) {
+      sh._out = new Set(sh.out || []);
+      sh._sov = new Map();
+      (sh.soi || []).forEach(function (r, k) { sh._sov.set(r, sh.sov[k]); });
+    }
+    for (i = from; i < to; i++) {
+      var sizes, d = sh.d[i], f = sh.f[i], ni = sh.ni[i], so = sh._sov.get(i), key = "", a, b;
+      // набор размеров -> общий отсортированный список (по номерам словаря, без промежуточных массивов строк)
+      if (sh.so) { a = sh.so[i]; b = sh.so[i + 1]; for (j = a; j < b; j++) key += sh.sv[j] + ","; }
+      else { var si = sh.s[i]; for (j = 0; j < si.length; j++) key += si[j] + ","; }
+      sizes = IDX_SETS.get(key);
+      if (!sizes) {
+        var raw = [];
+        if (sh.so) for (j = a; j < b; j++) raw.push(SZ[sh.sv[j]]);
+        else for (j = 0; j < si.length; j++) raw.push(SZ[si[j]]);
+        sizes = sizeSet(raw);
+        IDX_SETS.set(key, sizes);
+      }
+      // все поля сразу (и те, что допишет normalize): объект создаётся одним куском, без перестроек
+      var p = {
+        id: sh.id[i], brand: D.brand[sh.b[i]], title: td ? td[sh.t[i]] : sh.t[i], type: D.type[sh.ty[i]],
+        gender: D.gender[sh.g[i]], origin: D.origin[sh.o[i]], price_uzs: sh.p[i] * unit,
+        discount_pct: d == null || d !== d ? null : d / scale,
+        sizes: sizes, sizes_out: so ? so.map(function (x) { return SZ[x]; }) : EMPTY,
+        size_system: D.sys[sh.ss[i]], color: D.color[sh.c[i]], in_stock: !sh._out.has(i),
+        first_seen: f == null || f !== f ? null : (ep + f * su) * 1000,
+        images: ni ? [(pre[sh.ip[i]] || "") + sh.im[i] + (suf[sh.is[i]] || "")] : EMPTY, n_img: ni,
+        composition: null, details: null, description: null, fetched_at: null,
+        _code: "", _brand: "", _title: "", _type: "", _gender: null, _sizes: EMPTY, _sizesOut: EMPTY, _out: false, _price: 0,
+        _disc: 0, _origin: null, _imgs: EMPTY, _compo: "", _details: EMPTY, _desc: "", _full: false, _ni: 0, _sizeSys: "",
+        _color: "", _seen: 0, _rnd: 0, _search: null, _i: 0, _brandRank: 0, _adm: null, _bad: null
+      };
+      p = normalize(p, i);
+      if (!p) continue;
+      p.sizes = p._sizes; p.sizes_out = p._sizesOut; p.images = p._imgs;   // сырые списки больше не нужны — общие
+      out.push(p);
+    }
+  }
+  function shardDecoded(k, list) {
+    FEED.done[k] = true;
+    FEED.nDone++;
+    if (k === 0) { var r = FEED.resolve0; FEED.resolve0 = null; if (r) r(list); }
+    else if (START_DONE) addProducts(list);
+    else FEED.pending.push(list);
+    checkAll();
+  }
+  function shardFailed(k, msg) {
+    if (window.console) console.warn("Часть каталога " + k + " не загрузилась:", msg);
+    if (k === 0) { var rj = FEED.reject0; FEED.reject0 = null; if (rj) rj(new Error(msg)); return; }
+    FEED.failed++;
+    FEED.done[k] = true;
+    FEED.nDone++;
+    checkAll();
+  }
+  function checkAll() {
+    if (ALL || !MAN || !START_DONE || FEED.nDone < FEED.total || FEED.pending.length || FEED.busy || FEED.queue.length) return;
+    allLoaded();
+  }
+
+  // товары приходят частями из Worker (столбцы — типизированными массивами); старый products.json — порциями объектов
   function viaWorker(L) {
     return new Promise(function (resolve, reject) {
       var meta = null, list = [], ended = false;
@@ -2196,27 +2498,46 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         L.on = function () {};
         try { L.worker.terminate(); URL.revokeObjectURL(L.src); } catch (e) { /* уже закрыт */ }
       };
+      FEED.resolve0 = function (head) {
+        resolve({ data: { summary: MAN.summary || {}, site: MAN.site || {}, products: head }, demo: false, normalized: true, sharded: true });
+      };
+      FEED.reject0 = function (e) { stop(); reject(e); };
+      FEED.ask = function (k) { if (!ended) try { L.worker.postMessage({ prio: k }); } catch (e) { /* закрыт */ } };
       var handle = function (m) {
         if (ended || !m) return;
-        if (m.t === "head") PL.head(m.len, m.enc);
-        else if (m.t === "p") PL.bytes(m.n, m.done);
-        else if (m.t === "meta") {
+        var t = m.t;
+        if (t === "manifest") { setManifest(m.m); PL.head(MAN.shards[0].bytes, "", true); loadStats.via = "shards"; }
+        else if (t === "sp") { FEED.bytes[m.k] = m.n; if (m.k === 0) PL.bytes(m.n, m.done); bgProgress(); }
+        else if (t === "shard") {
+          FEED.bytes[m.k] = MAN.shards[m.k].bytes;
+          loadStats.parseMax = Math.max(loadStats.parseMax || 0, Math.round(m.parseMs));
+          if (m.k === 0) { PL.parsed(m.parseMs, 0); loadStats.headDlMs = Math.round(m.dlMs); loadStats.headParseMs = Math.round(m.parseMs); }
+          bgProgress();
+          feedShard(m.k, m.sh);
+        }
+        else if (t === "serr") shardFailed(m.k, m.m);
+        else if (t === "send") stop();                     // всё скачано; разбор идёт на главном потоке
+        else if (t === "nomanifest") { if (window.console) console.info("Нет data/manifest.json (" + m.m + ") — беру products.json"); }
+        // старый формат: products.json целиком
+        else if (t === "head") PL.head(m.len, m.enc);
+        else if (t === "p") PL.bytes(m.n, m.done);
+        else if (t === "meta") {
           meta = m;
           PL.parsed(m.parseMs, m.bytes);
           Object.assign(loadStats, { via: "worker", bytes: m.bytes, dlMs: Math.round(m.dlMs), parseMs: Math.round(m.parseMs) });
-        } else if (m.t === "chunk") {
-          var t = performance.now(), items = m.items;
+        } else if (t === "chunk") {
+          var t0 = performance.now(), items = m.items;
           if (m.ready) for (var j = 0; j < items.length; j++) list.push(items[j]);          // уже подготовлены в Worker
           else for (var k = 0; k < items.length; k++) { var p = normalize(items[k], m.at + k); if (p) list.push(p); }
-          var dt = performance.now() - t;
+          var dt = performance.now() - t0;
           loadStats.chunks++;
           loadStats.chunkMax = Math.max(loadStats.chunkMax, Math.round(dt * 10) / 10);
           PL.chunk(m.at + (m.n || items.length), meta ? meta.n : 0);
-        } else if (m.t === "end") {
+        } else if (t === "end") {
           stop();
           if (!meta) { reject(new Error("нет данных")); return; }
           resolve({ data: { summary: meta.summary, site: meta.site, products: list }, demo: false, normalized: true });
-        } else if (m.t === "err") { stop(); reject(new Error(m.m)); }
+        } else if (t === "err") { stop(); reject(new Error(m.m)); }
       };
       try { L.worker.postMessage({ norm: normalizeSource() }); } catch (e) { /* подготовим здесь */ }
       // то, что пришло до запуска этого скрипта, — по одному сообщению за задачу
@@ -2225,6 +2546,32 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         if (!m) { L.on = handle; return; }
         handle(m);
         nextTask().then(drain);
+      })();
+    });
+  }
+
+  // file:// и старые браузеры при большом каталоге: части по одной через <script> (разбор — на главном потоке)
+  function viaScriptShards(M) {
+    setManifest(M);
+    loadStats.via = "script-shards";
+    return new Promise(function (resolve, reject) {
+      FEED.resolve0 = function (head) {
+        resolve({ data: { summary: M.summary || {}, site: M.site || {}, products: head }, demo: false, normalized: true, sharded: true });
+      };
+      FEED.reject0 = reject;
+      var order = M.shards.map(function (_, k) { return k; });
+      var pm = /[?&]p=([A-Za-z0-9]{4,16})(&|$)/.exec(location.hash), pk = pm ? shardIndexFor(pm[1].toUpperCase()) : -1;
+      if (pk > 0) { order.splice(order.indexOf(pk), 1); order.splice(1, 0, pk); }
+      FEED.ask = function (k) { var i = order.indexOf(k); if (i > 0) { order.splice(i, 1); order.unshift(k); } };
+      (function next() {
+        var k = order.shift();
+        if (k == null) return;
+        loadDS("data/" + M.shards[k].file, "i/" + k).then(function (sh) {
+          FEED.bytes[k] = M.shards[k].bytes;
+          bgProgress();
+          feedShard(k, sh);
+          nextTask().then(next);
+        }, function (e) { shardFailed(k, e && e.message); if (k !== 0) next(); });
       })();
     });
   }
@@ -2238,6 +2585,190 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         if (!valid(window.DEALS)) throw new Error("sample-products.js без window.DEALS");
         return { data: window.DEALS, demo: true };
       });
+    });
+  }
+
+  // новая часть каталога после запуска витрины: дописать товары, влить в сортировки, обновить видимое
+  function addProducts(list) {
+    var added = [];
+    for (var j = 0; j < list.length; j++) {
+      var p = list[j];
+      if (byId.has(p._code)) continue;
+      p._i = products.length;
+      products.push(p);
+      added.push(p);
+      byId.set(p._code, p);
+      var up = p._code.toUpperCase();
+      if (!byId.has(up)) byId.set(up, p);
+      p._brandRank = brandRank.has(p._brand) ? brandRank.get(p._brand) : brandRank.size;
+      if (ADMIN && ADM.mode) admApply(p);
+    }
+    if (!added.length) return;
+    _avail = null; _typeCounts = null; _brandCounts = null; REC = null;
+    mergeSorted(added);
+    revalidateCart();
+    if (waitId) {
+      var w = findProduct(waitId);
+      if (w) { waitId = ""; var st = history.state; openProduct(w, true); pv.depth = st && st.pv === w._code && st.d ? st.d : 0; }
+    }
+    scheduleRefresh();
+  }
+
+  // обновить то, что на экране, — отдельной задачей после части (не таймером: таймеры ждут, пока идёт разбор,
+  // а в фоновой вкладке ещё и до секунды); несколько частей подряд — одно обновление
+  var refreshQueued = false;
+  function scheduleRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    nextTask().then(function () { refreshQueued = false; refreshViews(); });
+  }
+  var cartSig = "";
+  function refreshViews() {
+    if (!READY) return;
+    if (curView === "catalog") refreshCatalog(); else updateLoadNote();
+    if (curView === "cart") {
+      var sig = cart.map(function (l) { return lineState(l).st + l.price; }).join();
+      if (sig !== cartSig) renderCartPage();
+    }
+    if (curView === "admin/lookup" && lookupText) { var out = $("lkOut"); if (out) out.innerHTML = lookupHtml(lookupText); }
+  }
+  // выдача каталога с новыми товарами: если уже показанные карточки остались первыми — только дописываем
+  // счётчики (и добираем карточки до полной порции); иначе перерисовываем столько же карточек на тех же местах
+  function refreshCatalog() {
+    var next = runFilters(), same = shown <= next.length;
+    for (var i = 0; same && i < shown; i++) if (next[i] !== filtered[i]) same = false;
+    filtered = next;
+    if (same) { if (shown < BATCH) renderMore(true); else moreBar(); }
+    else {
+      var keep = Math.max(shown, BATCH);
+      els.grid.innerHTML = "";
+      shown = 0;
+      while (shown < keep && shown < filtered.length) renderMore(true);
+      if (!shown) moreBar();
+    }
+    updateFacets();
+    updateSummary();
+  }
+  function updateLoadNote() {
+    var el = $("loadNote");
+    if (!el) return;
+    if (!MAN || ALL) {
+      el.hidden = COMPLETE || !MAN;
+      if (!el.hidden) el.textContent = "Часть каталога не загрузилась — обновите страницу, чтобы увидеть все товары.";
+      el.classList.toggle("off", true);
+      return;
+    }
+    var rest = Math.max(0, (MAN.count || 0) - products.length);
+    el.hidden = !rest;
+    el.classList.remove("off");
+    el.textContent = "Загружаем ещё " + items(rest) + "…";
+  }
+
+  // все части пришли: окончательные варианты фильтров, корзина, ленты главной, «нет в каталоге» — теперь правда
+  function allLoaded() {
+    ALL = true;
+    COMPLETE = !FEED.failed;
+    var L = window.__YL;
+    loadStats.allMs = Math.round(performance.now() - (L ? L.t0 : 0));
+    _avail = null; _typeCounts = null; _brandCounts = null;
+    var before = JSON.stringify(options);
+    buildOptions();
+    if (JSON.stringify(options) !== before) {
+      sortedCache = {};
+      buildFilters();
+      syncControls();
+      if (curView === "catalog") layoutBrands();
+    }
+    revalidateCart();
+    if (homePending && homeDone) homeRails();
+    if (waitId) {
+      var w = findProduct(waitId), id = waitId;
+      waitId = "";
+      if (w) openProduct(w, true);
+      else if (parseRoute().id) { closeProduct(); writeHash(); toast("Товара {code} уже нет в каталоге", id.slice(0, 20)); }
+    }
+    refreshViews();
+    if (curView === "checkout" && !co.result && !co.busy && !$("coForm")) renderCheckout();
+    updateLoadNote();
+    renderFooter();
+    renderDrawer();
+    PL.bgDone();
+    if (ADMIN) { renderHeader(isDemo); adminAll(); }
+    perfReport();
+  }
+
+  /* ---- подробности карточки: data/d/<корзина>.<хэш>.js ---- */
+  var DETAIL = new Map(), DETAIL_MAX = 80, manifestCheck = null;
+  function detailFile(id) { return MAN.detail.files[hash32(id) & (MAN.detail.shards - 1)]; }
+  function loadDetailFile(file) {
+    var hit = DETAIL.get(file);
+    if (hit) return hit;
+    var pr = getData("data/" + file, file.replace(/\.[0-9a-f]{8}\.js$/, ""));
+    DETAIL.set(file, pr);
+    pr.catch(function () { DETAIL.delete(file); });
+    if (DETAIL.size > DETAIL_MAX) DETAIL.delete(DETAIL.keys().next().value);
+    return pr;
+  }
+  // файла нет (сайт обновился, пока страница открыта) — перечитать оглавление и взять новые имена подробностей
+  function refreshManifest() {
+    if (!HTTP) return Promise.resolve(false);
+    if (manifestCheck) return manifestCheck;
+    manifestCheck = fetch("data/manifest.json", { cache: "no-cache" }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) {
+        if (!m || !m.detail || m.version === MAN.version) return false;
+        MAN.detail = m.detail;
+        MAN.version = m.version;
+        return true;
+      }, function () { return false; });
+    manifestCheck.then(function () { setTimeout(function () { manifestCheck = null; }, 10000); });
+    return manifestCheck;
+  }
+  var detailWait = new Map();
+  function ensureDetail(p) {
+    if (p._full || !MAN || !MAN.detail) return Promise.resolve(p);
+    var w = detailWait.get(p._code);
+    if (w) return w;
+    var go = function (retried) {
+      return loadDetailFile(detailFile(p._code)).then(function (obj) { applyDetail(p, obj); return p; }, function (err) {
+        if (retried) throw err;
+        return refreshManifest().then(function (changed) { if (!changed) throw err; return go(true); });
+      });
+    };
+    w = go(false);
+    detailWait.set(p._code, w);
+    w.then(function () { detailWait.delete(p._code); }, function () { detailWait.delete(p._code); });
+    return w;
+  }
+  function applyDetail(p, obj) {
+    if (p._full) return;
+    var rec = obj && obj.items ? obj.items[p._code] : null;
+    if (rec) {
+      var flat = rec[3] || [], pre = obj.pre || [""], suf = obj.suf || [""], imgs = [];
+      for (var j = 0; j + 2 < flat.length; j += 3) imgs.push((pre[flat[j]] || "") + flat[j + 1] + (suf[flat[j + 2]] || ""));
+      p.description = rec[0]; p.details = rec[1]; p.composition = rec[2]; p.fetched_at = rec[4];
+      if (imgs.length) p.images = imgs;
+      normDetail(p);
+      p._ni = p._imgs.length;
+    }
+    p._full = true;
+  }
+  function prefetchDetailId(id) {
+    if (!MAN) { FEED.prefetchId = id; return; }
+    FEED.prefetchId = "";
+    if (MAN.detail) loadDetailFile(detailFile(id)).catch(function () { /* откроется без описания */ });
+  }
+  // первые видимые карточки выдачи — подробности заранее (на медленной связи и в режиме экономии — нет)
+  function prefetchVisible() {
+    if (!MAN || !MAN.detail) return;
+    var c = navigator.connection;
+    if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return;
+    idle(function () {
+      var n = canHover ? 8 : 4, cards = els.grid.querySelectorAll(".card"), k = 0;
+      for (var i = 0; i < cards.length && k < n; i++) {
+        if (!inView(cards[i])) continue;
+        var p = productOf(cards[i]);
+        if (p && !p._full) { ensureDetail(p).catch(function () { /* потом */ }); k++; }
+      }
     });
   }
 
@@ -2255,26 +2786,85 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       .catch(function () { /* нет content.json — остаётся content.js */ });
   }
 
-  // Закупочные данные лежат отдельно: products-admin.js → window.DEALS_ADMIN = {"<id>": {source, url, price_now, ...}}.
-  // Покупатель этот файл не загружает; в админ-режиме подмешиваем его по id товара.
+  // Закупочные данные лежат отдельно и покупателем не загружаются. Небольшой каталог — products-admin.js целиком
+  // (window.DEALS_ADMIN = {"<id>": {source, url, price_now, ...}}), большой — site/admin/<корзина>.js по id:
+  // карточка товара, разбор заказа и показанные карточки догружают свои корзины, сводка — когда загрузится всё.
   var ADMIN_KEYS = ["source", "source_item_id", "url", "title_original", "category_original", "price_now", "price_old", "currency", "cost_uzs", "margin_uzs"];
+  var ADM = { mode: "", meta: null, items: {}, loaded: {}, loading: {}, complete: false };
+  function admRecord(p) {
+    if (ADM.mode === "all") {
+      var extra = window.DEALS_ADMIN && typeof window.DEALS_ADMIN === "object" ? window.DEALS_ADMIN : {};
+      return extra[p._code] || (p.source != null ? extra[p.source + ":" + p.source_item_id] : null);
+    }
+    return ADM.items[p._code] || null;
+  }
+  function admApply(p, early) {
+    var adm = {};
+    ADMIN_KEYS.forEach(function (k) { if (p[k] != null) adm[k] = p[k]; });   // старый формат: всё было в products.js
+    var x = admRecord(p);
+    if (x && typeof x === "object") Object.assign(adm, x);
+    if (!Object.keys(adm).length) return;
+    p._adm = adm;
+    p._search = null;
+    // скидка по закупочным ценам — только до сортировок (при запуске), иначе порядок выдачи разъедется
+    if (early && !p._disc && adm.price_old > adm.price_now && adm.price_now > 0) p._disc = Math.round((1 - adm.price_now / adm.price_old) * 1000) / 10;
+  }
   function loadAdminExtra() {
     if (!ADMIN) return Promise.resolve();
-    var merge = function () {
-      var extra = window.DEALS_ADMIN && typeof window.DEALS_ADMIN === "object" ? window.DEALS_ADMIN : {};
-      products.forEach(function (p) {
-        var adm = {};
-        ADMIN_KEYS.forEach(function (k) { if (p[k] != null) adm[k] = p[k]; });   // старый формат: всё было в products.js
-        var x = extra[p._code] || (p.source != null ? extra[p.source + ":" + p.source_item_id] : null);
-        if (x && typeof x === "object") Object.assign(adm, x);
-        if (!Object.keys(adm).length) return;
-        p._adm = adm;
-        p._search += " " + [adm.source, adm.source_item_id, adm.title_original].join(" ").toLowerCase();
-        if (!p._disc && adm.price_old > adm.price_now && adm.price_now > 0) p._disc = Math.round((1 - adm.price_now / adm.price_old) * 1000) / 10;
+    var all = function () { ADM.mode = "all"; ADM.complete = true; products.forEach(function (p) { admApply(p, true); }); };
+    if (window.DEALS_ADMIN) { all(); return Promise.resolve(); }
+    return loadScript("products-admin.js?t=" + Date.now()).then(all, function () {
+      return getData("admin/meta.js", "a/meta", true).then(function (meta) {
+        ADM.mode = "shards";
+        ADM.meta = meta || {};
+        window.DEALS_ADMIN = { _meta: ADM.meta._meta || {} };
+      }, function () { adminMissing = true; all(); });
+    });
+  }
+  function admBucket(id) { return hash32(String(id)) & ((ADM.meta && ADM.meta.shards || 16) - 1); }
+  function admLoaded(id) { return ADM.mode !== "shards" || !!ADM.loaded[admBucket(id)]; }
+  function loadAdmBucket(b) {
+    if (ADM.loading[b]) return ADM.loading[b];
+    var key = b.toString(16), w = ADM.meta.prefix_len || 1;
+    while (key.length < w) key = "0" + key;
+    return (ADM.loading[b] = getData("admin/" + key + ".js", "a/" + key, true).then(function (obj) {
+      var it = (obj && obj.items) || {};
+      Object.keys(it).forEach(function (id) { ADM.items[id] = it[id]; var p = byId.get(id); if (p) admApply(p); });
+      ADM.loaded[b] = true;
+    }, function () { ADM.loaded[b] = true; }));
+  }
+  function ensureAdmin(ids) {
+    if (!ADMIN || ADM.mode !== "shards") return Promise.resolve();
+    var bs = {};
+    ids.forEach(function (id) { bs[admBucket(String(id).toUpperCase())] = 1; });
+    return Promise.all(Object.keys(bs).map(function (b) { return loadAdmBucket(+b); }));
+  }
+  // только что показанные карточки выдачи: догрузить их закупку и переписать блок .adm
+  function adminForCards(list) {
+    if (ADM.mode !== "shards") return;
+    var need = list.filter(function (p) { return !p._adm && !admLoaded(p._code); });
+    if (!need.length) return;
+    ensureAdmin(need.map(function (p) { return p._code; })).then(function () {
+      need.forEach(function (p) {
+        var el = els.grid.querySelector('.adm[data-adm="' + p._code + '"]');
+        if (el) el.outerHTML = adminHtml(p);
+      });
+    });
+  }
+  // весь каталог загружен — закупка всех корзин в фоне (сводка по источникам, поиск по артикулу)
+  function adminAll() {
+    if (ADM.mode !== "shards" || ADM.complete) return;
+    var n = ADM.meta.shards || 16, b = 0, left = n;
+    var next = function () {
+      if (b >= n) return;
+      loadAdmBucket(b++).then(function () {
+        if (--left) { idle(next); return; }
+        ADM.complete = true;
+        renderHeader(isDemo);
+        if (state.q && curView === "catalog") refreshCatalog();
       });
     };
-    if (window.DEALS_ADMIN) { merge(); return Promise.resolve(); }
-    return loadScript("products-admin.js?t=" + Date.now()).then(merge, function () { adminMissing = true; merge(); });
+    for (var k = 0; k < 6; k++) next();      // файлы локальные — по 6 сразу
   }
 
   // запасной код, если в данных нет id: короткий, без намёка на магазин
@@ -2292,6 +2882,28 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return out;
   }
 
+  // одинаковые наборы размеров (их немного разных) — один общий отсортированный список на все товары
+  var SIZE_SETS = new Map();
+  function sizeSet(list) {
+    if (!list || !list.length) return EMPTY;
+    if (list._norm) return list;                 // уже общий отсортированный список (части каталога)
+    var key = list.join("\u0001"), hit = SIZE_SETS.get(key);
+    if (hit) return hit;
+    hit = strList(list).sort(cmpSize);
+    if (!hit.length) hit = EMPTY;
+    else hit._norm = true;
+    SIZE_SETS.set(key, hit);
+    return hit;
+  }
+  // подробности карточки (описание, состав, пункты, все фото) — из products.js/json сразу, из частей — по открытию
+  function normDetail(p) {
+    var src = Array.isArray(p.images) ? p.images : EMPTY, imgs = [];
+    for (var i = 0; i < src.length; i++) { var u = safeUrl(src[i], true); if (u && imgs.indexOf(u) < 0) imgs.push(u); }
+    p._imgs = imgs;
+    p._compo = typeof p.composition === "string" ? p.composition.trim() : "";
+    p._details = Array.isArray(p.details) && p.details.length ? strList(p.details) : EMPTY;
+    p._desc = typeof p.description === "string" ? p.description.trim() : "";
+  }
   function normalize(p, i) {
     if (!p || typeof p !== "object") return null;
     var price = Number(p.price_uzs);
@@ -2300,54 +2912,74 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var disc = Number(p.discount_pct);
     if (!isFinite(disc) || disc <= 0) disc = 0;
     var out = p.in_stock === false;                    // распродан: размеров в наличии нет
-    var sizes = out ? [] : strList(p.sizes).sort(cmpSize);
-    var sizesOut = strList(out ? [].concat(p.sizes_out || [], p.sizes || []) : p.sizes_out)
-      .filter(function (s) { return sizes.indexOf(s) < 0; }).sort(cmpSize);
-    var imgs = strList((Array.isArray(p.images) ? p.images : []).map(function (u) { return safeUrl(u, true); }));
+    var sizes = out ? EMPTY : sizeSet(p.sizes);
+    var sizesOut = out || (p.sizes_out && p.sizes_out.length) ? sizeSet((out ? [].concat(p.sizes_out || [], p.sizes || []) : p.sizes_out)
+      .filter(function (s) { return sizes.indexOf(String(s).trim()) < 0; })) : EMPTY;
     var brand = String(p.brand || "").trim() || "Без бренда";
     var title = String(p.title || "").trim();
     // старое поле code (с префиксом магазина) намеренно не используется — только нейтральный id
     var origin = ORIGIN[p.origin] ? p.origin : ORIGIN[p.country] ? p.country :
       (p.currency === "EUR" ? "IT" : p.currency === "TRY" ? "TR" : null);
     var color = typeof p.color === "string" ? p.color.trim() : "";
-    var compo = typeof p.composition === "string" ? p.composition.trim() : "";
     var type = typeof p.type === "string" && p.type.trim() ? p.type.trim() : OTHER;
-    var seen = p.first_seen ? Date.parse(p.first_seen) : NaN;
+    // first_seen: строка ISO (products.json) или миллисекунды (части каталога)
+    var seen = typeof p.first_seen === "number" ? p.first_seen : p.first_seen ? Date.parse(p.first_seen) : NaN;
     // поля дописываются в сам объект (он наш: копия из Worker или из products.js) — вдвое меньше памяти и сборок мусора
     p._code = id; p._brand = brand; p._title = title || brand;
     p._type = type;
     p._gender = GENDERS[p.gender] ? p.gender : null;
-    p._sizes = sizes; p._sizesOut = sizesOut; p._out = out; p._price = price; p._disc = disc; p._imgs = imgs; p._origin = origin;
+    p._sizes = sizes; p._sizesOut = sizesOut; p._out = out; p._price = price; p._disc = disc; p._origin = origin;
+    normDetail(p);
+    // _full — подробности уже есть (в записи из части индекса их нет: n_img — сколько всего фото)
+    p._full = p.n_img == null;
+    p._ni = p._full ? p._imgs.length : Math.max(p._imgs.length, +p.n_img || 0);
     p._sizeSys = typeof p.size_system === "string" ? p.size_system.trim() : "";
-    p._color = color; p._compo = compo; p._details = strList(p.details);
-    p._desc = typeof p.description === "string" ? p.description.trim() : "";
+    p._color = color;
     p._seen = isFinite(seen) ? seen : 0;
     p._rnd = hash32(id + DAY) / 4294967296;
-    p._search = (brand + " " + title + " " + id + " " + type + " " + color).toLowerCase();
+    p._search = null;                    // строка поиска — при первом поиске (searchText)
     p._i = i; p._brandRank = 0;          // поля, которые заполнятся позже, — сразу: форма объекта не меняется
+    p._adm = null; p._bad = null;
     return p;
   }
   // normalize и всё, что ему нужно, — текстом для Worker (там нет доступа к этому скрипту)
   function normalizeSource() {
     return "var GENDERS = " + JSON.stringify(GENDERS) + ", ORIGIN = " + JSON.stringify(ORIGIN) + ", OTHER = " + JSON.stringify(OTHER) +
-      ", DAY = " + JSON.stringify(DAY) + ", LETTER_SIZES = " + JSON.stringify(LETTER_SIZES) + ";\n" +
-      [sizeKey, cmpSize, strList, safeUrl, hash32, fallbackId, normalize].map(String).join("\n") + "\nreturn normalize;";
+      ", DAY = " + JSON.stringify(DAY) + ", LETTER_SIZES = " + JSON.stringify(LETTER_SIZES) + ", EMPTY = [], SIZE_KEYS = new Map(), SIZE_SETS = new Map();\n" +
+      [sizeKey, cmpSize, strList, safeUrl, hash32, fallbackId, sizeSet, normDetail, normalize].map(String).join("\n") + "\nreturn normalize;";
+  }
+  // строка для поиска: бренд, название, код, тип, цвет (+ в админ-режиме источник, артикул, название там)
+  function searchText(p) {
+    if (p._search != null) return p._search;
+    var s = p._brand + " " + p._title + " " + p._code + " " + p._type + " " + p._color;
+    var a = p._adm;
+    if (a) s += " " + [a.source, a.source_item_id, a.title_original].join(" ");
+    return (p._search = s.toLowerCase());
   }
 
   /* ---------- сводки по каталогу (для главной, меню, подвала) ---------- */
+  // пока каталог догружается частями, счётчики — из манифеста (FACETS: по всему каталогу), потом — по товарам
   var _typeCounts = null, _brandCounts = null, _avail = null;
   function availList() { return _avail || (_avail = products.filter(function (p) { return !p._out; })); }
-  function availCount() { return availList().length; }
+  function availCount() { return FACETS && !ALL ? FACETS.avail : availList().length; }
+  function facetCounts2(obj) {
+    var m = new Map();
+    Object.keys(obj || {}).forEach(function (k) { if (obj[k][1] > 0) m.set(k, obj[k][1]); });
+    return m;
+  }
   function typeCounts() {
     if (_typeCounts) return _typeCounts;
     var m = new Map();
-    availList().forEach(function (p) { if (p._type !== OTHER) m.set(p._type, (m.get(p._type) || 0) + 1); });
+    if (FACETS && !ALL) m = facetCounts2(FACETS.types);
+    else availList().forEach(function (p) { m.set(p._type, (m.get(p._type) || 0) + 1); });
+    m.delete(OTHER);
     return (_typeCounts = Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; }));
   }
   function brandCounts() {
     if (_brandCounts) return _brandCounts;
     var m = new Map();
-    availList().forEach(function (p) { m.set(p._brand, (m.get(p._brand) || 0) + 1); });
+    if (FACETS && !ALL) m = facetCounts2(FACETS.brands);
+    else availList().forEach(function (p) { m.set(p._brand, (m.get(p._brand) || 0) + 1); });
     return (_brandCounts = Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1] || a[0].localeCompare(b[0], "ru"); }));
   }
   // ссылка на каталог: {type, brand, sort, disc, from, to}
@@ -2393,11 +3025,12 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var rateStr = Object.keys(rates).map(function (k) { return "1 " + esc(k) + " = " + fmtRate(rates[k]) + NBSP + "сум"; }).join(" · ");
     var withAdm = products.filter(function (p) { return p._adm; }).length;
     var html = '<p class="admin-line"><b>Админ-режим.</b> ' + (rateStr ? "Курсы ЦБ: " + rateStr + ". " : "") +
-      (adminMissing && !withAdm ? "Файл products-admin.js не найден — закупка и маржа недоступны."
-        : "Закупка известна для " + fmt(withAdm) + " из " + fmt(products.length) + ". Покупатели products-admin.js не загружают — не выкладывайте его на хостинг.") + "</p>";
+      (adminMissing && !withAdm ? "Закрытых данных нет (ни products-admin.js, ни site/admin/) — закупка и маржа недоступны."
+        : ADM.mode === "shards" && !ADM.complete ? "Закупка подгружается по частям (site/admin/): в карточке и в разборе заказа — сразу, сводка — когда загрузится весь каталог."
+        : "Закупка известна для " + fmt(withAdm) + " из " + fmt(products.length) + ". Покупатели закрытые файлы (products-admin.js, site/admin/) не загружают — не выкладывайте их на хостинг.") + "</p>";
     html += '<p class="admin-line"><a href="#/admin/lookup">Разобрать заказ из Telegram (коды → закупка) →</a></p>';
     html += statsTable("Сводка по источникам", "Источник", SUMMARY.by_source || sourceStats());
-    html += statsTable("Сводка по брендам", "Бренд", SUMMARY.by_brand);
+    html += statsTable("Сводка по брендам", "Бренд", SUMMARY.by_brand || (meta && meta.by_brand));   // большой каталог: в закрытых файлах
     els.adminHead.innerHTML = html;
     els.adminHead.hidden = false;
   }
@@ -2436,18 +3069,27 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   }
 
   /* ---------- фильтры: построение ---------- */
+  var brandRank = new Map();
   function buildOptions() {
     var b = new Map(), t = new Set(), g = new Set(), s = new Set();
-    products.forEach(function (p) {
-      b.set(p._brand, (b.get(p._brand) || 0) + 1); t.add(p._type);
-      if (p._gender) g.add(p._gender);
-      p._sizes.forEach(function (x) { s.add(x); });
-    });
+    if (FACETS && !ALL) {
+      // каталог ещё догружается: варианты фильтров — сразу по всему каталогу (манифест)
+      Object.keys(FACETS.brands).forEach(function (k) { b.set(k, FACETS.brands[k][0]); });
+      Object.keys(FACETS.types).forEach(function (k) { t.add(k); });
+      FACETS.genders.forEach(function (x) { g.add(x); });
+      FACETS.sizes.forEach(function (x) { s.add(x); });
+    } else {
+      products.forEach(function (p) {
+        b.set(p._brand, (b.get(p._brand) || 0) + 1); t.add(p._type);
+        if (p._gender) g.add(p._gender);
+        p._sizes.forEach(function (x) { s.add(x); });
+      });
+    }
     // много брендов — сначала самые крупные (их видно в свёрнутом списке), иначе по алфавиту
     // сортировка «по бренду» — по заранее посчитанному номеру бренда, без localeCompare на 25 000 товаров
-    var abc = Array.from(b.keys()).sort(new Intl.Collator("ru").compare), rank = new Map();
+    var abc = Array.from(b.keys()).sort(new Intl.Collator("ru").compare), rank = brandRank = new Map();
     abc.forEach(function (x, i) { rank.set(x, i); });
-    products.forEach(function (p) { p._brandRank = rank.get(p._brand); });
+    products.forEach(function (p) { p._brandRank = rank.has(p._brand) ? rank.get(p._brand) : abc.length; });
     var many = b.size > BRAND_TOP;
     options.brands = Array.from(b.keys()).sort(function (x, y) {
       return (many ? b.get(y) - b.get(x) : 0) || x.localeCompare(y, "ru");
@@ -2458,16 +3100,18 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     });
     options.genders = ["women", "men", "kids"].filter(function (x) { return g.has(x); });
     options.sizes = Array.from(s).sort(cmpSize);
-    soldCount = products.filter(function (p) { return p._out; }).length;
+    soldCount = FACETS && !ALL ? FACETS.sold : products.filter(function (p) { return p._out; }).length;
   }
 
-  function chipHtml(kind, value, label, withCount) {
-    return '<button type="button" class="chip" aria-pressed="false" data-kind="' + kind + '" data-value="' + esc(value) + '">' +
+  function chipHtml(kind, value, label, withCount, hide) {
+    return '<button type="button" class="chip" aria-pressed="false" data-kind="' + kind + '" data-value="' + esc(value) + '"' + (hide ? " hidden" : "") + ">" +
       (kind === "brand" ? brandMark(value, "clogo") : "") + "<span>" + esc(label) + "</span>" + (withCount ? '<span class="n"></span>' : "") + "</button>";
   }
 
   function buildFilters() {
-    els.fBrand.innerHTML = options.brands.map(function (b) { return chipHtml("brand", b, b, true); }).join("");
+    // брендов могут быть тысячи: сразу видны только первые (как их покажет layoutBrands) — без раскладки остальных
+    var many = options.brands.length > BRAND_TOP;
+    els.fBrand.innerHTML = options.brands.map(function (b, i) { return chipHtml("brand", b, b, true, many && i >= BRAND_TOP && !brandsOpen && !state.brands.has(b)); }).join("");
     els.fType.innerHTML = options.types.map(function (t) { return chipHtml("type", t, cap(t), true); }).join("");
     els.fSize.innerHTML = options.sizes.map(function (s) { return chipHtml("size", s, s, false); }).join("");
     $("gBrand").hidden = options.brands.length < 2;
@@ -2514,7 +3158,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (state.pmin != null && p._price < state.pmin) return m | F_REST;
     if (state.pmax != null && p._price > state.pmax) return m | F_REST;
     if (state.disc && p._disc < state.disc) return m | F_REST;
-    for (i = 0; i < qWords.length; i++) if (p._search.indexOf(qWords[i]) < 0) return m | F_REST;
+    if (qWords.length) {
+      var st = p._search != null ? p._search : searchText(p);
+      for (i = 0; i < qWords.length; i++) if (st.indexOf(qWords[i]) < 0) return m | F_REST;
+    }
     return m;
   }
 
@@ -2537,6 +3184,28 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var out = new Array(n);
     for (i = 0; i < n; i++) out[i] = list[idx[i]];
     return out;
+  }
+  // пришла новая часть каталога: она сортируется отдельно и вливается в уже отсортированные списки
+  // (слияние — один линейный проход, без пересортировки 150 тыс.); равные — по порядку в products (_i)
+  function mergeSorted(added) {
+    var k0 = function (p) { return p._out ? 1 : 0; };
+    var keys = function (list, k) {
+      var n = list.length, Z = new Float64Array(n), A = new Float64Array(n), B = new Float64Array(n);
+      for (var i = 0; i < n; i++) { var p = list[i]; Z[i] = k0(p); A[i] = k[0](p); B[i] = k[1](p); }
+      return [Z, A, B];
+    };
+    Object.keys(sortedCache).forEach(function (mode) {
+      var k = SORT_KEYS[mode], a = sortedCache[mode], b = keySort(added, k[0], k[1], k0);
+      var x = keys(a, k), y = keys(b, k), out = new Array(a.length + b.length), i = 0, j = 0, o = 0;
+      while (i < a.length && j < b.length) {
+        // при равных ключах раньше — уже загруженный товар (у него _i меньше), как в keySort по всему списку
+        var c = x[0][i] - y[0][j] || x[1][i] - y[1][j] || x[2][i] - y[2][j] || a[i]._i - b[j]._i;
+        out[o++] = c <= 0 ? a[i++] : b[j++];
+      }
+      while (i < a.length) out[o++] = a[i++];
+      while (j < b.length) out[o++] = b[j++];
+      sortedCache[mode] = out;
+    });
   }
 
   var facetCounts = { brand: new Map(), type: new Map(), size: new Map() };
@@ -2615,7 +3284,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       container.querySelectorAll(".chip").forEach(function (chip) {
         var v = chip.getAttribute("data-value"), n = counts.get(v) || 0, on = set.has(v);
         chip.setAttribute("aria-pressed", on ? "true" : "false");
-        chip.disabled = !n && !on;
+        chip.disabled = !n && !on && ALL;          // пока каталог догружается, «0» ещё может стать больше
         var nEl = chip.querySelector(".n");
         if (nEl) nEl.textContent = n;
         chip.title = n + " " + plural(n, ["товар", "товара", "товаров"]);
@@ -2651,7 +3320,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 
   function updateSummary() {
     var n = filtered.length, a = activeCount();
-    els.count.textContent = n === products.length - soldCount && !a ? items(n) : "Найдено: " + items(n);
+    els.count.textContent = !a && (!ALL || n === products.length - soldCount) ? items(n) : "Найдено: " + items(n);
     els.applySheet.textContent = n ? "Показать " + items(n) : "Ничего не найдено";
     els.activeCount.hidden = !a;
     els.activeCount.textContent = a;
@@ -2659,9 +3328,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.resetSheet.disabled = !a;
     renderPills();
 
+    updateLoadNote();
     if (!products.length) {
       els.empty.innerHTML = "<h2>Скоро здесь появятся скидки</h2><p>" +
         (ADMIN ? "Товаров нет: запустите <code>python run.py</code> и обновите страницу." : "Загляните чуть позже — каталог обновляется регулярно.") + "</p>";
+      els.empty.hidden = false;
+    } else if (!n && !ALL) {
+      els.empty.innerHTML = "<h2>Ищем…</h2><p>Каталог ещё загружается — подходящие вещи появятся здесь.</p>";
       els.empty.hidden = false;
     } else if (!n) {
       els.empty.innerHTML = "<h2>Под эти фильтры ничего нет</h2><p>Уберите часть фильтров или расширьте диапазон цены.</p>" +
@@ -2865,10 +3538,15 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       rows.push(["Маржа", fmt(a.margin_uzs) + NBSP + "сум" + pct]);
     }
     rows.push(["Скидка", p._disc > 0 ? p._disc.toFixed(1).replace(".", ",") + "%" : "нет"]);
-    if (p.fetched_at) rows.push(["Собрано", esc(String(p.fetched_at).replace("T", " ").slice(0, 16))]);
-    if (p.first_seen) rows.push(["На сайте с", esc(String(p.first_seen).replace("T", " ").slice(0, 16))]);
-    if (a.sold_out_since) rows.push(["Нет в наличии с", esc(String(a.sold_out_since).replace("T", " ").slice(0, 16))]);
-    return '<dl class="adm">' + rows.map(function (r) { return "<div><dt>" + r[0] + "</dt><dd>" + r[1] + "</dd></div>"; }).join("") + "</dl>";
+    if (p.fetched_at) rows.push(["Собрано", esc(tsText(p.fetched_at))]);
+    if (p.first_seen) rows.push(["На сайте с", esc(tsText(p.first_seen))]);
+    if (a.sold_out_since) rows.push(["Нет в наличии с", esc(tsText(a.sold_out_since))]);
+    return '<dl class="adm" data-adm="' + esc(p._code) + '">' + rows.map(function (r) { return "<div><dt>" + r[0] + "</dt><dd>" + r[1] + "</dd></div>"; }).join("") + "</dl>";
+  }
+  // время: строка ISO или миллисекунды (части каталога) -> «2026-10-03 13:12»
+  function tsText(v) {
+    if (typeof v === "number") { try { v = new Date(v).toISOString(); } catch (e) { return ""; } }
+    return String(v).replace("T", " ").slice(0, 16);
   }
 
   var hashBase = "";
@@ -2877,7 +3555,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var imgs = goodImgs(p);
     var main = imgs[0], second = imgs[1];
     var alt = esc(p._title);
-    var n = imgs.length;
+    var n = p._full ? imgs.length : p._ni;       // запись из индекса: фото пока одно, всего их _ni
     var media = '<div class="media' + (main ? " ld" : " noimg") + '" data-mono="' + esc(monogram(p._brand)) + '">' +
       (main ? '<img class="ph" src="' + esc(main) + '" alt="' + alt + '" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") +
       (second ? '<img class="alt" data-src="' + esc(second) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">' : "") +
@@ -2899,18 +3577,28 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       "</div></article>";
   }
 
-  function renderMore() {
+  // quiet — перерисовка уже показанных карточек (пришла часть каталога): без анимации появления
+  function renderMore(quiet) {
     var next = filtered.slice(shown, shown + BATCH);
     var fp = filterParams().toString();
     hashBase = fp ? fp + "&" : "";
     var from = els.grid.children.length;
     if (next.length) els.grid.insertAdjacentHTML("beforeend", next.map(cardHtml).join(""));
-    if (next.length) armReveal(Array.prototype.slice.call(els.grid.children, from));
+    var added = next.length ? Array.prototype.slice.call(els.grid.children, from) : [];
+    if (quiet === true) added.forEach(function (el) { el.classList.add("in"); el._rv = true; });
+    else if (added.length) armReveal(added);
     shown += next.length;
+    moreBar();
+    if (next.length) {
+      if (ADMIN) adminForCards(next);
+      if (from === 0) prefetchVisible();
+    }
+  }
+  function moreBar() {
     var rest = filtered.length - shown;
     els.more.hidden = rest <= 0;
     if (rest > 0) {
-      els.progress.textContent = "Показано " + fmt(shown) + " из " + fmt(filtered.length);
+      els.progress.textContent = "Показано " + fmt(shown) + " из " + fmt(filtered.length) + (ALL ? "" : "+");
       els.moreBtn.textContent = "Показать ещё " + Math.min(BATCH, rest);
     }
   }
@@ -3006,10 +3694,22 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   }
 
   var canHover = window.matchMedia("(hover: hover)").matches;
+  // наведение на карточку: второе фото (если подробностей ещё нет — сначала они, там все фото) и подробности заранее
   function warmSecond(e) {
-    if (!canHover) return;
     var card = e.target.closest && e.target.closest(".card");
-    var altImg = card && card.querySelector(".alt[data-src]");
+    if (!card) return;
+    var p = productOf(card);
+    if (p && !p._full) {
+      ensureDetail(p).then(function () {
+        if (!canHover || !card.isConnected || card.querySelector(".alt")) return;
+        var media = card.querySelector(".media"), imgs = goodImgs(p);
+        if (!media || !imgs[1] || !media.querySelector(".ph")) return;
+        media.insertAdjacentHTML("beforeend", '<img class="alt" src="' + esc(imgs[1]) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">');
+      }, function () { /* без второго фото */ });
+      return;
+    }
+    if (!canHover) return;
+    var altImg = card.querySelector(".alt[data-src]");
     if (altImg) { altImg.src = altImg.getAttribute("data-src"); altImg.removeAttribute("data-src"); }
   }
 
@@ -3115,7 +3815,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 
     // герой: три вещи крупных брендов разных категорий, своё фото в приоритете; меняются раз в день
     var top = new Set(bc.slice(0, 15).map(function (b) { return b[0]; }));
-    var cand = pool.filter(function (p) { return top.has(p._brand) && p._imgs.length >= 2 && p._disc >= 25; })
+    var cand = pool.filter(function (p) { return top.has(p._brand) && p._ni >= 2 && p._disc >= 25; })
       .sort(function (a, b) { return (ownPhoto(b) - ownPhoto(a)) || a._rnd - b._rnd; });
     var art = diversify(diversify(cand, 1, 40, function (p) { return p._type; }), 1, 3);
     if (art.length < 3) art = diversify(pool.slice().sort(function (a, b) { return a._rnd - b._rnd; }), 1, 3);
@@ -3126,64 +3826,122 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         (second ? '<img class="b" data-src="' + esc(second) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">' : "") + "</div>" +
         '<span class="cap"><b>' + esc(p._brand) + "</b>" + fmt(p._price) + " сум</span></a>";
     }).join("");
+    // второй ракурс героя — из подробностей (в индексе только первое фото); успеют до heroSecond (через 1,8 с)
+    if (MO) art.forEach(function (p) {
+      if (p._full) return;
+      ensureDetail(p).then(function () {
+        var a = document.querySelector('#heroArt [data-pid="' + p._code + '"] .media'), imgs = goodImgs(p);
+        if (a && imgs[1] && !a.querySelector(".b")) a.insertAdjacentHTML("beforeend", '<img class="b" data-src="' + esc(imgs[1]) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">');
+      }, function () { /* без второго ракурса */ });
+    });
     heroSecond();
 
-    // категории: фото — вещь с большой скидкой, лучше со своим фото. Один проход вместо сортировки на каждый тип
+    renderTiles(pool, false);
+    renderBrandGrid();
+
+    armReveal(document.querySelectorAll("#viewHome .rv:not(.in)"));
+
+    // «Новинки» — сразу: в «голове» каталога (часть 0) есть самые новые вещи; остальные ленты — по всему каталогу
+    sortedProducts("new");      // сейчас (пока товаров — «голова»), дальше части вливаются слиянием
+    runIdle([function () { $("railsTop").innerHTML = freshRail(); initRails($("railsTop")); }]);
+    if (ALL) homeRails(); else homePending = true;
+  }
+  var homePending = false;
+  // «Новинки» — из уже отсортированного (и дополняемого слиянием) списка каталога, без своей сортировки
+  function freshRail() {
+    var list = sortedProducts("new"), fresh = [], cnt = new Map();
+    for (var i = 0; i < list.length && fresh.length < 16; i++) {
+      var p = list[i], c = cnt.get(p._brand) || 0;
+      if (p._out || !p._imgs.length || c >= 2) continue;
+      cnt.set(p._brand, c + 1);
+      fresh.push(p);
+    }
+    return railHtml({ title: "Новинки", sub: "Только что появились в каталоге", link: catHref({ sort: "new" }), items: fresh });
+  }
+  // первые limit вещей с фото (и всех с той же скидкой на границе) по скидке — из отсортированного списка
+  // каталога; порядок внутри — byDisc (скидка, затем «число дня»). Вместо сортировки всего каталога
+  function topDisc(test, limit) {
+    var list = sortedProducts("disc"), out = [], last = null;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (p._out) break;                      // распроданные — в конце списка
+      if (!p._imgs.length || !test(p)) continue;
+      if (out.length >= limit && p._disc !== last) break;
+      out.push(p);
+      last = p._disc;
+    }
+    return keySort(out, function (p) { return -p._disc; }, function (p) { return p._rnd; });
+  }
+  // категории: фото — вещь с большой скидкой, лучше со своим фото. Один проход вместо сортировки на каждый тип.
+  // onlyEmpty — каталог догрузился: дорисовать только плитки, которым в «голове» не нашлось фото
+  function renderTiles(pool, onlyEmpty) {
     var tc = typeCounts().filter(function (x) { return x[1] >= 5; });
     var bestOf = new Map();
-    pool.forEach(function (p) {
+    for (var i = 0; i < pool.length; i++) {
+      var p = pool[i];
+      if (p._out || !p._imgs.length) continue;
       var cur = bestOf.get(p._type);
       if (!cur || ((ownPhoto(cur) - ownPhoto(p)) || byDisc(p, cur)) < 0) bestOf.set(p._type, p);
-    });
-    $("catTiles").innerHTML = tc.map(function (x) {
+    }
+    var tile = function (x) {
       var p = bestOf.get(x[0]);
       var img = p ? goodImgs(p)[0] : "";
       return '<a class="tile" href="' + esc(catHref({ type: x[0] })) + '"' + (p ? ' data-pid="' + esc(p._code) + '"' : "") + '>' +
         '<div class="media' + (img ? " ld" : " noimg") + '" data-mono="' + esc(cap(x[0]).charAt(0)) + '">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") + "</div>" +
         '<span class="tile-name">' + esc(cap(x[0])) + '</span><span class="tile-n">' + items(x[1]) + "</span></a>";
-    }).join("");
-
-    renderBrandGrid();
-
-    armReveal(document.querySelectorAll("#viewHome .rv:not(.in)"));
-
-    // ленты — в простое браузера, каждая своей задачей (сортировка 22 тыс. — ~20–40 мс)
+    };
+    var box = $("catTiles");
+    if (!onlyEmpty) { box.innerHTML = tc.map(tile).join(""); return; }
+    var els2 = box.querySelectorAll(".tile");
+    tc.forEach(function (x, i) {
+      var el = els2[i];
+      if (el && el.querySelector(".noimg") && bestOf.get(x[0])) el.outerHTML = tile(x);
+    });
+  }
+  // ленты — в простое браузера, каждая своей задачей (сортировка 150 тыс. — десятки мс)
+  function runIdle(queue) {
+    idle(function runQueue() {
+      var f = queue.shift();
+      if (!f) return;
+      var t = performance.now();
+      f(queue);
+      var L = window.__YL;
+      if (L && L.gaps) (L.idle = L.idle || []).push(Math.round((performance.now() - t) * 10) / 10);
+      idle(runQueue);
+    });
+  }
+  function homeRails() {
+    homePending = false;
     var more = $("railsMore");
     var addRail = function (o) {
       more.insertAdjacentHTML("beforeend", railHtml(o));
       initRails(more);
     };
-    var queue = [
+    var all = function () { return true; };
+    var q = [
       function () {
-        var fresh = diversify(keySort(pool, SORT_KEYS["new"][0], SORT_KEYS["new"][1]), 2, 16);
-        $("railsTop").innerHTML = railHtml({ title: "Новинки", sub: "Только что появились в каталоге", link: catHref({ sort: "new" }), items: fresh });
-        initRails($("railsTop"));
+        addRail({ title: "Лучшие скидки", sub: "Самые большие скидки прямо сейчас", link: catHref({ disc: 50 }), items: diversify(topDisc(all, 2000), 2, 16) });
       },
       function () {
-        var byD = keySort(pool, function (p) { return -p._disc; }, function (p) { return p._rnd; });   // порядок byDisc
-        addRail({ title: "Лучшие скидки", sub: "Самые большие скидки прямо сейчас", link: catHref({ disc: 50 }), items: diversify(byD, 2, 16) });
         addRail({ title: "До 1 000 000 сум", sub: "Брендовые вещи по доступной цене", link: catHref({ to: 1000000 }),
-          items: diversify(byD.filter(function (p) { return p._price <= 1000000; }), 2, 16) });
-        queue.push(function () {
-          // по типам — из уже отсортированного по скидке списка, без новых сортировок
-          var top4 = typeCounts().slice(0, 4), lists = new Map();
-          top4.forEach(function (x) { lists.set(x[0], []); });
-          for (var i = 0; i < byD.length; i++) { var l = lists.get(byD[i]._type); if (l) l.push(byD[i]); }
-          top4.forEach(function (x) {
-            addRail({ title: cap(x[0]), key: x[0], link: catHref({ type: x[0] }), linkText: "Все " + fmt(x[1]), items: diversify(lists.get(x[0]), 2, 16) });
-          });
-        });
+          items: diversify(topDisc(function (p) { return p._price <= 1000000; }, 2000), 2, 16) });
       }
     ];
-    idle(function runQueue() {
-      var f = queue.shift();
-      if (!f) return;
-      var t = performance.now();
-      f();
-      var L = window.__YL;
-      if (L && L.gaps) (L.idle = L.idle || []).push(Math.round((performance.now() - t) * 10) / 10);
-      idle(runQueue);
+    // по типам — четыре самых больших категории, каждая своей задачей
+    typeCounts().slice(0, 4).forEach(function (x) {
+      q.push(function () {
+        addRail({ title: cap(x[0]), key: x[0], link: catHref({ type: x[0] }), linkText: "Все " + fmt(x[1]),
+          items: diversify(topDisc(function (p) { return p._type === x[0]; }, 1000), 2, 16) });
+      });
     });
+    q.push(function () {
+        // «Новинки» по всему каталогу: если в «голове» оказались не все самые новые — тихо заменить
+        var html = freshRail(), top = $("railsTop");
+        var ids = function (h) { return (h.match(/data-pid="[^"]*"/g) || []).join(); };
+        if (ids(html) !== ids(top.innerHTML)) { top.innerHTML = html; top.querySelectorAll(".rv").forEach(function (el) { el.classList.add("in"); el._rv = true; }); initRails(top); }
+        renderTiles(products, true);
+    });
+    runIdle(q);
   }
 
   /* ---------- страницы: бренды, информация, размеры ---------- */
@@ -3287,7 +4045,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       return topN(idx.byType.get(t), 3, function (c) {
         if (c === p) return null;
         return (c._brand === p._brand ? 1.5 : 0) + priceAff(c._price, p._price) * 2 + (c._origin === p._origin ? 0.3 : 0) +
-          (c._imgs.length > 1 ? 0.2 : 0) + jitter(p, c) * 0.8;
+          (c._ni > 1 ? 0.2 : 0) + jitter(p, c) * 0.8;
       });
     });
     var wear = [];
@@ -3388,9 +4146,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     toast("Добавлено в корзину: {code}", p._brand + (pv.size ? ", " + pv.size : ""));
   }
 
-  function pvSlidesHtml(p, imgs) {
+  function pvSlidesHtml(p, imgs, from) {
     var alt = esc(p._title);
     return imgs.map(function (src, i) {
+      if (i < (from || 0)) return "";
       return '<div class="pv-slide" role="group" aria-roledescription="фото" aria-label="' + (i + 1) + " из " + imgs.length + '">' +
         '<img src="' + esc(src) + '" alt="' + (i === 0 ? alt : alt + ", фото " + (i + 1)) + '" decoding="async" referrerpolicy="no-referrer"' +
         (i === 0 ? ' loading="eager" fetchpriority="high"' : ' loading="lazy"') + "></div>";
@@ -3440,22 +4199,49 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       '<p class="pv-incart" id="pvInCart"' + (inCart ? "" : " hidden") + ">" + (inCart ? inCartHtml(inCart) : "") + "</p></div>";
     html += '<div class="pv-tools">' + codeBtnHtml(p) +
       '<button type="button" class="pv-share" data-share>' + ICON_SHARE + "<span>Поделиться</span></button></div>";
+    html += '<div id="pvAbout">' + pvAboutHtml(p) + "</div>";
+    var payDel = [firstPara(C("delivery")), firstPara(C("payment"))].filter(Boolean).join("\n\n");
+    var acc = accHtml("delivery", "Доставка и оплата", payDel, "delivery") +
+      accHtml("authenticity", "Гарантия оригинальности", C("authenticity"), "about");
+    if (acc) html += '<div class="pv-acc">' + acc + "</div>";
+    if (ADMIN) html += '<div id="pvAdm">' + adminHtml(p) + "</div>";
+    html += '<div class="pv-recs" id="pvRecs"></div>';
+    return html;
+  }
+  // «О товаре»: цвет и пол есть в индексе сразу; состав, пункты и описание — из подробностей (пока грузятся — заглушка)
+  function pvAboutHtml(p) {
     var props = [];
     if (p._color) props.push(["Цвет", p._color]);
     if (p._compo) props.push(["Состав", p._compo]);
     if (GENDERS[p._gender]) props.push(["Для кого", GENDERS[p._gender]]);
     var about = "";
     if (props.length) about += '<dl class="pv-props">' + props.map(function (r) { return "<dt>" + r[0] + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>";
+    if (!p._full) return '<section class="pv-sec" aria-busy="true"><h3>О товаре</h3>' + about + '<div class="pv-ld" aria-hidden="true"><i></i><i></i><i></i></div></section>';
     if (p._details.length) about += '<ul class="pv-details">' + p._details.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
     if (p._desc) about += '<p class="pv-desc">' + esc(p._desc) + "</p>";
-    if (about) html += '<section class="pv-sec"><h3>О товаре</h3>' + about + "</section>";
-    var payDel = [firstPara(C("delivery")), firstPara(C("payment"))].filter(Boolean).join("\n\n");
-    var acc = accHtml("delivery", "Доставка и оплата", payDel, "delivery") +
-      accHtml("authenticity", "Гарантия оригинальности", C("authenticity"), "about");
-    if (acc) html += '<div class="pv-acc">' + acc + "</div>";
-    if (ADMIN) html += adminHtml(p);
-    html += '<div class="pv-recs" id="pvRecs"></div>';
-    return html;
+    return about ? '<section class="pv-sec"><h3>О товаре</h3>' + about + "</section>" : "";
+  }
+  // подробности пришли — дописать «О товаре» и галерею (все фото), не трогая выбранный размер и прокрутку
+  function pvDetailArrived(p) {
+    if (pv.cur !== p) return;
+    var box = $("pvAbout");
+    if (box) box.innerHTML = pvAboutHtml(p);
+    var imgs = goodImgs(p);
+    if (imgs.length === pv.n) return;
+    var first = els.pvTrack.firstElementChild, img = first && first.querySelector("img");
+    if (pv.n === 1 && img && img.getAttribute("src") === imgs[0]) {
+      // первое фото уже на экране — дописываем остальные, не пересоздавая его (без мигания)
+      first.setAttribute("aria-label", "1 из " + imgs.length);
+      els.pvTrack.insertAdjacentHTML("beforeend", pvSlidesHtml(p, imgs, 1));
+      pv.n = imgs.length;
+      els.pvThumbs.innerHTML = pvThumbsHtml(imgs);
+      els.pvThumbs.hidden = pv.n < 2;
+      pvSet(pv.idx);
+    } else {
+      var idx = pv.idx;
+      pvRenderGallery(p);
+      if (idx) pvGo(idx, false);
+    }
   }
 
   function pvRenderGallery(p) {
@@ -3612,6 +4398,16 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       var depth = (was ? pv.depth : 0) + 1;
       try { history.pushState({ pv: p._code, d: depth }, "", hashFor(p)); pv.depth = depth; } catch (e) { pv.depth = 0; }
     }
+    // подробности (описание, все фото) и закупка (?admin=1) — по корзине id, если их ещё нет
+    if (!p._full) ensureDetail(p).then(function () { pvDetailArrived(p); }, function () {
+      if (pv.cur !== p) return;
+      var box = $("pvAbout");
+      if (box) box.innerHTML = '<section class="pv-sec"><h3>О товаре</h3><p class="pv-desc">Описание не загрузилось — проверьте связь и откройте товар ещё раз.</p></section>';
+    });
+    if (ADMIN) ensureAdmin([p._code]).then(function () {
+      var box = $("pvAdm");
+      if (pv.cur === p && box) box.innerHTML = adminHtml(p);
+    });
     // рекомендации — следующим кадром, чтобы окно открылось сразу
     pv.recTimer = setTimeout(function () {
       if (pv.cur !== p) return;
@@ -3938,16 +4734,24 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (r.id) {
       var p = byId.get(r.id) || byId.get(r.id.toUpperCase());
       if (p) {
+        waitId = "";
         openProduct(p, true);
         var st = history.state;
         pv.depth = st && st.pv === p._code && st.d ? st.d : 0;
+      } else if (!ALL) {
+        // каталог ещё догружается: просим часть с этим товаром вне очереди и откроем его, как только придёт
+        waitId = r.id.toUpperCase();
+        askShard(waitId);
+        prefetchDetailId(waitId);
       } else {
+        waitId = "";
         closeProduct();
         writeHash();
         toast("Товара {code} уже нет в каталоге", r.id.slice(0, 20));
       }
-    } else closeProduct();
+    } else { waitId = ""; closeProduct(); }
   }
+  var waitId = "";         // товар из ссылки, которого ещё нет среди загруженных частей
 
   function onPopState() {
     syncFromUrl();
@@ -3989,6 +4793,12 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         if (t) t.scrollIntoView({ block: "start" });
       }
     });
+    // наведение на карточку ленты / героя — подробности товара заранее (описание, все фото)
+    document.addEventListener("pointerover", function (e) {
+      var a = READY && e.target.closest && e.target.closest("[data-open]");
+      var p = a && byId.get(a.getAttribute("data-open"));
+      if (p && !p._full) ensureDetail(p).catch(function () { /* откроется без описания */ });
+    }, { passive: true });
     // битые фото в лентах, плитках и герое — следующее фото товара или монограмма
     document.addEventListener("error", function (e) {
       var img = e.target;
@@ -4232,26 +5042,33 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   }
   function findProduct(id) { return byId.get(id) || byId.get(String(id).toUpperCase()) || null; }
   // состояние строки: ok | gone (нет в каталоге) | out (распродано) | size (нужно выбрать размер) | wait (каталог ещё грузится)
+  // «нет в каталоге» — только когда пришли все части каталога и ни одна не потерялась
   function lineState(l) {
     if (!READY) return { p: null, st: "wait" };
     var p = findProduct(l.id);
-    if (!p) return { p: null, st: "gone" };
+    if (!p) return { p: null, st: COMPLETE ? "gone" : "wait" };
     if (p._out) return { p: p, st: "out" };
     if (p._sizes.length && (!l.size || p._sizes.indexOf(l.size) < 0)) return { p: p, st: "size" };
     return { p: p, st: "ok" };
   }
   // после загрузки каталога: цены и названия — текущие; изменившуюся цену запоминаем, чтобы показать
+  // вызывается при каждой новой части каталога: сверяются только найденные строки (их цена — уже правда)
   function revalidateCart() {
-    if (!READY) return;
+    if (!READY) return false;
+    var changed = false;
     cart.forEach(function (l) {
       var p = findProduct(l.id);
-      if (!p) return;
+      if (!p || l._ok === p) return;
       if (l.price && l.price !== p._price) l.was = l.price;
       l.id = p._code; l.price = p._price; l.brand = p._brand; l.title = p._title;
       l.img = goodImgs(p)[0] || l.img;
+      Object.defineProperty(l, "_ok", { value: p, enumerable: false, writable: true, configurable: true });   // не в localStorage
+      changed = true;
     });
-    saveCart();
+    if (changed) saveCart();
+    return changed;
   }
+  function cartWaiting() { return cart.some(function (l) { return lineState(l).st === "wait"; }); }
   function addToCart(p, size, qty) {
     size = size || "";
     var line = cart.filter(function (l) { return l.id === p._code && l.size === size; })[0];
@@ -4338,15 +5155,16 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var t = cartTotals();
     var focusSel = cartFocusKey();
     html += shopSteps(1) + '<div class="shop-grid"><div><h1>Корзина</h1><p class="meta">' + cart.length + " " + plural(cart.length, ["позиция", "позиции", "позиций"]) +
-      (READY ? "" : " · сверяем с каталогом…") + '</p><ul class="cart-list">' + cart.map(cartLineHtml).join("") + "</ul>" +
+      (READY && !cartWaiting() ? "" : " · сверяем с каталогом…") + '</p><ul class="cart-list">' + cart.map(cartLineHtml).join("") + "</ul>" +
       '<p style="margin-top:16px"><a href="#/catalog">← Продолжить покупки</a></p></div>' +
       '<aside class="sum-box" aria-labelledby="sumTitle"><h2 id="sumTitle">Итого</h2>' +
       '<div class="sum-row"><span>Товары, ' + t.pcs + ' шт.</span><span>' + fmt(t.sum) + " сум</span></div>" +
       '<div class="sum-row total"><span>К оплате</span><span>' + fmt(t.sum) + " сум</span></div>" +
       (t.blockers ? '<p class="warn">' + (t.blockers === 1 ? "Одна позиция требует внимания" : t.blockers + " позиции требуют внимания") + " — выберите размер или уберите недоступное.</p>" : "") +
-      (t.blockers || !READY || !t.pcs ? '<button type="button" class="btn lg" disabled>Оформить заказ</button>' : '<a class="btn lg" href="#/checkout">Оформить заказ</a>') +
+      (t.blockers || !READY || !t.pcs || cartWaiting() ? '<button type="button" class="btn lg" disabled>Оформить заказ</button>' : '<a class="btn lg" href="#/checkout">Оформить заказ</a>') +
       "<p>Цену, наличие и срок доставки подтвердим перед оплатой.</p></aside></div></div>";
     els.viewPage.innerHTML = html;
+    cartSig = cart.map(function (l) { return lineState(l).st + l.price; }).join();
     restoreCartFocus(focusSel);
   }
   // после перерисовки корзины фокус остаётся на той же кнопке
@@ -4642,7 +5460,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (!str(text)) return "";
     if (!READY) return "<p>Каталог ещё загружается…</p>";
     var r = extractCodes(text), total = 0;
-    if (!r.found.length) return "<p>Кодов товаров в тексте не нашёл." + (r.unknown.length ? " Похоже на код, но нет в каталоге: " + esc(r.unknown.join(", ")) : "") + "</p>";
+    var notYet = COMPLETE ? "" : " (каталог ещё загружается — проверю ещё раз, когда загрузится весь)";
+    if (!r.found.length) return "<p>Кодов товаров в тексте не нашёл." + (r.unknown.length ? " Похоже на код, но нет в каталоге: " + esc(r.unknown.join(", ")) + notYet : "") + "</p>";
+    // закупка по частям (site/admin/): догрузить корзины этих кодов и перерисовать
+    var need = r.found.filter(function (c) { var p = findProduct(c); return p && !p._adm && !admLoaded(p._code); });
+    if (need.length) ensureAdmin(need).then(function () { if (curView === "admin/lookup") { var out = $("lkOut"); if (out) out.innerHTML = lookupHtml(lookupText); } });
     var html = '<ul class="lk-list">' + r.found.map(function (code) {
       var p = findProduct(code), a = p._adm || {}, img = goodImgs(p)[0], rows = [];
       total += p._price;
@@ -4654,7 +5476,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         if (a.price_now != null) rows.push(["Цена там", esc(srcPrice(a.price_now) + " " + (a.currency || "")) + (a.price_old && a.price_old !== a.price_now ? " (было " + esc(srcPrice(a.price_old)) + ")" : "")]);
         if (a.cost_uzs != null) rows.push(["Себест. / маржа", fmt(a.cost_uzs) + " / " + (a.margin_uzs != null ? fmt(a.margin_uzs) : "?") + " сум"]);
         if (a.title_original) rows.push(["Название там", esc(a.title_original)]);
-      } else rows.push(["Закупка", "нет данных (products-admin.js без этого кода)"]);
+      } else rows.push(["Закупка", admLoaded(p._code) ? "нет данных (в закрытых файлах нет этого кода)" : "загружаем…"]);
       return '<li class="lk-item"><div class="media' + (img ? "" : " noimg") + '" data-mono="' + esc(monogram(p._brand)) + '">' +
         (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : "") + "</div>" +
         "<div><h3>[" + esc(code) + "] " + esc(p._brand) + " — " + esc(p._title) + "</h3><dl>" +
@@ -4662,7 +5484,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         '</dl><p style="margin:8px 0 0"><a href="#/admin/lookup?p=' + encodeURIComponent(code) + '" data-open="' + esc(code) + '">Открыть карточку</a></p></div></li>';
     }).join("") + "</ul>";
     html += '<p class="lk-sum">Кодов: ' + r.found.length + (r.found.length > 1 ? ", сумма по нашим ценам (по 1 шт.): " + fmt(total) + " сум" : "") + "</p>";
-    if (r.unknown.length) html += '<p class="lk-sum">Похоже на код, но нет в каталоге (снят с сайта?): ' + esc(r.unknown.join(", ")) + "</p>";
+    if (r.unknown.length) html += '<p class="lk-sum">Похоже на код, но нет в каталоге (снят с сайта?): ' + esc(r.unknown.join(", ")) + notYet + "</p>";
     return html;
   }
   var lookupText = "";
@@ -4720,6 +5542,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     isDemo = !!res.demo;
     SITE = data.site || {};
     SUMMARY = data.summary || {};
+    if (!res.sharded) { ALL = true; COMPLETE = true; FACETS = null; }    // весь каталог пришёл одним файлом
     if (!loadStats.via) loadStats.via = "script";
     var L = window.__YL || {}, steps = L.steps = [];
     var timed = function (name, fn) {          // ?perf=1: длительность каждого шага (каждый — отдельная задача)
@@ -4764,11 +5587,16 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         readHash(new URLSearchParams());
       }
     })).then(nextTask).then(timed("view", function () {
+      // части, разобранные за время запуска (часть товара из прямой ссылки — первой), — в каталог до показа
+      START_DONE = true;
+      FEED.pending.splice(0).forEach(addProducts);
       var r = parseRoute();
       showView(r, true);           // перерисовать текущую страницу уже с товарами, без прокрутки наверх
       if (r.id) syncFromUrl();     // прямая ссылка на товар: #/?p=K7F3Q2M (заставка уходит поверх открытого окна)
-      PL.finish(false);
-      perfReport();
+      loadStats.readyMs = Math.round(performance.now() - (L.t0 || 0));
+      PL.finish(false, !ALL);
+      updateLoadNote();
+      if (ALL) perfReport(); else checkAll();
     }));
   }
 
@@ -4779,11 +5607,15 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     setTimeout(function () {
       var paint = function (n) { var e = performance.getEntriesByName(n)[0]; return e ? Math.round(e.startTime) : null; };
       var msg = (L.msg || []).filter(function (x) { return x[0] === "chunk"; }).map(function (x) { return x[1]; });
+      var mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e5) / 10 : null;
       L.report = {
-        mode: L.mode, via: loadStats.via, readyMs: +lsGet("shop.loadMs"), fp: paint("first-paint"), fcp: paint("first-contentful-paint"),
+        mode: L.mode, via: loadStats.via, readyMs: loadStats.readyMs, allMs: loadStats.allMs || loadStats.readyMs, products: products.length,
+        heapMB: mem, fp: paint("first-paint"), fcp: paint("first-contentful-paint"),
+        shards: loadStats.shards, indexBytes: loadStats.indexBytes, headDlMs: loadStats.headDlMs, headParseMs: loadStats.headParseMs, workerParseMaxMs: loadStats.parseMax,
         bytes: loadStats.bytes, dlMs: loadStats.dlMs, workerParseMs: loadStats.parseMs, chunks: loadStats.chunks,
         chunkNormalizeMaxMs: loadStats.chunkMax, chunkMessageMaxMs: msg.length ? Math.max.apply(null, msg) : null,
-        steps: L.steps, idle: L.idle, progress: L.prog, longTasks: L.lt, gaps: L.gaps, maxGap: L.gaps.reduce(function (a, g) { return Math.max(a, g[1]); }, 0)
+        slices: loadStats.slices, steps: L.steps, idle: L.idle, progress: L.prog, longTasks: L.lt, maxLongTask: (L.lt || []).reduce(function (a, g) { return Math.max(a, g[1]); }, 0),
+        gaps: L.gaps, maxGap: L.gaps.reduce(function (a, g) { return Math.max(a, g[1]); }, 0)
       };
       if (window.console) console.info("[perf]", JSON.stringify(L.report));
     }, 2500);

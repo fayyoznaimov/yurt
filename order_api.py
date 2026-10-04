@@ -45,6 +45,8 @@ from urllib.parse import urlparse
 
 import requests
 
+import catalog_files
+
 ROOT = Path(__file__).resolve().parent
 MAX_BODY = 20 * 1024
 MAX_ITEMS = 30
@@ -83,11 +85,14 @@ def _load_admin(text: str) -> dict:
 
 
 class Catalog:
-    """Публичные (products.json) и закрытые (products-admin.js) данные; перечитываются при изменении файлов.
-    Если файл записан наполовину (идёт сборка) — остаются прежние данные, попытка повторится позже."""
+    """Публичные и закрытые данные каталога; перечитываются при изменении файлов. Каталог частями
+    (site/data/manifest.json + части индекса, site/admin/) или старые products.json / products-admin.js —
+    через catalog_files. Для цен заказа хватает индекса (подробности data/d/ не читаются).
+    Если файлы записаны наполовину (идёт сборка) — остаются прежние данные, попытка повторится позже."""
 
     def __init__(self, site: Path):
-        self.public_path = site / "products.json"
+        self.site = site
+        self.public_path = site / "products.json"       # старый формат (для сообщений и тестов)
         self.admin_path = site / "products-admin.js"
         self.products: dict[str, dict] = {}
         self.admin: dict[str, dict] = {}
@@ -95,33 +100,29 @@ class Catalog:
         self._sig: dict[str, tuple] = {}
         self._lock = threading.Lock()
 
-    @staticmethod
-    def _stat(p: Path):
-        try:
-            st = p.stat()
-            return (st.st_mtime_ns, st.st_size)
-        except OSError:
-            return None
-
     def refresh(self) -> None:
         with self._lock:
-            sig = self._stat(self.public_path)
+            sig = catalog_files.public_signature(self.site)
             if sig and sig != self._sig.get("public"):
                 try:
-                    data = json.loads(self.public_path.read_text(encoding="utf-8"))
-                    self.products = {p["id"]: p for p in data.get("products", []) if isinstance(p, dict) and p.get("id")}
-                    self.generated_at = str((data.get("summary") or {}).get("generated_at") or "")
+                    c = catalog_files.PublicCatalog(self.site)
+                    self.products = c.index_rows()
+                    self.generated_at = str((c.summary or {}).get("generated_at") or "")
                     self._sig["public"] = sig
                     log(f"каталог: {len(self.products)} товаров ({self.generated_at})")
-                except (OSError, ValueError) as e:
-                    log(f"каталог: не прочитан products.json ({e.__class__.__name__}) — оставляю прежний")
-            sig = self._stat(self.admin_path)
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
+                    log(f"каталог: не прочитан {sig[0]} ({e.__class__.__name__}) — оставляю прежний")
+            sig = catalog_files.admin_signature(self.site)
             if sig and sig != self._sig.get("admin"):
                 try:
-                    self.admin = _load_admin(self.admin_path.read_text(encoding="utf-8"))
+                    if sig[0] == "products-admin.js":
+                        self.admin = _load_admin(self.admin_path.read_text(encoding="utf-8"))
+                    else:
+                        self.admin = {k: v for k, v in catalog_files.read_admin(self.site).items()
+                                      if isinstance(v, dict) and not k.startswith("_")}
                     self._sig["admin"] = sig
-                except (OSError, ValueError) as e:
-                    log(f"каталог: не прочитан products-admin.js ({e.__class__.__name__}) — оставляю прежний")
+                except (OSError, ValueError, KeyError, TypeError) as e:
+                    log(f"каталог: не прочитаны закрытые данные {sig[0]} ({e.__class__.__name__}) — оставляю прежние")
 
     def get(self, pid: str) -> tuple[dict | None, dict]:
         self.refresh()

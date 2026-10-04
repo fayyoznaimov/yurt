@@ -2,7 +2,7 @@
 
     python brands.py            # пересобрать brands.js и показать бренды без логотипа
 
-site/brands.json: {"Бренд как в products.json": {"logo": "img/brands/<slug>.svg|png" или null,
+site/brands.json: {"Бренд как в каталоге (products.json / data/manifest.json)": {"logo": "img/brands/<slug>.svg|png" или null,
 "source": откуда взят логотип, "license": короткая пометка, "invert_ok": можно ли инвертировать
 (filter: invert) на тёмном фоне — только для одноцветных тёмных знаков}}.
 logo = null — сайт рисует название бренда буквами. Файлы логотипов — site/img/brands/.
@@ -42,8 +42,13 @@ def problems(data: dict) -> list[str]:
         if logo and not (SITE / logo).is_file():
             out.append(f"{brand}: нет файла site/{logo}")
     try:
-        products = json.loads((SITE / "products.json").read_text(encoding="utf-8")).get("products", [])
-        missing = sorted({p.get("brand") for p in products if p.get("brand")} - set(data), key=str.lower)
+        import catalog_files
+        m = catalog_files.load_manifest(SITE)
+        if m:                     # каталог частями: все бренды уже есть в манифесте
+            names = set((m.get("facets") or {}).get("brands") or {})
+        else:
+            names = {p.get("brand") for p in json.loads((SITE / "products.json").read_text(encoding="utf-8")).get("products", [])}
+        missing = sorted({b for b in names if b} - set(data), key=str.lower)
         if missing:
             out.append("бренды из products.json, которых нет в brands.json (будут буквами): " + ", ".join(missing))
     except (OSError, ValueError):

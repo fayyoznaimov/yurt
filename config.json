@@ -27,17 +27,66 @@
   "source_filters": {
     "_help": "Свои фильтры для отдельного источника поверх filters. Цена price_min/price_max — в валюте источника (для YOOX в евро).",
     "yoox": {
-      "brands": [],
+      "brands": [
+        "Doucal's",
+        "Tod's",
+        "Boss",
+        "Emporio Armani",
+        "Armani Exchange",
+        "Giorgio Armani",
+        "EA7",
+        "Tombolini",
+        "Filippo De Laurentiis",
+        "Montecore",
+        "Moorer",
+        "Paul & Shark",
+        "Liu Jo Man",
+        "Liu Jo",
+        "Bally",
+        "Hackett",
+        "Barba Napoli",
+        "Gran Sasso",
+        "Michael Kors",
+        "Karl Lagerfeld",
+        "Karl Lagerfeld Jeans",
+        "Tramarossa",
+        "Jacob Cohën",
+        "Harmont & Blaine",
+        "On",
+        "Lacoste",
+        "Canali",
+        "Kiton",
+        "Bugatti",
+        "Boggi Milano",
+        "Dolce&Gabbana",
+        "Gucci",
+        "Dior",
+        "Eleventy"
+      ],
       "discount_min": 0,
       "price_uzs_max": 0,
-      "genders": [
-        "men"
-      ]
+      "genders": []
     },
     "trendyol": {
-      "genders": [
-        "men"
-      ]
+      "discount_min": 0,
+      "genders": [],
+      "price_uzs_min": 0,
+      "price_uzs_max": 0,
+      "only_with_sizes": true
+    },
+    "pcardin_tr": {
+      "discount_min": 0,
+      "genders": [],
+      "price_uzs_min": 0,
+      "price_uzs_max": 0,
+      "only_with_sizes": true
+    },
+    "cacharel_tr": {
+      "discount_min": 0,
+      "genders": [],
+      "price_uzs_min": 0,
+      "price_uzs_max": 0,
+      "only_with_sizes": true
     }
   },
   "pricing": {
@@ -66,9 +115,17 @@
         "Paul & Shark": "paul-shark-x-b145397",
         "U.S. Polo Assn.": "u-s-polo-assn-x-b101990"
       },
-      "pdp_limit": 120,
-      "official_only": false,
-      "lowest_price_days": 0
+      "max_pages": 138,
+      "pdp_per_run": 3200,
+      "pdp_max_age_hours": 72,
+      "pdp_delay": 1.2,
+      "pdp_concurrency": 2,
+      "listing_delay": [
+        1.0,
+        2.0
+      ],
+      "listing_max_age_hours": 20,
+      "official_only": false
     },
     "yoox": {
       "brand_slugs": {
@@ -81,16 +138,23 @@
     },
     "pcardin_tr": {
       "sections": [
+        "/erkek-1/",
+        "/kadin-1/",
         "/garage-sale/"
       ],
-      "max_pages": 10
+      "discover": true,
+      "max_pages": 200
     },
     "cacharel_tr": {
       "sections": [
+        "/tum-erkek-urunleri-1/",
         "/outlet/",
-        "/online-ozel-urunler/"
+        "/online-ozel-urunler/",
+        "/erkek-aksesuar/",
+        "/erkek-ayakkabi/"
       ],
-      "max_pages": 10
+      "discover": true,
+      "max_pages": 200
     },
     "yoox_import": {
       "folder": "",
@@ -294,7 +358,14 @@
           "sort": "PriceAsc"
         }
       ],
-      "max_total_pages": 600
+      "max_total_pages": 600,
+      "brand_aliases": {
+        "Liu •Jo": "Liu Jo",
+        "Liu Jo Woman": "Liu Jo",
+        "Michael Michael Kors": "Michael Kors",
+        "Michael Kors Mens": "Michael Kors",
+        "Michael Kors Collection": "Michael Kors"
+      }
     }
   },
   "sync": {

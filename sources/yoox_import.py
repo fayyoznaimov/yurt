@@ -182,6 +182,8 @@ def fetch(query: Query, **opts) -> list[Product]:
 
     # как писать бренд на сайте: «EA7», «Dolce&Gabbana» — из filters.brands и known_brands
     canon = {_bkey(b): b for b in list(query.brands) + list(so.get("known_brands") or [])}
+    # линии одного бренда под одним именем: «Michael Michael Kors» → «Michael Kors»
+    canon.update({_bkey(a): b for a, b in (so.get("brand_aliases") or {}).items()})
     wanted = {_bkey(b) for b in query.brands}
     any_brand = replace(query, brands=[])          # бренд проверяем сами, после исправления написания
 

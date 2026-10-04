@@ -174,6 +174,8 @@ def cmd_migrate(s: dict, args) -> int:
     files = [p for p in [data / "state.json", data / "sold_out.json", data / "fx.json", *sorted(data.glob("raw_*.json"))]
              if p.is_file()]
     site_files = [p for p in (site / "products.json", site / "products-admin.js") if p.is_file()]
+    # каталог частями (catalog_files.py): публичные части и закрытое site/admin/ — папками
+    site_dirs = [d for d in (site / "data", site / "admin") if d.is_dir()]
     img = site / "img" / "yoox"
     app = s["app"].rstrip("/")
     print(f"На {s['host']}:{app}: data/ ← {len(files)} файлов, site/ ← {len(site_files)}"
@@ -184,6 +186,7 @@ def cmd_migrate(s: dict, args) -> int:
     steps = [[*ssh_base(s, "ssh"), s["host"], f"mkdir -p {shlex.quote(app)}/data {shlex.quote(app)}/site/img"],
              [*ssh_base(s, "scp"), "-q", *map(str, files), f"{s['host']}:{app}/data/"],
              [*ssh_base(s, "scp"), "-q", *map(str, site_files), f"{s['host']}:{app}/site/"] if site_files else None,
+             [*ssh_base(s, "scp"), "-q", "-r", *map(str, site_dirs), f"{s['host']}:{app}/site/"] if site_dirs else None,
              [*ssh_base(s, "scp"), "-q", "-r", str(img), f"{s['host']}:{app}/site/img/"] if img.is_dir() else None]
     for cmd in filter(None, steps):
         if subprocess.run(cmd).returncode != 0:
