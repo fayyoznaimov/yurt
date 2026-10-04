@@ -276,18 +276,95 @@ img { display: block; max-width: 100%; }
 @media (min-width: 640px) { .trust-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1100px) { .trust-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
-/* как заказать */
-.steps { background: var(--ink); color: var(--paper); }
-.steps .wrap { padding-top: 48px; padding-bottom: 52px; }
-.steps h2 { margin: 0 0 26px; font: 400 clamp(24px, 4.4vw, 34px)/1.12 var(--font-display); }
-.steps ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 26px; counter-reset: st; }
-.steps li { counter-increment: st; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 2px 14px; }
-.steps li::before { content: counter(st, decimal-leading-zero); grid-row: span 2; font: 400 34px/1 var(--font-display); color: var(--muted); color: color-mix(in srgb, var(--paper) 55%, var(--ink)); }
-.steps h3 { margin: 0; font-size: 17px; font-weight: 600; }
-.steps p { margin: 4px 0 0; font-size: 14px; opacity: .78; max-width: 40ch; }
-.steps .btn { margin-top: 30px; background: var(--paper); color: var(--ink); border-color: var(--paper); }
-.steps .btn:hover { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
-@media (min-width: 900px) { .steps ol { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; } }
+/* как мы работаем: нить «прошивает» шаги по мере прокрутки, у каждого шага своя анимация */
+.how { --how-bg: #10162B; --how-fg: #EEF1F7; --acc: #8FA3FF; --acc-ink: #10162B; position: relative; overflow: hidden; background: var(--how-bg); color: var(--how-fg); color-scheme: dark; }
+@media (prefers-color-scheme: dark) { .how { --how-bg: #151C38; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); } }
+.how::before { content: ""; position: absolute; inset: -20% -10% auto auto; width: 70vw; height: 70vw; max-width: 900px; max-height: 900px; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%); }
+.how-wrap { position: relative; display: grid; gap: 36px; padding-top: 64px; padding-bottom: 64px; }
+.how-eyebrow { margin: 0 0 14px; font: 600 12px/1 var(--font-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--acc); }
+.how h2 { margin: 0; font: 400 clamp(28px, 5vw, 48px)/1.08 var(--font-display); letter-spacing: -0.01em; max-width: 13ch; text-wrap: balance; }
+.how-sub { margin: 18px 0 0; font-size: 15px; opacity: .72; max-width: 40ch; }
+.how-sub:empty { display: none; }
+.how-track { position: relative; padding-left: 40px; }
+.how-thread { position: absolute; left: 0; top: 0; width: 24px; height: 100%; overflow: visible; }
+.how-thread path { fill: none; stroke-linecap: round; }
+.how-thread .t-base { stroke: color-mix(in srgb, var(--how-fg) 22%, transparent); stroke-width: 1.5; }
+.how-thread .t-draw { stroke: var(--acc); stroke-width: 3; stroke-dasharray: 1 1; stroke-dashoffset: var(--how-off, 1);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--acc) 80%, transparent)); }
+.how-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 22px; }
+.how-step { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 20px;
+  border-radius: 18px; background: color-mix(in srgb, var(--how-fg) 5%, transparent); border: 1px solid color-mix(in srgb, var(--how-fg) 12%, transparent); }
+.how-step::before { content: ""; position: absolute; left: -35px; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%;
+  background: var(--how-bg); border: 2px solid color-mix(in srgb, var(--how-fg) 35%, transparent); transition: background var(--dur-3), border-color var(--dur-3), box-shadow var(--dur-4) var(--ease-out); }
+.how-step.on::before { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 7px color-mix(in srgb, var(--acc) 22%, transparent); }
+.how-num { font: 400 13px/1 var(--font-display); letter-spacing: .14em; color: var(--acc); }
+.how-step h3 { margin: 8px 0 6px; font-size: clamp(18px, 2.4vw, 22px); font-weight: 600; line-height: 1.2; }
+.how-step p { margin: 0; font-size: 14.5px; opacity: .74; max-width: 38ch; }
+.how-vis { width: 96px; height: 70px; color: var(--acc); }
+.how-vis svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.how-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; padding: 24px; border-radius: 20px;
+  background: color-mix(in srgb, var(--acc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); }
+.how-cta h3 { margin: 0 0 4px; font: 400 clamp(20px, 3vw, 26px)/1.2 var(--font-display); }
+.how-cta p { margin: 0; opacity: .75; font-size: 15px; }
+.how .how-tg { position: relative; background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.how .how-tg:hover { background: var(--how-fg); border-color: var(--how-fg); color: var(--how-bg); }
+.how-ping { position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; }
+.mo .how-ping { animation: how-ping 2.4s var(--ease-out) infinite; }
+@keyframes how-ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 16px transparent; } }
+@media (min-width: 560px) { .how-step { grid-template-columns: minmax(0, 1fr) 128px; padding: 24px 26px; } .how-vis { width: 128px; height: 92px; } }
+@media (min-width: 900px) {
+  .how-wrap { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 40px 72px; padding-top: 104px; padding-bottom: 104px; }
+  .how-head { position: sticky; top: calc(var(--hdr) + 48px); align-self: start; }
+  .how-track { padding-left: 52px; }
+  .how-step::before { left: -47px; }
+  .how-list { gap: 26px; }
+  .how-cta { grid-column: 1 / -1; padding: 28px 32px; }
+}
+
+/* появление шага: карточка выезжает, когда до неё дошла нить */
+.mo .how-step { opacity: .28; transition: opacity var(--dur-4) var(--ease-out); }
+.mo .how-step > * { transform: translate3d(22px, 0, 0); transition: transform var(--dur-4) var(--ease-out); }
+.mo .how-step.on { opacity: 1; }
+.mo .how-step.on > * { transform: none; }
+
+/* 1 — вещь падает в пакет, пакет «приседает», выскакивает +1 */
+.v-cart .bag path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+.v-cart .item { fill: var(--how-fg); transform-box: fill-box; transform-origin: center; opacity: 0; }
+.v-cart .bag { transform-box: fill-box; transform-origin: 50% 100%; }
+.v-cart .badge { fill: currentColor; transform-box: fill-box; transform-origin: center; transform: scale(0); }
+.v-cart .badge text { fill: var(--acc-ink); font: 700 10px/1 var(--font-ui); }
+.how-step.on .v-cart .item { animation: v-drop 3.2s var(--ease-in-out) .2s infinite; }
+.how-step.on .v-cart .bag { animation: v-squish 3.2s var(--ease-out) .2s infinite; }
+.how-step.on .v-cart .badge { animation: v-pop .5s var(--ease-spring) 1.3s forwards; }
+@keyframes v-drop { 0% { opacity: 0; transform: translateY(-16px) rotate(-12deg); } 15% { opacity: 1; } 45% { opacity: 1; transform: translateY(30px) rotate(0); } 55%, 100% { opacity: 0; transform: translateY(34px); } }
+@keyframes v-squish { 0%, 42% { transform: none; } 50% { transform: scale(1.06, .9); } 62%, 100% { transform: none; } }
+@keyframes v-pop { to { transform: scale(1); } }
+
+/* 2 — кольцо заполняется до половины, счётчик 0 → 50% */
+.v-pay .r-base { fill: none; stroke: color-mix(in srgb, currentColor 22%, transparent); stroke-width: 7; }
+.v-pay .r-fill { fill: none; stroke: currentColor; stroke-width: 7; stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset 1.6s var(--ease-out) .2s; }
+.how-step.on .v-pay .r-fill { stroke-dashoffset: 50; }
+.v-pay .r-txt { fill: var(--how-fg); font: 400 17px/1 var(--font-display); }
+.v-pay .r-cap { fill: var(--how-fg); opacity: .6; font: 500 7.5px/1 var(--font-ui); letter-spacing: .08em; }
+
+/* 3 — маршрут Италия/Турция → Ташкент прорисовывается, по нему летит самолёт */
+.v-route .rt-base { fill: none; stroke: color-mix(in srgb, currentColor 35%, transparent); stroke-width: 1.6; stroke-dasharray: 3 4; }
+.v-route .rt-draw { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.4s var(--ease-in-out) .2s; }
+.how-step.on .v-route .rt-draw { stroke-dashoffset: 0; }
+.v-route .pt { fill: currentColor; }
+.v-route .pin { fill: currentColor; transform-box: fill-box; transform-origin: 50% 100%; transform: scale(0); transition: transform .5s var(--ease-spring) 1.4s; }
+.how-step.on .v-route .pin { transform: scale(1); }
+.v-route .lbl { fill: var(--how-fg); opacity: .7; font: 600 8px/1 var(--font-ui); letter-spacing: .1em; }
+.v-route .plane { fill: var(--how-fg); opacity: 0; transition: opacity .3s; }
+.mo .how-step.on .v-route .plane { opacity: 1; }
+
+/* 4 — десять дней заполняются по одному, счётчик до 10 */
+.v-days .d { fill: currentColor; opacity: .2; transform-box: fill-box; }
+.how-step.on .v-days .d { animation: v-day .35s var(--ease-out) forwards; animation-delay: calc(var(--i) * 110ms + .2s); }
+@keyframes v-day { 0% { opacity: .2; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } 100% { opacity: 1; transform: none; } }
+.v-days .d-num { fill: var(--how-fg); font: 400 30px/1 var(--font-display); }
+.v-days .d-cap { fill: var(--how-fg); opacity: .6; font: 500 8px/1 var(--font-ui); letter-spacing: .08em; }
 
 /* вопросы */
 .faq-wrap { display: grid; gap: 18px; }
@@ -404,7 +481,6 @@ img { display: block; max-width: 100%; }
 .chip[aria-pressed="true"] .n { color: inherit; opacity: .7; }
 .chip:disabled { opacity: .38; cursor: default; }
 .chips.sizes .chip { border-radius: 6px; min-width: 42px; justify-content: center; padding: 6px 8px; }
-.chips.collapsed .chip:nth-child(n+19) { display: none; }
 .brand-q { height: 36px; margin-bottom: 8px; font-size: 14px; }
 .more-link { margin-top: 8px; background: none; border: 0; padding: 4px 0; color: var(--link); font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
@@ -1471,18 +1547,27 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       </div>
     </section>
 
-    <section class="steps rv" id="steps" aria-labelledby="stepsTitle">
-      <div class="wrap">
-        <h2 id="stepsTitle">Как заказать</h2>
-        <ol id="stepsList"></ol>
-        <a class="btn lg" id="stepsCta" href="#/contacts" target="_blank" rel="noopener noreferrer">Написать в Telegram</a>
-      </div>
-    </section>
-
-    <section class="sec rv" id="homeFaq" aria-labelledby="faqTitle">
-      <div class="wrap faq-wrap">
-        <div class="sec-head"><div><h2 id="faqTitle">Частые вопросы</h2><p><a href="#/faq">Все вопросы и ответы</a></p></div></div>
-        <div class="faq" id="homeFaqList"></div>
+    <section class="how" id="steps" aria-labelledby="stepsTitle">
+      <div class="wrap how-wrap">
+        <div class="how-head">
+          <p class="how-eyebrow">Как мы работаем</p>
+          <h2 id="stepsTitle">От корзины до&nbsp;Ташкента — четыре шага</h2>
+          <p class="how-sub" id="stepsSub"></p>
+        </div>
+        <div class="how-track">
+          <svg class="how-thread" viewBox="0 0 24 1000" preserveAspectRatio="none" aria-hidden="true">
+            <path class="t-base" d="M12 0 C 8 125, 16 250, 12 375 S 8 625, 12 750 S 16 875, 12 1000"/>
+            <path class="t-draw" id="howDraw" pathLength="1" d="M12 0 C 8 125, 16 250, 12 375 S 8 625, 12 750 S 16 875, 12 1000"/>
+          </svg>
+          <ol class="how-list" id="stepsList"></ol>
+        </div>
+        <div class="how-cta">
+          <div class="how-cta-text">
+            <h3>Остались вопросы?</h3>
+            <p>Напишите нам в&nbsp;Telegram — ответим на&nbsp;всё.</p>
+          </div>
+          <a class="btn lg how-tg" id="stepsCta" href="#/contacts" target="_blank" rel="noopener noreferrer"><span class="how-ping" aria-hidden="true"></span>Написать в Telegram</a>
+        </div>
       </div>
     </section>
   </div>
@@ -1659,6 +1744,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   var ADMIN = new URLSearchParams(location.search).get("admin") === "1";
   var BATCH = 48;
   var BRAND_TOP = 15;      // больше брендов — список сворачивается до самых крупных + поиск по брендам
+  var SIZE_TOP = 16;       // свёрнутый список размеров — самые ходовые под текущие фильтры
+  var sizesOpen = false;
   var OTHER = "другое";
   var TYPE_ORDER = ["обувь", "сумки", "нижнее бельё", "джинсы", "футболки и поло", "толстовки",
     "пиджаки и костюмы", "платья", "юбки", "шорты", "рубашки", "свитеры и кардиганы",
@@ -1707,10 +1794,12 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     hero_title: "Итальянские бренды по ценам распродаж",
     hero_text: "Оригинальные вещи из Италии и Турции со скидками. Выберите вещь и размер, напишите нам — привезём.",
     about: "", authenticity: "Только оригинал — вещи с бирками бренда.", delivery: "", payment: "",
+    steps_text: "",
     order_steps: [
-      { title: "Выберите вещь", text: "Посмотрите размеры и скопируйте код товара." },
-      { title: "Напишите нам", text: "Нажмите «Заказать» и пришлите код и размер." },
-      { title: "Оплата и доставка", text: "Подтвердим наличие и привезём заказ." }
+      { title: "Выбираете вещь", text: "Добавьте вещи в корзину и оформите заказ — он сразу придёт нам.", visual: "cart" },
+      { title: "Предоплата 50%", text: "Подтверждаем наличие размера — вы вносите половину суммы.", visual: "prepay" },
+      { title: "Заказываем у бренда", text: "Сразу после оплаты выкупаем вашу вещь в Италии или Турции.", visual: "order" },
+      { title: "Доставка до 10 дней", text: "Привозим заказ в Ташкент в течение 10 дней.", visual: "delivery" }
     ],
     contacts: {}, faq: []
   };
@@ -2033,11 +2122,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     hc.querySelector("span").textContent = tg ? "Telegram" : "Написать";
     hc.setAttribute("aria-label", tg ? "Написать нам в Telegram" : "Написать нам");
     var sc = $("stepsCta");
-    if (base) { sc.href = withText(base, "Здравствуйте! Хочу сделать заказ."); sc.target = "_blank"; sc.textContent = tg ? "Написать в Telegram" : "Написать нам"; }
+    if (base) { sc.href = withText(base, "Здравствуйте! У меня вопрос."); sc.target = "_blank"; sc.textContent = tg ? "Написать в Telegram" : "Написать нам"; }
     else { sc.href = "#/contacts"; sc.removeAttribute("target"); sc.textContent = "Контакты"; }
     renderTrust();
     renderSteps();
-    renderHomeFaq();
     renderFooter();
     renderDrawer();
     if (ADMIN) {
@@ -2063,13 +2151,86 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     }).join("");
   }
 
+  // картинки шагов «Как мы работаем» (поле visual в content.json → order_steps)
+  var ROUTE = "M14 56 C 30 8, 80 6, 98 40";
+  var STEP_VIS = {
+    cart: '<svg class="v-cart" viewBox="0 0 112 80" aria-hidden="true">' +
+      '<g class="bag"><path d="M32 32h48l-4 40H36z"/><path d="M45 32v-5a11 11 0 0 1 22 0v5"/></g>' +
+      '<path class="item" d="M49 6l5-3h4l5 3 5 4-3 5-3-2v12H50V13l-3 2-3-5z"/>' +
+      '<g class="badge"><circle cx="82" cy="30" r="10"/><text x="82" y="33.5" text-anchor="middle">+1</text></g></svg>',
+    prepay: '<svg class="v-pay" viewBox="0 0 112 80" aria-hidden="true">' +
+      '<circle class="r-base" cx="56" cy="40" r="31"/><circle class="r-fill" cx="56" cy="40" r="31" pathLength="100" transform="rotate(-90 56 40)"/>' +
+      '<text class="r-txt" x="56" y="42" text-anchor="middle" data-count="50" data-suffix="%">50%</text>' +
+      '<text class="r-cap" x="56" y="54" text-anchor="middle">СЕЙЧАС</text></svg>',
+    order: '<svg class="v-route" viewBox="0 0 112 80" aria-hidden="true">' +
+      '<path class="rt-base" d="' + ROUTE + '"/><path class="rt-draw" pathLength="1" d="' + ROUTE + '"/>' +
+      '<circle class="pt" cx="14" cy="56" r="4"/>' +
+      '<path class="pin" d="M98 46c-5-6-7-9-7-12a7 7 0 0 1 14 0c0 3-2 6-7 12z"/>' +
+      '<text class="lbl" x="2" y="72">IT · TR</text><text class="lbl" x="110" y="60" text-anchor="end">TAS</text>' +
+      '<path class="plane" d="M7 0L-5 -5L-2 0L-5 5Z"><animateMotion dur="2.6s" begin="indefinite" repeatCount="indefinite" rotate="auto" path="' + ROUTE + '"/></path></svg>',
+    delivery: '<svg class="v-days" viewBox="0 0 112 80" aria-hidden="true">' +
+      '<text class="d-num" x="56" y="34" text-anchor="middle" data-count="10">10</text>' +
+      '<text class="d-cap" x="56" y="48" text-anchor="middle">ДНЕЙ</text>' +
+      Array.from({ length: 10 }, function (_, i) { return '<rect class="d" style="--i:' + i + '" x="' + (7 + i * 10) + '" y="58" width="7" height="16" rx="2"/>'; }).join("") +
+      "</svg>"
+  };
+
   function renderSteps() {
     var steps = (Array.isArray(CONTENT.order_steps) && CONTENT.order_steps.length ? CONTENT.order_steps : DEFAULT_CONTENT.order_steps)
       .filter(function (s) { return s && str(s.title); });
     $("steps").hidden = !steps.length;
-    $("stepsList").innerHTML = steps.map(function (s) {
-      return "<li><h3>" + esc(s.title) + "</h3>" + (str(s.text) ? "<p>" + esc(s.text) + "</p>" : "") + "</li>";
+    var sub = $("stepsSub");
+    sub.textContent = str(C("steps_text"));
+    $("stepsList").innerHTML = steps.map(function (s, i) {
+      var vis = STEP_VIS[str(s.visual)] || "";
+      return '<li class="how-step"><div><span class="how-num">' + (i < 9 ? "0" : "") + (i + 1) + "</span><h3>" + esc(s.title) + "</h3>" +
+        (str(s.text) ? "<p>" + esc(s.text) + "</p>" : "") + "</div>" + (vis ? '<div class="how-vis">' + vis + "</div>" : "") + "</li>";
     }).join("");
+    howArm();
+  }
+
+  // нить «Как мы работаем» дорисовывается вслед за прокруткой; шаг включается, когда нить до него дошла
+  var howOn = false, howRaf = 0;
+  function howStep(li) {
+    if (li.classList.contains("on")) return;
+    li.classList.add("on");
+    li.querySelectorAll("[data-count]").forEach(function (t) {
+      var to = +t.getAttribute("data-count"), suf = t.getAttribute("data-suffix") || "";
+      if (!MO) { t.textContent = to + suf; return; }
+      var t0 = performance.now(), dur = 1500;
+      (function tick(now) {
+        var k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        t.textContent = Math.round(to * e) + suf;
+        if (k < 1) requestAnimationFrame(tick);
+      })(t0);
+    });
+    li.querySelectorAll("animateMotion").forEach(function (m) { if (MO) try { m.beginElement(); } catch (e) { /* нет SMIL */ } });
+  }
+  function howFrame() {
+    howRaf = 0;
+    var list = $("stepsList"), track = list.parentNode, vh = window.innerHeight;
+    var r = track.getBoundingClientRect(), line = vh * 0.62;
+    var p = Math.max(0, Math.min(1, (line - r.top) / Math.max(1, r.height)));
+    track.style.setProperty("--how-off", (1 - p).toFixed(4));
+    list.querySelectorAll(".how-step").forEach(function (li) {
+      var b = li.getBoundingClientRect();
+      if (b.top + b.height / 2 < line) howStep(li);
+    });
+  }
+  function howTick() { if (!howRaf) howRaf = requestAnimationFrame(howFrame); }
+  function howArm() {
+    var list = $("stepsList");
+    if (!MO || !("IntersectionObserver" in window)) {
+      list.parentNode.style.setProperty("--how-off", "0");
+      list.querySelectorAll(".how-step").forEach(howStep);
+      return;
+    }
+    if (howOn) { howTick(); return; }
+    howOn = true;
+    new IntersectionObserver(function (en) {
+      if (en[0].isIntersecting) { window.addEventListener("scroll", howTick, { passive: true }); window.addEventListener("resize", howTick); howTick(); }
+      else { window.removeEventListener("scroll", howTick); window.removeEventListener("resize", howTick); }
+    }).observe($("steps"));
   }
 
   function faqList() {
@@ -2079,11 +2240,6 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return list.map(function (f) {
       return "<details><summary>" + esc(f.q) + '</summary><div class="ans">' + richText(f.a) + "</div></details>";
     }).join("");
-  }
-  function renderHomeFaq() {
-    var list = faqList();
-    $("homeFaq").hidden = !list.length;
-    $("homeFaqList").innerHTML = faqHtml(list.slice(0, 4));
   }
 
   function contactRows() {
@@ -3118,10 +3274,6 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.brandQ.hidden = options.brands.length <= BRAND_TOP;
     $("gType").hidden = options.types.length < 2;
     $("gSize").hidden = !options.sizes.length;
-    var collapsible = options.sizes.length > 18;
-    els.fSize.classList.toggle("collapsed", collapsible);
-    els.sizeMore.hidden = !collapsible;
-    if (collapsible) els.sizeMore.textContent = "Все размеры (" + options.sizes.length + ")";
 
     var g = [["", "Все"]].concat(options.genders.map(function (x) { return [x, GENDERS[x]]; }));
     els.fGender.innerHTML = g.map(function (o) {
@@ -3294,6 +3446,25 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     facet("type", "_type", els.fType);
     facet("size", null, els.fSize);
     layoutBrands();
+    layoutSizes();
+  }
+
+  // размеры: только те, под которые сейчас есть товары (и выбранные); свёрнуто — SIZE_TOP самых ходовых
+  function layoutSizes() {
+    var counts = facetCounts.size, avail = [];
+    els.fSize.querySelectorAll(".chip").forEach(function (chip) {
+      var v = chip.getAttribute("data-value"), n = counts.get(v) || 0;
+      if (n || state.sizes.has(v)) avail.push({ chip: chip, v: v, n: n });
+      else chip.hidden = true;
+    });
+    var top = null;
+    if (!sizesOpen && avail.length > SIZE_TOP)
+      top = new Set(avail.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, SIZE_TOP).map(function (x) { return x.v; }));
+    avail.forEach(function (x) { x.chip.hidden = !!top && !top.has(x.v) && !state.sizes.has(x.v); });
+    $("gSize").hidden = !avail.length;
+    els.sizeMore.hidden = avail.length <= SIZE_TOP;
+    els.sizeMore.setAttribute("aria-expanded", sizesOpen ? "true" : "false");
+    els.sizeMore.textContent = sizesOpen ? "Свернуть" : "Все размеры (" + avail.length + ")";
   }
 
   // свёрнутый список брендов: выбранные + первые BRAND_TOP из тех, что есть под текущие фильтры;
@@ -3392,15 +3563,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.sort.value = state.sort;
     els.fSold.checked = state.soldout;
     els.fGender.querySelectorAll("input").forEach(function (r) { r.checked = r.value === state.gender; });
-    // выбранный размер из «свёрнутой» части — раскрываем список
-    if (els.fSize.classList.contains("collapsed") &&
-        options.sizes.some(function (s, i) { return i >= 18 && state.sizes.has(s); })) toggleSizes(true);
   }
 
   function toggleSizes(open) {
-    els.fSize.classList.toggle("collapsed", !open);
-    els.sizeMore.setAttribute("aria-expanded", open ? "true" : "false");
-    els.sizeMore.textContent = open ? "Свернуть" : "Все размеры (" + options.sizes.length + ")";
+    sizesOpen = open;
+    layoutSizes();
   }
 
   /* ---------- адрес страницы ---------- */
@@ -4834,7 +5001,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       apply();
     });
     els.sizeMore.addEventListener("click", function () {
-      toggleSizes(els.fSize.classList.contains("collapsed"));
+      toggleSizes(!sizesOpen);
     });
     els.brandMore.addEventListener("click", function () {
       brandsOpen = !brandsOpen;
