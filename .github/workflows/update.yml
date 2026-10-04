@@ -29,6 +29,8 @@ on:
       - config.json
       - site/index.html
       - site/content.json
+      - site/brands.json
+      - site/img/brands/**
       - describe.py
       - pricing.py
       - run.py

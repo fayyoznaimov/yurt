@@ -1,0 +1,25 @@
+# Cloudflare Tunnel — HTTPS для приёма заказов, если у сервера нет белого IP / открытых портов / своего домена
+# под Caddy. Сервер сам подключается к Cloudflare, входящие порты открывать не нужно.
+# Нужен домен, добавленный в Cloudflare (бесплатный тариф подходит).
+#
+#   # установка cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+#   cloudflared tunnel login                              # откроет ссылку: выбрать домен
+#   cloudflared tunnel create yurt-orders                 # создаст ~/.cloudflared/<UUID>.json
+#   cloudflared tunnel route dns yurt-orders orders.example.uz
+#   sudo mkdir -p /etc/cloudflared && sudo cp ~/.cloudflared/<UUID>.json /etc/cloudflared/
+#   sudo cp /opt/yurt/app/server/cloudflared.example.yml /etc/cloudflared/config.yml   # и поправить UUID и домен
+#   sudo cloudflared service install && sudo systemctl enable --now cloudflared
+#   curl -s https://orders.example.uz/api/health
+#
+# Проще (без файла): Cloudflare Zero Trust → Networks → Tunnels → Create tunnel → команда
+# «cloudflared service install <токен>»; Public hostname: orders.example.uz → http://127.0.0.1:8787.
+# order_api.py берёт IP покупателя из заголовка CF-Connecting-IP (нужно для ограничения частоты).
+
+tunnel: <UUID>
+credentials-file: /etc/cloudflared/<UUID>.json
+
+ingress:
+  - hostname: orders.example.uz
+    path: ^/api/(order|health)$
+    service: http://127.0.0.1:8787
+  - service: http_status:404

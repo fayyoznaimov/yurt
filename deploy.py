@@ -7,7 +7,8 @@
 поэтому публикация с компьютера и из облака не мешают друг другу.
 
 Публикуется только публичная часть site/: index.html, products.js, products.json,
-тексты продавца content.js / content.json (content.js пересобирается из content.json) и
+тексты продавца content.js / content.json (content.js пересобирается из content.json),
+логотипы брендов brands.json / brands.js / img/brands/ (brands.js пересобирается из brands.json) и
 скачанные фото img/p/. products-admin.js (закупочные цены, маржа, ссылки на магазины)
 и старые папки фото с названием источника НЕ публикуются. На страницу добавляется
 <meta name="robots" content="noindex">, чтобы сайт не попадал в поиск.
@@ -26,8 +27,9 @@ ROOT = Path(__file__).parent
 SITE = ROOT / "site"
 OUT = Path(os.environ.get("DEPLOY_OUT") or Path.home() / "yurt-pages")   # рабочая копия ветки gh-pages
 PUBLIC_FILES = ["index.html", "products.js", "products.json"]
-OPTIONAL_FILES = ["content.js", "content.json"]     # тексты продавца (content.py), если есть
-PUBLIC_DIRS = ["img/p"]
+OPTIONAL_FILES = ["content.js", "content.json",     # тексты продавца (content.py), если есть
+                  "brands.js", "brands.json"]       # логотипы брендов (brands.py), если есть
+PUBLIC_DIRS = ["brand", "img/p", "img/brands"]
 FORBIDDEN = ["products-admin.js"]
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -54,6 +56,9 @@ def main() -> None:
     if (SITE / "content.json").exists():
         import content
         content.build()                       # content.js — по свежему content.json
+    if (SITE / "brands.json").exists():
+        import brands
+        brands.build(quiet=True)              # brands.js — по свежему brands.json
     remote = git("remote", "get-url", "origin", cwd=ROOT)
 
     if not (OUT / ".git").exists():

@@ -53,6 +53,11 @@ def warnings(data: dict) -> list[str]:
     c = data.get("contacts") if isinstance(data.get("contacts"), dict) else {}
     if not any(str(c.get(k) or "").strip() for k in ("telegram", "instagram", "phone")):
         out.append("контакты пустые: кнопка «Заказать» ведёт на site.contact_url из config.json")
+    ep = str(data.get("order_endpoint") or "").strip()
+    if ep and not ep.startswith("https://"):
+        out.append("order_endpoint должен начинаться с https:// (сайт на GitHub Pages открыт по HTTPS)")
+    if "orders_telegram_username" in data and not isinstance(data["orders_telegram_username"], str):
+        out.append("orders_telegram_username должен быть текстом в кавычках")
     if data.get("_draft"):
         out.append("\"_draft\": true — тексты помечены как черновик (напоминание видно в ?admin=1)")
     return out

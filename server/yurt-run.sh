@@ -55,7 +55,7 @@ deploy_if_changed() {
   # публикуем, только если сайт правда изменился с прошлой публикации
   if [ "${YURT_DEPLOY:-1}" != 1 ]; then echo "Публикация выключена (YURT_DEPLOY=0)"; return 0; fi
   local marker=data/.deployed
-  if [ -f "$marker" ] && [ -z "$(find site/products.json site/index.html site/content.json -newer "$marker" 2>/dev/null)" ]; then
+  if [ -f "$marker" ] && [ -z "$(find site/products.json site/index.html site/content.json site/brands.json -newer "$marker" 2>/dev/null)" ]; then
     echo "Сайт не менялся — не публикую"
     return 0
   fi

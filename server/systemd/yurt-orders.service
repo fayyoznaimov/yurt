@@ -1,0 +1,38 @@
+# Приём заказов с сайта → Telegram (order_api.py). Работает всегда, слушает только 127.0.0.1:8787 —
+# наружу его выставляет Caddy (HTTPS) или Cloudflare Tunnel, см. README «Заказы с сайта».
+# @USER@ и @APP@ подставляет server/setup.sh. Раз в сутки перезапускается сам (RuntimeMaxSec), чтобы
+# подхватить новый код после git pull; каталог (products.json) он перечитывает и без перезапуска.
+[Unit]
+Description=yurt: приём заказов с сайта (order_api.py)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+Environment=PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
+# $$ — так systemd пропускает $ в bash: YURT_PYTHON из yurt.env, иначе системный python3
+ExecStart=/usr/bin/env bash -c 'exec "$${YURT_PYTHON:-python3}" @APP@/order_api.py'
+Restart=always
+RestartSec=3
+RuntimeMaxSec=1d
+MemoryMax=512M
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@APP@/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -14,6 +14,7 @@
 #   DEPLOY_KEY         generate — создать ключ ~yurt/.ssh/yurt_deploy; или путь к готовому приватному ключу
 #   OWNER_PUBKEY_FILE  публичный ключ вашего компьютера (push_yoox.py --setup покажет его) — для scp во «входящие»
 #   ENABLE_TIMERS      1 — включить таймеры systemd (по умолчанию 1)
+#   ENABLE_ORDERS      1 — включить службу приёма заказов yurt-orders (order_api.py, по умолчанию 1)
 # Токены и ключи в этот файл не пишутся и в git не попадают: только в файлы с правами 600 у пользователя yurt.
 set -euo pipefail
 
@@ -26,6 +27,7 @@ INBOX="$YURT_HOME/inbox"
 ENV_DIR=/etc/yurt
 ENV_FILE="$ENV_DIR/yurt.env"
 ENABLE_TIMERS="${ENABLE_TIMERS:-1}"
+ENABLE_ORDERS="${ENABLE_ORDERS:-1}"
 
 say() { printf '\n== %s\n' "$*"; }
 as_user() { sudo -u "$YURT_USER" -H "$@"; }
@@ -57,6 +59,7 @@ else
   as_user git clone -q "$HTTPS_URL" "$APP"
 fi
 install -d -o "$YURT_USER" -g "$YURT_USER" "$APP/data" "$APP/data/logs" "$APP/site"
+install -d -o "$YURT_USER" -g "$YURT_USER" -m 700 "$APP/data/orders"     # заказы с контактами покупателей
 
 say "Python: $VENV (+ requests)"
 [ -x "$VENV/bin/python" ] || as_user python3 -m venv "$VENV"
@@ -120,6 +123,12 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "Создан $ENV_FILE — впишите туда TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID, если нужны уведомления."
 else
   echo "$ENV_FILE уже есть — не трогаю."
+  for v in TELEGRAM_ORDERS_CHAT_ID ORDER_ALLOWED_ORIGINS ORDER_API_PORT ORDER_API_BIND ORDER_RATE_LIMIT ORDER_RATE_WINDOW; do
+    if ! grep -q "^$v=" "$ENV_FILE"; then
+      grep "^$v=" "$APP/server/yurt.env.example" >> "$ENV_FILE"     # новые настройки заказов — со значениями по умолчанию
+      echo "  добавлено в $ENV_FILE: $(grep "^$v=" "$APP/server/yurt.env.example")"
+    fi
+  done
 fi
 chown root:"$YURT_USER" "$ENV_FILE"; chmod 640 "$ENV_FILE"
 chmod +x "$APP/server/yurt-run.sh" || true
@@ -133,6 +142,12 @@ if [ "$ENABLE_TIMERS" = 1 ]; then
   systemctl enable --now yurt-update.timer yurt-yoox.timer yurt-fx.timer yurt-cleanup.timer >/dev/null
 fi
 systemctl list-timers 'yurt-*' --no-pager || true
+if [ "$ENABLE_ORDERS" = 1 ]; then
+  systemctl enable yurt-orders.service >/dev/null
+  systemctl restart yurt-orders.service || echo "ВНИМАНИЕ: yurt-orders не запустился — journalctl -u yurt-orders"   # перезапуск — новый код
+  sleep 2
+  systemctl --no-pager --lines=5 status yurt-orders.service || true
+fi
 
 cat <<EOF
 
@@ -143,4 +158,7 @@ cat <<EOF
      или перенесите текущие данные с компьютера (см. README, «Свой сервер», шаг «Перенос данных»).
   3. Уведомления: впишите токен бота в $ENV_FILE и проверьте:
      sudo -u $YURT_USER bash -c 'set -a; . $ENV_FILE; cd $APP && $VENV/bin/python notify.py --test'
+  4. Заказы с сайта: служба yurt-orders слушает 127.0.0.1:8787 (ORDER_API_PORT). Впишите TELEGRAM_ORDERS_CHAT_ID в $ENV_FILE,
+     затем: sudo systemctl restart yurt-orders && curl -s http://127.0.0.1:8787/api/health
+     Наружу по HTTPS — Caddy (server/Caddyfile.example) или Cloudflare Tunnel (server/cloudflared.example.yml), см. README.
 EOF

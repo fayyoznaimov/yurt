@@ -147,6 +147,8 @@ def _brand(model_brand, names: dict[str, str]) -> str | None:
         return None
     raw = str(model_brand[-1]).split(">")[-1].strip()
     raw = re.sub(r"-\d+$", "", raw).strip()
+    # YOOX пишет «JACOB COHЁN» кириллической Ё — заменяем на латинскую Ë, иначе бренд двоится
+    raw = raw.replace("Ё", "Ë").replace("ё", "ë")
     if not raw:
         return None
     return names.get(norm_brand(raw)) or _pretty(raw)

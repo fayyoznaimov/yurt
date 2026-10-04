@@ -306,8 +306,9 @@
     "verify_limit": 120
   },
   "site": {
-    "title": "Брендовые вещи со скидкой",
+    "title": "IPAK — брендовая одежда из Италии и Турции",
     "contact_url": "https://t.me/your_username",
-    "contact_label": "Заказать в Telegram"
+    "contact_label": "Заказать в Telegram",
+    "name": "IPAK"
   }
 }

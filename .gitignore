@@ -4,7 +4,9 @@ data/
 # Сайт: файлы товаров и фото генерирует run.py
 site/products.js
 site/products.json
-site/img/
+site/img/*
+# логотипы брендов (brands.py) — в git, их публикует deploy.py
+!site/img/brands/
 # закупочные цены, маржа и ссылки на магазины — никогда не публиковать
 site/products-admin.js
 
@@ -21,3 +23,4 @@ _pages/
 
 # генерируется из content.json (content.py / deploy.py)
 site/content.js
+site/brands.js

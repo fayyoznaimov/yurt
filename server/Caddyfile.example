@@ -1,0 +1,31 @@
+# Caddy — HTTPS для приёма заказов (order_api.py) с автоматическим сертификатом Let's Encrypt.
+# Сайт на GitHub Pages открыт по https://, поэтому браузер пустит запрос заказа только на https://-адрес.
+#
+# Что нужно: домен или поддомен (например orders.example.uz), A-запись которого указывает на IP сервера,
+# и открытые порты 80 и 443 (80 — для выдачи сертификата).
+#   sudo apt install -y caddy                       # Ubuntu 24.04+/Debian 12+; иначе — https://caddyserver.com/docs/install
+#   sudo cp /opt/yurt/app/server/Caddyfile.example /etc/caddy/Caddyfile
+#   sudo nano /etc/caddy/Caddyfile                  # заменить orders.example.uz на свой поддомен
+#   sudo systemctl reload caddy
+#   curl -s https://orders.example.uz/api/health    # {"ok": true, ...}
+# Затем в site/content.json:  "order_endpoint": "https://orders.example.uz/api/order"
+
+orders.example.uz {
+	# наружу — только API заказов; всё остальное 404
+	@api path /api/order /api/health
+	handle @api {
+		request_body {
+			max_size 32KB
+		}
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle {
+		respond 404
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+	}
+	# журнал доступа не включаем: order_api.py сам пишет короткую строку на заказ (телефон — только ***1234)
+}

@@ -311,6 +311,23 @@ def stats(items: list[dict]) -> dict | None:
             "discount_avg": round(sum(disc) / len(disc), 1) if disc else 0}
 
 
+
+ONE_SIZE = {"--", "-", "ONESIZE", "ONE SIZE", "OS", "TU", "UNI", "UNICA", "STD", "STANDART", "TEK EBAT"}
+
+
+def clean_sizes(sizes) -> list[str]:
+    """Размеры как у магазина; «--»/ONESIZE и т.п. — это «Единый размер» (перевод, не выдумка)."""
+    out = []
+    for s in sizes or []:
+        s = str(s).strip()
+        if not s:
+            continue
+        s = "Единый размер" if s.upper() in ONE_SIZE else s
+        if s not in out:
+            out.append(s)
+    return out
+
+
 def public_id(source: str, item_id: str, n: int = 7) -> str:
     """Нейтральный код товара для покупателя: первые 7 символов base32(sha1("источник:id")).
     Не меняется между запусками и ничего не говорит о магазине (никаких YX-/TY-/PC-/CC-)."""
@@ -520,7 +537,7 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
         pub = {
             "id": code, "brand": r["brand"], "title": d["title"], "type": r.get("type"), "gender": r.get("gender"),
             "origin": r["country"], "price_uzs": r["price_uzs"], "discount_pct": r.get("discount_pct"),
-            "sizes": r.get("sizes") or [], "sizes_out": [], "size_system": d["size_system"], "color": d["color"],
+            "sizes": clean_sizes(r.get("sizes")), "sizes_out": [], "size_system": d["size_system"], "color": d["color"],
             "composition": d["composition"], "details": d["details"], "description": d["description"],
             "images": publish_images(code, r.get("images") or [], used_imgs),
             "in_stock": r.get("in_stock", True), "fetched_at": _utc(r.get("fetched_at")),
