@@ -1,0 +1,12 @@
+# Воронка: напоминание о брошенных корзинах каждый час (в :20) (funnel.py --carts).
+# ПРИМЕР — не включается сам: sudo systemctl enable --now yurt-funnel@carts.timer
+[Unit]
+Description=yurt: воронка — корзины каждый час
+
+[Timer]
+OnCalendar=*-*-* *:20:00
+Persistent=false
+Unit=yurt-funnel@carts.service
+
+[Install]
+WantedBy=timers.target

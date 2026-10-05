@@ -375,7 +375,7 @@ class OrdersDbTest(unittest.TestCase):
             self.assertEqual(o2["telegram_linked_at"], "2026-10-02T11:00:00")
             self.assertEqual(o2["customer_name"], "Attacker")                # старые заказы — из карточки
             self.assertIsNone(db.query("SELECT telegram_user_id FROM customers")[0][0])
-            self.assertEqual(db.query("SELECT value FROM meta WHERE key='schema_version'")[0][0], "2")
+            self.assertEqual(db.query("SELECT value FROM meta WHERE key='schema_version'")[0][0], str(orders_db.SCHEMA_VERSION))
             self.assertEqual([o["order_no"] for o in db.orders_for_telegram_user(777)], ["YR-261002-BBBB"])
         finally:
             db.close()
@@ -479,6 +479,124 @@ class OrdersDbTest(unittest.TestCase):
     def test_mask_phone(self):
         self.assertEqual(orders_db.mask_phone("+998901234567"), "***4567")
         self.assertEqual(orders_db.mask_phone(""), "-")
+
+
+class FunnelDbTest(unittest.TestCase):
+    """Схема 3: пользователи бота, рефералы, анкеты, цены, корзины, вопрос после выдачи (funnel.py)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = orders_db.OrdersDB(Path(self.tmp.name) / "o.sqlite")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+
+    def test_helpers(self):
+        self.assertEqual(orders_db.clean_tag(" Insta_1 "), "insta_1")
+        for bad in ("", "a-b", "x" * 33, "<s>", None, True, "тег"):
+            self.assertEqual(orders_db.clean_tag(bad), "")
+        c = orders_db.ref_code_for("123:T", 42)
+        self.assertRegex(c, r"^[a-z2-7]{8}$")
+        self.assertEqual(c, orders_db.ref_code_for("123:T", 42))
+        self.assertNotEqual(c, orders_db.ref_code_for("123:T", 43))
+        self.assertEqual(orders_db.ref_code_for("", 42), "")
+        self.assertRegex(orders_db.utc_iso(), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+    def test_tg_users_and_referrals(self):
+        u = self.db.touch_tg_user(10, "@Ali_Bek", src="Insta")
+        self.assertEqual((u["username"], u["src_first"], u["src_last"], u["started_at"]), ("ali_bek", "insta", "insta", None))
+        self.assertFalse(self.db.can_message(10))                          # Mini App / корзина — ещё не писал боту
+        u = self.db.touch_tg_user(10, started=True, src="blog")
+        self.assertEqual((u["src_first"], u["src_last"], u["username"]), ("insta", "blog", "ali_bek"))
+        self.assertTrue(self.db.can_message(10))
+        self.db.mark_blocked(10)
+        self.assertFalse(self.db.can_message(10))
+        self.db.touch_tg_user(10, started=True)                            # снова написал — разблокирован
+        self.assertTrue(self.db.can_message(10))
+        code = self.db.ensure_ref_code(10, "abcd2345")
+        self.assertEqual(self.db.ensure_ref_code(10, "zzzz2222"), "abcd2345")   # один раз
+        self.assertEqual(self.db.ensure_ref_code(11, "abcd2345"), "")      # чужой код не занимаем
+        self.assertEqual(self.db.user_by_ref_code("ABCD2345")["user_id"], 10)
+        self.assertFalse(self.db.set_referrer(10, 10))
+        self.assertTrue(self.db.set_referrer(20, 10))
+        self.assertFalse(self.db.set_referrer(20, 30))                     # только первый
+        r = self.db.add_order(order_no="YR-261005-AAAA", customer={"name": "Друг", "phone": "+998901234567"},
+                              items=[], total_uzs=1000, telegram_user={"id": 20})
+        o = self.db.get_order(r["order_no"])
+        self.assertEqual((o["ref_user_id"], o["ref_code"]), (10, code))
+        self.assertEqual(self.db.referrer_info(10), {"username": "ali_bek", "client_no": self.db.tg_user(10)["id"]})
+        r = self.db.add_order(order_no="YR-261005-BBBB", customer={"name": "Сам", "phone": "+998901234568"},
+                              items=[], total_uzs=1000, telegram_user={"id": 10}, ref_user_id=10, ref_code=code)
+        self.assertIsNone(self.db.get_order("YR-261005-BBBB")["ref_user_id"])   # сам себя не рекомендует
+        self.assertEqual(self.db.get_order("YR-261005-BBBB")["src_last"], "blog")  # метки из бота
+        # привязка заказа ссылкой o_… переносит реферера и метки
+        self.db.add_order(order_no="YR-261005-CCCC", customer={"name": "Друг", "phone": "+998901234567"},
+                          items=[], total_uzs=1000)
+        self.db.touch_tg_user(20, src="tiktok")
+        self.db.link_telegram("YR-261005-CCCC", {"id": 20}, sig=orders_db.link_sig("T", "YR-261005-CCCC"), secret="T")
+        o = self.db.get_order("YR-261005-CCCC")
+        self.assertEqual((o["ref_user_id"], o["src_first"]), (10, "tiktok"))
+
+    def test_prefs_prices_carts_followups_forget(self):
+        self.db.save_draft(5, {"step": "gender"})
+        self.assertEqual(self.db.get_prefs(5)["draft"], {"step": "gender"})
+        self.assertEqual(self.db.active_prefs(), [])
+        self.db.activate_prefs(5, "men", ["обувь"], {"shoes": ["42"]}, [], "2", at="2026-10-01T00:00:00Z")
+        p = self.db.get_prefs(5)
+        self.assertEqual((p["types"], p["sizes"], p["brands"], p["opt_in_at"], p["draft"]),
+                         (["обувь"], {"shoes": ["42"]}, [], "2026-10-01T00:00:00Z", None))
+        self.assertTrue(self.db.stop_prefs(5))
+        self.assertFalse(self.db.stop_prefs(5))
+        self.assertEqual(self.db.active_prefs(), [])
+        self.db.activate_prefs(5, "men", [], {}, [], "0", at="2026-10-03T00:00:00Z")
+        self.assertEqual(self.db.get_prefs(5)["opt_in_at"], "2026-10-03T00:00:00Z")   # новое согласие после /stop
+        self.db.add_sent(5, ["A", "B"])
+        self.db.add_sent(5, ["B", "C"])
+        self.assertEqual(self.db.sent_ids(5), {"A", "B", "C"})
+        self.assertEqual(self.db.update_prices({"A": 1000, "B": 2000, "C": 0}, "2026-10-01T00:00:00Z"), 0)
+        self.assertEqual(self.db.update_prices({"A": 899, "B": 1900}, "2026-10-02T00:00:00Z"), 1)   # −10,1% / −5%
+        self.assertEqual(self.db.price_drops(), {"A": {"dropped_at": "2026-10-02T00:00:00Z", "drop_from": 1000, "price_uzs": 899}})
+        self.assertEqual(self.db.set_cart(5, [{"id": "AAAAAA2", "size": "M", "qty": 1}], at="2026-10-01T10:00:00"), "saved")
+        self.db.touch_tg_user(5, started=True)
+        self.assertEqual([c["telegram_user_id"] for c in self.db.carts_due("2026-10-02T10:00:00", "2026-09-25T00:00:00")], [5])
+        self.assertEqual(self.db.carts_due("2026-10-01T09:00:00", "2026-09-25T00:00:00"), [])   # ещё рано
+        self.assertEqual(self.db.carts_due("2026-10-20T00:00:00", "2026-10-10T00:00:00"), [])   # слишком старая
+        self.db.mark_cart_reminded(5)
+        self.assertEqual(self.db.carts_due("2026-10-02T10:00:00", "2026-09-25T00:00:00"), [])
+        self.db.add_order(order_no="YR-261001-DDDD", customer={"name": "А", "phone": "+998901234569"}, items=[],
+                          total_uzs=1000, telegram_user={"id": 5})
+        self.db.set_status("YR-261001-DDDD", "delivered", force=True)
+        far = (datetime.now() + timedelta(days=1)).isoformat(timespec="seconds")
+        self.assertEqual([o["order_no"] for o in self.db.followups_due(far)], ["YR-261001-DDDD"])
+        self.assertEqual(self.db.followups_due("2000-01-01T00:00:00"), [])
+        self.assertTrue(self.db.mark_followup("YR-261001-DDDD", "asked"))
+        self.assertEqual(self.db.followups_due(far), [])
+        self.db.set_review(5, "YR-261001-DDDD", "2999-01-01T00:00:00")
+        self.assertEqual(self.db.review_target(5), "YR-261001-DDDD")
+        self.assertTrue(self.db.forget_customer("+998901234569"))          # обезличивание чистит и Telegram-данные
+        self.assertIsNone(self.db.get_prefs(5))
+        self.assertIsNone(self.db.get_cart(5))
+        self.assertEqual(self.db.sent_ids(5), set())
+        self.assertIsNone(self.db.review_target(5))
+
+    def test_migrate_from_schema_2(self):
+        path = Path(self.tmp.name) / "v2.sqlite"
+        c = sqlite3.connect(path)
+        c.executescript(orders_db.SCHEMA.split("CREATE TABLE IF NOT EXISTS tg_users")[0])
+        c.execute("INSERT INTO meta VALUES('schema_version', '2')")
+        c.execute("INSERT INTO orders(order_no, created_at) VALUES('YR-261001-AAAA', '2026-10-01T10:00:00')")
+        c.commit()
+        c.close()
+        db = orders_db.OrdersDB(path)
+        try:
+            o = db.get_order("YR-261001-AAAA")
+            self.assertIn("src_first", o)
+            self.assertIsNone(o["ref_user_id"])
+            self.assertEqual(db.query("SELECT value FROM meta WHERE key='schema_version'")[0][0], "3")
+            self.assertEqual(db.active_prefs(), [])
+        finally:
+            db.close()
 
 
 if __name__ == "__main__":

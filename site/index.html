@@ -1526,8 +1526,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       try { ss.setItem(KEY, JSON.stringify(all)); saved = true; } catch (e) { saved = false; }
       if (!T.start) { var m = /(?:^|&)start_param=([^&]*)/.exec(s.tg.tgWebAppData); if (m) T.start = dec(m[1]); }
     }
-    // товар из start_param — один раз за сессию (после перезагрузки окна Telegram не открывается снова)
-    var path = s.path, keep = s.keep, sp = /^p_([A-Za-z0-9]{7})$/.exec(T.start || ""), once = null;
+    // товар из start_param — один раз за сессию (после перезагрузки окна Telegram не открывается снова).
+    // «p_КОД-s_метка» — тот же товар, метку источника запоминает основной скрипт (srcStart)
+    var path = s.path, keep = s.keep, sp = /^p_([A-Za-z0-9]{7})(?:-s_[A-Za-z0-9_]{1,32})?$/.exec(T.start || ""), once = null;
     try { once = ss.getItem("shop.tgStart.v1"); } catch (e) { once = null; }
     if (sp && once !== T.start && !/(^|&)p=/.test(keep.join("&"))) {
       path = "/catalog"; keep = ["p=" + sp[1]]; T.routed = T.start;
@@ -4324,6 +4325,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     updateCatTitle();
     renderMeta();                          // строка под заголовком: с фильтрами — только «Обновлено …»
     revealPressedChip();
+    if (state.q) evSearchSoon();           // воронка: итоговый поисковый запрос и число найденного
     if (!(opts && opts.keepHash)) writeHash(opts && opts.push);
   }
 
@@ -4696,7 +4698,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var parts = [p._code + " — " + productName(p)];
     if (size) parts.push(sizePhrase(size));
     parts.push(plainMoney(p._price) + " сум");
-    return "Здравствуйте! Хочу заказать " + parts.join(", ") + (!size && p._sizes.length > 1 ? ". Размер: " : "");
+    // метка источника (воронка) — отдельной строкой, только если она есть; «Размер: » остаётся последним
+    var tag = srcInfo().last, ask = !size && p._sizes.length > 1;
+    return "Здравствуйте! Хочу заказать " + parts.join(", ") +
+      (tag ? (ask ? "." : "") + "\nИсточник: " + tag + (ask ? "\nРазмер: " : "") : ask ? ". Размер: " : "");
   }
   function contactHref(p, size) {
     return withText(contactBase(), orderMessage(p, size));
@@ -5756,6 +5761,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.pv.classList.remove("leaving");
     pv.cur = p;
     pv.idx = 0;
+    if (evOnce("v:" + p._code)) track({ t: "view", id: p._code });   // воронка: просмотр товара, раз за сессию
     clearTimeout(pv.backTimer);
     clearTimeout(pv.recTimer);
     els.pvInfo.innerHTML = pvInfoHtml(p);
@@ -6345,7 +6351,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     else if (name === "catalog") boostCards();
     else if (name === "brands") renderBrandsPage();
     else if (name === "cart") renderCartPage();
-    else if (name === "checkout") { if (changed) { co.error = ""; co.fallback = null; if (co.result && cart.length) co.result = null; } renderCheckout(); }
+    else if (name === "checkout") {
+      if (changed) { co.error = ""; co.fallback = null; if (co.result && cart.length) co.result = null; }
+      if (changed && cart.length && !co.result) track({ t: "co" });   // воронка: открыли оформление с вещами
+      renderCheckout();
+    }
     else if (name === "admin/lookup") renderLookupView();
     else if (PAGES[name]) renderPage(name);
     markNav(r);
@@ -6726,6 +6736,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function saveCart() {
     try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) { /* приватный режим — корзина живёт до закрытия вкладки */ }
     updateCartBadge();
+    cartSyncSoon();                        // Mini App: корзина на сервер через 3 с (если изменилась)
   }
   function cartPieces() { return cart.reduce(function (a, l) { return a + l.qty; }, 0); }
   function updateCartBadge(bump) {
@@ -6773,6 +6784,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       cart.push({ id: p._code, size: size, qty: clampQty(qty), brand: p._brand, title: p._title, price: p._price, img: goodImgs(p)[0] || "", was: 0 });
     }
     saveCart();
+    track({ t: "cart", id: p._code, size: size });   // воронка: в корзину
     updateCartBadge(true);
     if (curView === "cart") renderCartPage();
     tgHaptic("light");                     // внутри Telegram — лёгкий отклик вибрацией
@@ -7053,6 +7065,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (c.telegram) lines.push("Telegram: @" + c.telegram);
     if (c.city) lines.push("Город: " + c.city);
     if (c.comment) lines.push("Комментарий: " + c.comment);
+    var tag = srcInfo().last;                         // метка источника (воронка) — строка, только если она есть
+    if (tag) lines.push("Источник: " + tag);
     return lines.join("\n");
   }
   function fallbackData(c, orderNo) {
@@ -7265,6 +7279,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     payload.consent_marketing = marketing;             // второй флажок, по умолчанию выключен
     var initData = tgInitData();                       // внутри Telegram: сырой initData — сервер проверит подпись
     if (initData) payload.tg_init_data = initData;
+    srcPayload(payload);                               // воронка: src_first, src_last, ref (только непустые)
     var ctrl = window.AbortController ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 15000);
     // text/plain — «простой» запрос без предварительного OPTIONS; order_api.py принимает и его
@@ -7281,6 +7296,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
           co.coid = "";                            // заказ принят — следующая корзина получит новый id
           cart = [];
           saveCart();
+          cartSyncNow();                           // Mini App: корзина пуста (items: []) — сразу
+          track({ t: "order", no: no });
+          evFlush();
           renderCheckout();
           focusDone();
           tgHaptic("success");
@@ -7425,7 +7443,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function tgStartParam(W) {
     var sp = "", m, done = null;
     try { sp = String((W.initDataUnsafe && W.initDataUnsafe.start_param) || ""); } catch (e) { sp = ""; }
-    if (!(m = /^p_([A-Za-z0-9]{7})$/.exec(sp)) || (window.__TG && window.__TG.start === sp)) return;
+    srcStart(sp);                          // «s_метка» / «p_КОД-s_метка» — метка источника (воронка)
+    if (!(m = /^p_([A-Za-z0-9]{7})(?:-s_[A-Za-z0-9_]{1,32})?$/.exec(sp)) || (window.__TG && window.__TG.start === sp)) return;
     try { done = sessionStorage.getItem("shop.tgStart.v1"); } catch (e) { done = null; }
     if (done === sp) return;
     try { sessionStorage.setItem("shop.tgStart.v1", sp); } catch (e) { /* без sessionStorage — откроется и после перезагрузки */ }
@@ -7584,6 +7603,217 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return typeof d === "string" && d.length > 0 && d.length <= 4096 ? d : "";
   }
 
+  /* ====================================================================
+     ВОРОНКА (раздел «FUNNEL: site» в data/analysis/contract.md).
+     1) Метка источника: ?from=метка (в адресе или в hash), ?ref=код (реферал), start_param Mini App «s_метка» /
+        «p_КОД-s_метка». Метка и код — ^[a-z0-9_]{1,32}$ (регистр не важен — приводится к строчным), иначе
+        игнорируются. localStorage shop.src.v1 = {first:{tag,at}, last:{tag,at}, ref:{code,at}}: first и ref живут
+        30 дней (новая метка их не перезаписывает), last — всегда последняя. Параметры убираются из адреса
+        (replaceState — маршрут и запись истории те же). В hash каталога from= — ещё и фильтр «цена от»
+        (#/catalog?from=500000): там меткой считается только значение не из одних цифр.
+        В заказе — src_first, src_last, ref; в тексте заказа для Telegram — строка «Источник: <last>» (если метка есть).
+     2) События — только при content.order_endpoint: очередь, раз в 10 с (и при уходе со страницы) POST text/plain
+        {s, src, ev:[…]} на <origin order_endpoint>/api/event, не больше 50 событий в пачке; ошибки молча.
+        Никаких имён, телефонов, cid и данных Telegram в событиях.
+     3) Брошенная корзина — только внутри Telegram (непустой initData) и при order_endpoint: через 3 с после
+        изменения корзины POST {tg_init_data, items:[{id,size,qty}]} на <origin>/api/cart; после заказа — items:[].
+     ==================================================================== */
+  var SRC_KEY = "shop.src.v1", SRC_TTL = 30 * 864e5, TAG_RE = /^[a-z0-9_]{1,32}$/;
+  var FUN = { mem: null, info: null, q: [], timer: 0, sid: "", seen: null, qTimer: 0, qTries: 0, cartTimer: 0, cartSig: "", start: "" };
+  function tagOf(v) { v = String(v == null ? "" : v).trim().toLowerCase(); return TAG_RE.test(v) ? v : ""; }
+  function srcRead() {
+    var o = null, raw;
+    try { raw = localStorage.getItem(SRC_KEY); } catch (e) { return FUN.mem || {}; }   // нет localStorage — то, что в памяти
+    try { o = JSON.parse(raw || "null"); } catch (e) { o = null; }
+    return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+  }
+  function srcWrite(o) {
+    FUN.mem = o;                           // без localStorage — метка живёт до закрытия страницы
+    FUN.info = null;
+    try { localStorage.setItem(SRC_KEY, JSON.stringify(o)); } catch (e) { /* приватный режим */ }
+  }
+  // запись {tag|code, at} годится: метка верного вида и (ttl) не старше 30 дней
+  function srcOk(x, k, ttl) {
+    return !!(x && typeof x === "object" && typeof x[k] === "string" && TAG_RE.test(x[k]) && typeof x.at === "number" && (!ttl || Date.now() - x.at < ttl));
+  }
+  function srcTouch(tag) {
+    tag = tagOf(tag);
+    if (!tag) return;
+    var o = srcRead(), now = Date.now();
+    if (!srcOk(o.first, "tag", SRC_TTL)) o.first = { tag: tag, at: now };
+    o.last = { tag: tag, at: now };
+    srcWrite(o);
+  }
+  function srcRef(code) {
+    code = tagOf(code);
+    if (!code) return;
+    var o = srcRead();
+    if (srcOk(o.ref, "code", SRC_TTL)) return;
+    o.ref = { code: code, at: Date.now() };
+    srcWrite(o);
+  }
+  // {first, last, ref} — строки ("" — нет)
+  function srcInfo() {
+    if (FUN.info) return FUN.info;
+    var o = srcRead();
+    return (FUN.info = { first: srcOk(o.first, "tag", SRC_TTL) ? o.first.tag : "", last: srcOk(o.last, "tag", 0) ? o.last.tag : "",
+      ref: srcOk(o.ref, "code", SRC_TTL) ? o.ref.code : "" });
+  }
+  function srcDec(s) { try { return decodeURIComponent(String(s).replace(/\+/g, "%20")); } catch (e) { return String(s); } }
+  // ?from= / ?ref= в адресе и в hash: запомнить и убрать (остальные параметры — как были, без перекодирования)
+  function srcFromUrl() {
+    var changed = false;
+    var cut = function (qs, catalog) {
+      return qs.split("&").filter(function (kv) {
+        if (!kv) return false;
+        var i = kv.indexOf("="), k = srcDec(i >= 0 ? kv.slice(0, i) : kv), v = i >= 0 ? srcDec(kv.slice(i + 1)) : "";
+        if (k === "from") {
+          if (catalog && /^\s*\d+\s*$/.test(v)) return true;          // каталог: «цена от»
+          srcTouch(v); changed = true; return false;
+        }
+        if (k === "ref") { srcRef(v); changed = true; return false; }
+        return true;
+      }).join("&");
+    };
+    var qs = cut(location.search.replace(/^\?/, ""), false);
+    var h = location.hash.replace(/^#/, ""), nh = h;
+    if (h.charAt(0) === "/") {
+      var i = h.indexOf("?"), path = i >= 0 ? h.slice(0, i) : h, hq = i >= 0 ? cut(h.slice(i + 1), path.replace(/\/+$/, "") === "/catalog") : "";
+      nh = path + (hq ? "?" + hq : "");
+    } else if (h) nh = cut(h, true);                                    // старые ссылки без «/» — каталог
+    if (!changed) return;
+    if (nh === "/") nh = "";
+    try { history.replaceState(history.state, "", location.pathname + (qs ? "?" + qs : "") + (nh ? "#" + nh : "")); } catch (e) { /* file:// */ }
+  }
+  // start_param Mini App: «s_метка» или «p_КОД-s_метка» (просто «p_КОД» — без метки). Один раз за сессию Telegram
+  // (sessionStorage shop.srcStart.v1): после перезагрузки окна start_param тот же — last не перезаписывается снова
+  function srcStart(sp) {
+    sp = String(sp || "");
+    if (!sp || FUN.start === sp) return;
+    FUN.start = sp;
+    var done = null;
+    try { done = sessionStorage.getItem("shop.srcStart.v1"); } catch (e) { done = null; }
+    if (done === sp) return;
+    try { sessionStorage.setItem("shop.srcStart.v1", sp); } catch (e) { /* без sessionStorage — как есть */ }
+    var m = /^(?:p_[A-Za-z0-9]{7}-)?s_([A-Za-z0-9_]{1,32})$/.exec(sp);
+    if (m) srcTouch(m[1]);
+  }
+  // поля заказа: src_first, src_last, ref — только непустые
+  function srcPayload(payload) {
+    var si = srcInfo();
+    if (si.first) payload.src_first = si.first;
+    if (si.last) payload.src_last = si.last;
+    if (si.ref) payload.ref = si.ref;
+  }
+
+  /* ---- события ---- */
+  function evOrigin() {
+    var ep = orderEndpoint();
+    if (!ep) return "";
+    try { return new URL(ep).origin; } catch (e) { return ""; }
+  }
+  // id сессии: 12 hex, sessionStorage shop.sid (без него — до перезагрузки страницы)
+  function evSid() {
+    if (FUN.sid) return FUN.sid;
+    var v = null;
+    try { v = sessionStorage.getItem("shop.sid"); } catch (e) { v = null; }
+    if (!/^[0-9a-f]{12}$/.test(v || "")) {
+      v = randomId().replace(/-/g, "").toLowerCase().slice(0, 12);
+      try { sessionStorage.setItem("shop.sid", v); } catch (e) { /* приватный режим */ }
+    }
+    return (FUN.sid = v);
+  }
+  // «один раз за сессию» (visit, просмотр товара, поисковый запрос): ключи в sessionStorage shop.seen.v1
+  function evOnce(key) {
+    if (!FUN.seen) {
+      var a = null;
+      try { a = JSON.parse(sessionStorage.getItem("shop.seen.v1") || "[]"); } catch (e) { a = null; }
+      FUN.seen = Array.isArray(a) ? a.slice(-400) : [];
+    }
+    if (FUN.seen.indexOf(key) >= 0) return false;
+    FUN.seen.push(key);
+    if (FUN.seen.length > 400) FUN.seen.splice(0, FUN.seen.length - 400);
+    try { sessionStorage.setItem("shop.seen.v1", JSON.stringify(FUN.seen)); } catch (e) { /* приватный режим */ }
+    return true;
+  }
+  function track(ev) {
+    FUN.q.push(ev);
+    if (FUN.q.length > 200) FUN.q.splice(0, FUN.q.length - 200);
+    if (!FUN.timer) FUN.timer = setTimeout(evFlush, 10000);
+  }
+  function evFlush() {
+    clearTimeout(FUN.timer);
+    FUN.timer = 0;
+    if (!FUN.q.length) return;
+    var base = evOrigin();
+    if (!base) { FUN.q = []; return; }     // приёма событий нет (order_endpoint пуст) — ничего не копим
+    var url = base + "/api/event", src = srcInfo().last, sid = evSid();
+    while (FUN.q.length) evSend(url, JSON.stringify({ s: sid, src: src, ev: FUN.q.splice(0, 50) }));
+  }
+  function evSend(url, body) {
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon(url, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
+    } catch (e) { /* нет sendBeacon или отказ — fetch ниже */ }
+    funPost(url, body);
+  }
+  function funPost(url, body) {
+    try {
+      fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: body, mode: "cors",
+        credentials: "omit", cache: "no-store", keepalive: true }).catch(function () { /* молча */ });
+    } catch (e) { /* молча */ }
+  }
+  // поиск: только итоговый запрос (пауза 1,5 с после последнего изменения), от 2 знаков, один раз за сессию;
+  // похожее на телефон или почту не отправляется
+  function evSearchSoon() {
+    clearTimeout(FUN.qTimer);
+    FUN.qTries = 0;
+    FUN.qTimer = setTimeout(evSearch, 1500);
+  }
+  function evSearch() {
+    if (curView !== "catalog") return;
+    var q = String(state.q || "").replace(/\s+/g, " ").trim().toLowerCase().slice(0, 60).trim();
+    if (q.length < 2 || /@/.test(q) || /\d{7}/.test(q.replace(/[\s()+-]/g, ""))) return;
+    if (!ALL && FUN.qTries++ < 5) { FUN.qTimer = setTimeout(evSearch, 2000); return; }   // каталог догружается — число неполное
+    if (evOnce("q:" + q)) track({ t: "q", q: q, n: filtered.length });
+  }
+
+  /* ---- брошенная корзина (только Mini App) ---- */
+  function cartItemsOut() { return cart.slice(0, CART_MAX).map(function (l) { return { id: l.id.toUpperCase(), size: l.size || "", qty: l.qty }; }); }
+  function cartSyncSoon() {
+    clearTimeout(FUN.cartTimer);
+    FUN.cartTimer = setTimeout(cartSyncNow, 3000);
+  }
+  function cartSyncNow() {
+    clearTimeout(FUN.cartTimer);
+    FUN.cartTimer = 0;
+    var init = tgInitData(), base = evOrigin();
+    if (!init || !base) return;
+    var items = cartItemsOut(), sig = JSON.stringify(items);
+    if (sig === FUN.cartSig) return;       // корзина та же, что уже отправлена (или была при запуске)
+    FUN.cartSig = sig;
+    funPost(base + "/api/cart", JSON.stringify({ tg_init_data: init, items: items }));
+  }
+
+  function funnelInit() {
+    srcFromUrl();
+    srcStart(window.__TG && window.__TG.start);
+    FUN.cartSig = JSON.stringify(cartItemsOut());
+    window.addEventListener("hashchange", srcFromUrl);     // до syncFromUrl: роутер видит адрес уже без from= / ref=
+    var leave = function () { evFlush(); if (FUN.cartTimer) cartSyncNow(); };
+    window.addEventListener("pagehide", leave);
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") leave(); });
+    // заказ в Telegram: запасная кнопка оформления и «Заказать в Telegram» у товара (переход не отменён — size выбран)
+    document.addEventListener("click", function (e) {
+      if (e.defaultPrevented) return;
+      var a = e.target.closest && e.target.closest("a[href]");
+      if (!a || !/^https?:\/\/(www\.)?(t|telegram)\.me\//i.test(a.href)) return;
+      if (a.classList.contains("send-tg")) track({ t: "order_tg" });
+      else if (a.hasAttribute("data-tg") && pv.cur) track({ t: "order_tg", id: pv.cur._code });
+      else if (a.classList.contains("order") && a.getAttribute("data-code")) track({ t: "order_tg", id: a.getAttribute("data-code") });
+    });
+    if (evOnce("visit")) track({ t: "visit", r: parseRoute().name });
+  }
+
   /* ---------- старт ---------- */
   // products.js (старый путь): normalize порциями, чтобы не добавлять к разбору скрипта ещё одну длинную задачу
   function normalizeAll(raw) {
@@ -7724,6 +7954,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   updateCartBadge();
   loadBrands();
   window.addEventListener("popstate", onPopState);
+  funnelInit();                // метка источника из адреса (и убрать её из адреса) — до роутера; события, корзина Mini App
   window.addEventListener("hashchange", syncFromUrl);
   // герой за экраном — медленные анимации фото на паузе
   if (MO && "IntersectionObserver" in window) {

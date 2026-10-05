@@ -1,0 +1,12 @@
+# Воронка: отчёт за 7 дней админам бота по понедельникам в 10:00 по Ташкенту (funnel.py --report).
+# ПРИМЕР — не включается сам: sudo systemctl enable --now yurt-funnel@report.timer
+[Unit]
+Description=yurt: воронка — отчёт по понедельникам 10:00 (Ташкент)
+
+[Timer]
+OnCalendar=Mon *-*-* 10:00:00 Asia/Tashkent
+Persistent=true
+Unit=yurt-funnel@report.service
+
+[Install]
+WantedBy=timers.target

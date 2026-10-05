@@ -1,0 +1,42 @@
+# Воронка (funnel.py) — одно задание: yurt-funnel@report / @digest / @carts / @followup.
+#   report    отчёт воронки за 7 дней админам бота (TELEGRAM_ADMIN_IDS) — по понедельникам 10:00
+#   digest    личные подборки по анкетам «Подобрать вещи моего размера» — каждый день 10:00
+#   carts     напоминание о брошенной корзине Mini App (старше 24 ч, одно на корзину) — каждый час
+#   followup  «Всё подошло?» через 7 дней после статуса «выдан» — каждый день 12:00
+# ПРИМЕР: server/setup.sh копирует файл, но таймеры НЕ включает. Включить, когда воронка готова:
+#   sudo systemctl enable --now yurt-funnel@report.timer yurt-funnel@digest.timer yurt-funnel@carts.timer yurt-funnel@followup.timer
+# Сначала посмотрите пробно (ничего не шлёт и не пишет):
+#   sudo -u yurt bash -c 'set -a; . /etc/yurt/yurt.env; cd /opt/yurt/app && $YURT_PYTHON funnel.py --digest --dry'
+# Кнопки ответов (анкета, «Всё отлично») обрабатывает бот внутри yurt-orders — опроса Telegram здесь нет.
+# Замки — свои (data/funnel-<задание>.lock), общий data/server.lock не берётся.
+# @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: воронка — %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+Environment=PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
+# $$ — так systemd пропускает $ в bash; YURT_PYTHON из yurt.env, иначе системный python3
+ExecStart=/usr/bin/env bash -c 'case "%i" in report|digest|carts|followup) ;; *) echo "неизвестное задание: %i (report|digest|carts|followup)" >&2; exit 2 ;; esac; exec "$${YURT_PYTHON:-python3}" @APP@/funnel.py --%i'
+TimeoutStartSec=30min
+Nice=10
+MemoryMax=768M
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@APP@/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes

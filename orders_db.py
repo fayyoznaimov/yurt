@@ -23,6 +23,19 @@ data/orders/orders.jsonl остаётся сырым журналом (его п
            telegram_user_id, telegram_username, telegram_linked_at  Telegram, привязанный к ЭТОМУ заказу,
            marketing_opt_in, …)                                    галочка «новинки» этого заказа
     order_events(order_id, at, status, by, note)     история статусов и сообщений
+  Схема 3 (воронка, funnel.py):
+    orders + src_first, src_last (метки источника с сайта/бота), ref_code, ref_user_id (кто порекомендовал),
+             followup_at, followup_result (вопрос «Всё подошло?» через 7 дней после выдачи)
+    tg_users(id, user_id UNIQUE, username, first_seen, last_seen, started_at, src_first, src_last, ref_code UNIQUE,
+             referred_by, referred_at, blocked_at, review_order, review_until)   кто писал боту (ему можно писать),
+             метки /start s_…, своя реферальная ссылка r_<код>, кто привёл (/start r_…), ждём ли фото-отзыв
+    prefs(telegram_user_id PK, gender, types_json, sizes_json, brands_json, budget, draft_json, created_at,
+          updated_at, opt_in_at, stopped_at, last_digest_at)   анкета «Подобрать вещи моего размера»
+    digest_sent(telegram_user_id, product_id, sent_at)    что уже присылали (никогда не повторяем)
+    price_seen(product_id PK, price_uzs, seen_at, drop_from, dropped_at)   последняя цена товара (снижение ≥10%)
+    carts(telegram_user_id PK, items_json, created_at, updated_at, reminded_at)   корзина Mini App (/api/cart)
+  Время: orders/tg_users/carts — местное (как created_at заказов); prefs/digest_sent/price_seen — UTC «…Z»
+  (сравниваются с first_seen каталога).
 Telegram привязывается к ЗАКАЗУ, а не к покупателю: телефон никто не проверяет, поэтому заказ с чужим
 номером не даёт доступа к чужим заказам. Привязка — только (а) подписанной ссылкой /start o_<номер>_<подпись>
 (подпись = HMAC-SHA256(токен бота, номер), её знает только сервер — см. start_payload) или (б) проверенным
@@ -49,14 +62,16 @@ import sys
 import tempfile
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PATH = ROOT / "data" / "orders" / "orders.sqlite"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ORDER_NO_RE = re.compile(r"^YR-\d{6}-[A-Z2-9]{4}$")
+TAG_RE = re.compile(r"^[a-z0-9_]{1,32}$")                 # метка источника / реферальный код (contract: src, ref)
+REF_CODE_LEN = 8
 LINK_SIG_LEN = 10                                          # base32: 50 бит
 START_RE = re.compile(r"^o_(YR-\d{6}-[A-Z2-9]{4})_([A-Z2-7]{%d})$" % LINK_SIG_LEN, re.I)
 
@@ -99,6 +114,30 @@ def prepay_for(total_uzs: int | float | None) -> int:
 def mask_phone(p: str | None) -> str:
     d = re.sub(r"\D", "", p or "")
     return ("***" + d[-4:]) if d else "-"
+
+
+def utc_iso(dt: datetime | None = None) -> str:
+    """UTC «2026-10-05T07:00:00Z» (как first_seen каталога)."""
+    dt = dt or datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def clean_tag(v) -> str:
+    """Метка источника / реферальный код: нижний регистр, ^[a-z0-9_]{1,32}$; иначе ''."""
+    s = str(v or "").strip().lower() if isinstance(v, (str, int)) and not isinstance(v, bool) else ""
+    return s if TAG_RE.match(s) else ""
+
+
+def ref_code_for(secret: str, user_id) -> str:
+    """Реферальный код пользователя: первые 8 знаков base32(HMAC-SHA256(токен бота, 'ref:<id>')), нижний регистр.
+    Пусто без секрета. Код сохраняется в tg_users.ref_code — поиск по нему идёт в базе."""
+    uid = _user_id(user_id)
+    if not secret or uid is None:
+        return ""
+    d = hmac.new(str(secret).encode("utf-8"), f"ref:{uid}".encode("utf-8"), hashlib.sha256).digest()
+    return base64.b32encode(d).decode("ascii")[:REF_CODE_LEN].lower()
 
 
 # ---------------------------------------------------------------- подписанная ссылка на бота
@@ -199,12 +238,65 @@ CREATE TABLE IF NOT EXISTS order_events(
     note TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_events_order ON order_events(order_id, at);
+CREATE TABLE IF NOT EXISTS tg_users(
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER UNIQUE NOT NULL,
+    username TEXT,
+    first_seen TEXT,
+    last_seen TEXT,
+    started_at TEXT,
+    src_first TEXT,
+    src_last TEXT,
+    ref_code TEXT UNIQUE,
+    referred_by INTEGER,
+    referred_at TEXT,
+    blocked_at TEXT,
+    review_order TEXT,
+    review_until TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_tg_users_ref ON tg_users(referred_by);
+CREATE TABLE IF NOT EXISTS prefs(
+    telegram_user_id INTEGER PRIMARY KEY,
+    gender TEXT,
+    types_json TEXT,
+    sizes_json TEXT,
+    brands_json TEXT,
+    budget TEXT,
+    draft_json TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    opt_in_at TEXT,
+    stopped_at TEXT,
+    last_digest_at TEXT
+);
+CREATE TABLE IF NOT EXISTS digest_sent(
+    telegram_user_id INTEGER NOT NULL,
+    product_id TEXT NOT NULL,
+    sent_at TEXT,
+    PRIMARY KEY(telegram_user_id, product_id)
+);
+CREATE TABLE IF NOT EXISTS price_seen(
+    product_id TEXT PRIMARY KEY,
+    price_uzs INTEGER,
+    seen_at TEXT,
+    drop_from INTEGER,
+    dropped_at TEXT
+);
+CREATE TABLE IF NOT EXISTS carts(
+    telegram_user_id INTEGER PRIMARY KEY,
+    items_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT,
+    updated_at TEXT,
+    reminded_at TEXT
+);
 """
 # столбцы orders, которых не было в первых версиях базы (ALTER TABLE при migrate)
 ORDER_COLUMNS = (("tg_text", "TEXT"), ("cid", "TEXT"), ("lang", "TEXT"), ("comment", "TEXT"), ("page_url", "TEXT"),
                  ("status_at", "TEXT"), ("order_name", "TEXT"), ("order_phone", "TEXT"), ("order_city", "TEXT"),
                  ("order_telegram", "TEXT"), ("telegram_user_id", "INTEGER"), ("telegram_username", "TEXT"),
-                 ("telegram_linked_at", "TEXT"), ("marketing_opt_in", "INTEGER NOT NULL DEFAULT 0"))
+                 ("telegram_linked_at", "TEXT"), ("marketing_opt_in", "INTEGER NOT NULL DEFAULT 0"),
+                 ("src_first", "TEXT"), ("src_last", "TEXT"), ("ref_code", "TEXT"), ("ref_user_id", "INTEGER"),
+                 ("followup_at", "TEXT"), ("followup_result", "TEXT"))
 # Контакты заказа для показа и шаблонов: у заказов схемы 2 (order_name не NULL) — ТОЛЬКО свои, введённые в этом
 # заказе; у старых заказов (до схемы 2) — из карточки покупателя. Telegram id — только привязанный к заказу.
 CONTACT_SQL = (
@@ -347,6 +439,7 @@ class OrdersDB:
                 if col not in cols:
                     c.execute(f"ALTER TABLE orders ADD COLUMN {col} {decl}")
             c.execute("CREATE INDEX IF NOT EXISTS ix_orders_tguid ON orders(telegram_user_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_orders_ref ON orders(ref_user_id)")
             if prev is not None and prev < 2:
                 self._migrate_v2(c)
             c.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -439,6 +532,12 @@ class OrdersDB:
             row = c.execute("SELECT id FROM customers WHERE phone=?", (phone,)).fetchone()
             if not row:
                 return False
+            for (uid,) in c.execute("SELECT DISTINCT telegram_user_id FROM orders WHERE customer_id=? AND "
+                                    "telegram_user_id IS NOT NULL", (row["id"],)).fetchall():
+                for t in ("prefs", "digest_sent", "carts"):
+                    c.execute(f"DELETE FROM {t} WHERE telegram_user_id=?", (uid,))
+                c.execute("UPDATE tg_users SET username=NULL, src_first=NULL, src_last=NULL, review_order=NULL, "
+                          "review_until=NULL WHERE user_id=?", (uid,))
             c.execute("UPDATE customers SET phone=NULL, telegram=NULL, telegram_user_id=NULL, name=NULL, city=NULL, "
                       "note=NULL, marketing_opt_in=0, opt_in_at=NULL, deleted_at=? WHERE id=?", (now_iso(), row["id"]))
             c.execute("DELETE FROM customer_cids WHERE customer_id=?", (row["id"],))
@@ -463,6 +562,7 @@ class OrdersDB:
                   prepay_uzs: int | None = None, created_at: str | None = None, client_order_id: str | None = None,
                   cid: str | None = None, source: str = "site", lang: str = "", comment: str = "",
                   page_url: str = "", marketing_opt_in: bool = False, telegram_user: dict | None = None,
+                  src_first: str = "", src_last: str = "", ref_code: str = "", ref_user_id: int | None = None,
                   attempts: int = 10) -> dict:
         """Новый заказ в одной транзакции: покупатель (найти/создать), заказ, событие 'new'.
         order_no — строка или функция-генератор (номер проверяется на уникальность, до attempts попыток).
@@ -470,6 +570,8 @@ class OrdersDB:
         Контакты из customer сохраняются в самом заказе (order_name/phone/city/telegram); карточка покупателя
         получает только недостающие поля. telegram_user — ПРОВЕРЕННЫЙ пользователь (initData Mini App):
         привязывается только к этому заказу (telegram_link 'linked'; неверный id — 'bad'; не передан — '').
+        src_first/src_last — метки источника (clean_tag), ref_code/ref_user_id — кто порекомендовал (свой же
+        Telegram не считается). Метки и реферер не переданы, а заказ из Mini App — берутся из tg_users этого пользователя.
         Возвращает {id, order_no, customer_id, orders_count, duplicate, telegram_link}."""
         at = created_at or now_iso()
         prepay = prepay_for(total_uzs) if prepay_uzs is None else int(prepay_uzs)
@@ -477,7 +579,23 @@ class OrdersDB:
         tg_uid = _user_id((telegram_user or {}).get("id")) if telegram_user else None
         tg_uname = _clean_username((telegram_user or {}).get("username")) or None
         tg_link = ("linked" if tg_uid else "bad") if telegram_user else ""
+        src_first, src_last, ref_code = clean_tag(src_first), clean_tag(src_last), clean_tag(ref_code)
+        ref_uid = _user_id(ref_user_id)
         with self.tx() as c:
+            if tg_uid:
+                u = c.execute("SELECT src_first, src_last, referred_by FROM tg_users WHERE user_id=?", (tg_uid,)).fetchone()
+                if u is not None:
+                    if not (src_first or src_last):
+                        src_first, src_last = u["src_first"] or "", u["src_last"] or ""
+                    if ref_uid is None and u["referred_by"]:
+                        ref_uid = int(u["referred_by"])
+            if ref_uid is not None and ref_uid == tg_uid:
+                ref_uid, ref_code = None, ""                       # сам себя не рекомендует
+            if ref_uid is not None and not ref_code:
+                r = c.execute("SELECT ref_code FROM tg_users WHERE user_id=?", (ref_uid,)).fetchone()
+                ref_code = (r["ref_code"] if r else "") or ""
+            src_first = src_first or src_last
+            src_last = src_last or src_first
             if client_order_id:
                 r = c.execute("SELECT o.id, o.order_no, o.customer_id, c.orders_count FROM orders o "
                               "LEFT JOIN customers c ON c.id=o.customer_id WHERE o.client_order_id=?",
@@ -502,15 +620,17 @@ class OrdersDB:
                 cur = c.execute(
                     "INSERT INTO orders(order_no, client_order_id, customer_id, created_at, status, status_at, items_json, "
                     "total_uzs, prepay_uzs, source, cid, lang, comment, page_url, order_name, order_phone, order_city, "
-                    "order_telegram, telegram_user_id, telegram_username, telegram_linked_at, marketing_opt_in) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "order_telegram, telegram_user_id, telegram_username, telegram_linked_at, marketing_opt_in, "
+                    "src_first, src_last, ref_code, ref_user_id) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (no, client_order_id or None, cust_id, at, "new", at, json.dumps(items, ensure_ascii=False),
                      int(total_uzs or 0), prepay, source or "site", cid or None, lang or None, comment or None,
                      page_url or None, str(customer.get("name") or "").strip(),       # '' (не NULL) — заказ схемы 2
                      str(customer.get("phone") or "").strip() or None,
                      str(customer.get("city") or "").strip() or None,
                      _clean_username(customer.get("telegram")) or None,
-                     tg_uid, tg_uname if tg_uid else None, at if tg_uid else None, 1 if marketing_opt_in else 0))
+                     tg_uid, tg_uname if tg_uid else None, at if tg_uid else None, 1 if marketing_opt_in else 0,
+                     src_first or None, src_last or None, ref_code or None, ref_uid))
             except sqlite3.IntegrityError as ex:      # гонка невозможна под BEGIN IMMEDIATE, но на всякий случай
                 raise DuplicateOrderNo(str(ex))
             oid = int(cur.lastrowid)
@@ -613,6 +733,15 @@ class OrdersDB:
             at = now_iso()
             c.execute("UPDATE orders SET telegram_user_id=?, telegram_username=COALESCE(?, telegram_username), "
                       "telegram_linked_at=COALESCE(telegram_linked_at, ?) WHERE id=?", (uid, uname, at, r["id"]))
+            u = c.execute("SELECT src_first, src_last, referred_by, ref_code FROM tg_users WHERE user_id=?",
+                          (uid,)).fetchone()
+            if u is not None:                              # метки и реферер из бота — если у заказа их нет
+                c.execute("UPDATE orders SET src_first=COALESCE(src_first, ?), src_last=COALESCE(src_last, ?) "
+                          "WHERE id=?", (u["src_first"], u["src_last"], r["id"]))
+                if u["referred_by"] and int(u["referred_by"]) != uid:
+                    rc = c.execute("SELECT ref_code FROM tg_users WHERE user_id=?", (u["referred_by"],)).fetchone()
+                    c.execute("UPDATE orders SET ref_user_id=?, ref_code=COALESCE(ref_code, ?) "
+                              "WHERE id=? AND ref_user_id IS NULL", (u["referred_by"], rc["ref_code"] if rc else None, r["id"]))
             c.execute('INSERT INTO order_events(order_id, at, status, "by", note) VALUES(?,?,?,?,?)',
                       (r["id"], at, None, f"tg:{uid}", "telegram linked" if code == "linked" else "telegram link repeated"))
         return LinkResult(code, self.get_order(no), r["customer_id"])
@@ -625,6 +754,328 @@ class OrdersDB:
         return [dict(r) for r in self.query(
             "SELECT o.order_no, o.status, o.created_at, o.total_uzs, o.prepay_uzs FROM orders o "
             "WHERE o.telegram_user_id=? ORDER BY o.id DESC LIMIT ?", (uid, limit))]
+
+    # ------------------------------------------------------------ воронка: пользователи бота и рефералы
+
+    def touch_tg_user(self, user_id, username: str = "", started: bool = False, src: str = "",
+                      at: str | None = None) -> dict | None:
+        """Запомнить пользователя бота: last_seen, ник; started=True — он сам написал боту в личку (ему можно
+        писать; снимает отметку «заблокировал»). src — метка /start s_<метка>: src_first только первый раз,
+        src_last — всегда. Возвращает строку tg_users."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return None
+        at = at or now_iso()
+        uname = _clean_username(username) or None
+        tag = clean_tag(src) or None
+        with self.tx() as c:
+            c.execute("INSERT INTO tg_users(user_id, username, first_seen, last_seen, started_at, src_first, src_last) "
+                      "VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET last_seen=excluded.last_seen, "
+                      "username=COALESCE(excluded.username, username), "
+                      "started_at=COALESCE(started_at, excluded.started_at), "
+                      "blocked_at=CASE WHEN excluded.started_at IS NOT NULL THEN NULL ELSE blocked_at END, "
+                      "src_first=COALESCE(src_first, excluded.src_first), "
+                      "src_last=COALESCE(excluded.src_last, src_last)",
+                      (uid, uname, at, at, at if started else None, tag, tag))
+        return self.tg_user(uid)
+
+    def tg_user(self, user_id) -> dict | None:
+        uid = _user_id(user_id)
+        if uid is None:
+            return None
+        r = self._conn().execute("SELECT * FROM tg_users WHERE user_id=?", (uid,)).fetchone()
+        return dict(r) if r else None
+
+    def can_message(self, user_id) -> bool:
+        """Боту можно писать этому человеку: он сам начинал чат (/start или сообщение) или привязал заказ,
+        и не заблокировал бота."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return False
+        u = self.tg_user(uid)
+        if u and u.get("blocked_at"):
+            return False
+        if u and u.get("started_at"):
+            return True
+        return bool(self._conn().execute("SELECT 1 FROM orders WHERE telegram_user_id=? LIMIT 1", (uid,)).fetchone())
+
+    def mark_blocked(self, user_id, at: str | None = None) -> None:
+        """Пользователь заблокировал бота (Telegram ответил 403): больше не пишем, подборки выключены."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return
+        at = at or now_iso()
+        with self.tx() as c:
+            c.execute("INSERT INTO tg_users(user_id, first_seen, last_seen, blocked_at) VALUES(?,?,?,?) "
+                      "ON CONFLICT(user_id) DO UPDATE SET blocked_at=excluded.blocked_at", (uid, at, at, at))
+            c.execute("UPDATE prefs SET stopped_at=COALESCE(stopped_at, ?) WHERE telegram_user_id=?", (utc_iso(), uid))
+
+    def ensure_ref_code(self, user_id, code: str) -> str:
+        """Реферальный код пользователя (ref_code_for): записывается один раз; возвращает сохранённый."""
+        uid = _user_id(user_id)
+        code = clean_tag(code)
+        if uid is None or not code:
+            return ""
+        with self.tx() as c:
+            r = c.execute("SELECT ref_code FROM tg_users WHERE user_id=?", (uid,)).fetchone()
+            if r and r["ref_code"]:
+                return r["ref_code"]
+            taken = c.execute("SELECT user_id FROM tg_users WHERE ref_code=?", (code,)).fetchone()
+            if taken and int(taken["user_id"]) != uid:
+                return ""                                  # совпадение 40 бит — практически невозможно
+            at = now_iso()
+            c.execute("INSERT INTO tg_users(user_id, first_seen, last_seen, ref_code) VALUES(?,?,?,?) "
+                      "ON CONFLICT(user_id) DO UPDATE SET ref_code=excluded.ref_code", (uid, at, at, code))
+            return code
+
+    def user_by_ref_code(self, code) -> dict | None:
+        code = clean_tag(code)
+        if not code:
+            return None
+        r = self._conn().execute("SELECT * FROM tg_users WHERE ref_code=?", (code,)).fetchone()
+        return dict(r) if r else None
+
+    def set_referrer(self, user_id, ref_user_id, at: str | None = None) -> bool:
+        """/start r_<код>: кто привёл пользователя. Только первый раз и не сам себя. True — записано."""
+        uid, ref = _user_id(user_id), _user_id(ref_user_id)
+        if uid is None or ref is None or uid == ref:
+            return False
+        at = at or now_iso()
+        with self.tx() as c:
+            c.execute("INSERT INTO tg_users(user_id, first_seen, last_seen) VALUES(?,?,?) ON CONFLICT(user_id) DO NOTHING",
+                      (uid, at, at))
+            cur = c.execute("UPDATE tg_users SET referred_by=?, referred_at=? WHERE user_id=? AND referred_by IS NULL",
+                            (ref, at, uid))
+            return cur.rowcount > 0
+
+    def set_review(self, user_id, order_no: str, until: str) -> None:
+        """Ждём фото-отзыв по заказу до until (местное время): присланные фото уходят продавцу."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return
+        with self.tx() as c:
+            at = now_iso()
+            c.execute("INSERT INTO tg_users(user_id, first_seen, last_seen, review_order, review_until) VALUES(?,?,?,?,?) "
+                      "ON CONFLICT(user_id) DO UPDATE SET review_order=excluded.review_order, "
+                      "review_until=excluded.review_until", (uid, at, at, order_no, until))
+
+    def review_target(self, user_id, at: str | None = None) -> str | None:
+        """Номер заказа, по которому ждём фото от этого пользователя (или None)."""
+        u = self.tg_user(user_id)
+        at = at or now_iso()
+        if u and u.get("review_order") and str(u.get("review_until") or "") >= at:
+            return u["review_order"]
+        return None
+
+    # ------------------------------------------------------------ воронка: анкета и подборки
+
+    @staticmethod
+    def _prefs_row(r) -> dict | None:
+        if not r:
+            return None
+        d = dict(r)
+        for k, default in (("types_json", []), ("sizes_json", {}), ("brands_json", []), ("draft_json", None)):
+            try:
+                d[k[:-5]] = json.loads(d.get(k) or "null")
+            except ValueError:
+                d[k[:-5]] = None
+            if d[k[:-5]] is None:
+                d[k[:-5]] = default
+        return d
+
+    def get_prefs(self, user_id) -> dict | None:
+        """Анкета: {gender, types:[…], sizes:{группа:[…]}, brands:[…], budget, draft, opt_in_at, stopped_at, …}."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return None
+        return self._prefs_row(self._conn().execute("SELECT * FROM prefs WHERE telegram_user_id=?", (uid,)).fetchone())
+
+    def save_draft(self, user_id, draft: dict | None) -> None:
+        uid = _user_id(user_id)
+        if uid is None:
+            return
+        at = utc_iso()
+        with self.tx() as c:
+            c.execute("INSERT INTO prefs(telegram_user_id, draft_json, created_at, updated_at) VALUES(?,?,?,?) "
+                      "ON CONFLICT(telegram_user_id) DO UPDATE SET draft_json=excluded.draft_json, "
+                      "updated_at=excluded.updated_at",
+                      (uid, None if draft is None else json.dumps(draft, ensure_ascii=False), at, at))
+
+    def activate_prefs(self, user_id, gender: str, types: list, sizes: dict, brands: list, budget: str,
+                       at: str | None = None) -> None:
+        """Сохранить анкету и включить подборки (opt_in_at — время согласия, stopped_at снимается)."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return
+        at = at or utc_iso()
+        with self.tx() as c:
+            c.execute("INSERT INTO prefs(telegram_user_id, created_at) VALUES(?,?) ON CONFLICT(telegram_user_id) DO NOTHING",
+                      (uid, at))
+            c.execute("UPDATE prefs SET gender=?, types_json=?, sizes_json=?, brands_json=?, budget=?, draft_json=NULL, "
+                      "updated_at=?, opt_in_at=CASE WHEN opt_in_at IS NULL OR stopped_at IS NOT NULL THEN ? ELSE opt_in_at END, "
+                      "stopped_at=NULL WHERE telegram_user_id=?",
+                      (gender, json.dumps(list(types), ensure_ascii=False), json.dumps(sizes, ensure_ascii=False),
+                       json.dumps(list(brands), ensure_ascii=False), budget, at, at, uid))
+
+    def stop_prefs(self, user_id) -> bool:
+        """/stop: подборки выключены (анкета остаётся — /settings включит снова). True — было включено."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return False
+        with self.tx() as c:
+            cur = c.execute("UPDATE prefs SET stopped_at=? WHERE telegram_user_id=? AND stopped_at IS NULL "
+                            "AND opt_in_at IS NOT NULL", (utc_iso(), uid))
+            return cur.rowcount > 0
+
+    def active_prefs(self) -> list[dict]:
+        """Кому слать подборки: анкета заполнена, согласие есть, /stop не было, бот не заблокирован."""
+        rows = self.query("SELECT p.* FROM prefs p LEFT JOIN tg_users u ON u.user_id=p.telegram_user_id "
+                          "WHERE p.opt_in_at IS NOT NULL AND p.stopped_at IS NULL AND p.gender IS NOT NULL "
+                          "AND u.blocked_at IS NULL ORDER BY p.telegram_user_id")
+        return [self._prefs_row(r) for r in rows]
+
+    def set_last_digest(self, user_id, at: str) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE prefs SET last_digest_at=? WHERE telegram_user_id=?", (at, _user_id(user_id)))
+
+    def sent_ids(self, user_id) -> set[str]:
+        return {r[0] for r in self.query("SELECT product_id FROM digest_sent WHERE telegram_user_id=?",
+                                         (_user_id(user_id),))}
+
+    def add_sent(self, user_id, product_ids, at: str | None = None) -> None:
+        uid = _user_id(user_id)
+        at = at or utc_iso()
+        with self.tx() as c:
+            c.executemany("INSERT OR IGNORE INTO digest_sent(telegram_user_id, product_id, sent_at) VALUES(?,?,?)",
+                          [(uid, str(p), at) for p in product_ids])
+
+    def update_prices(self, prices: dict, at: str | None = None, drop_pct: float = 10.0) -> int:
+        """Запомнить цены каталога {код: цена}. Цена упала на ≥ drop_pct % от прежней — dropped_at=at,
+        drop_from=прежняя. Пишутся только новые и изменившиеся. Сколько снижений найдено."""
+        at = at or utc_iso()
+        old = {r["product_id"]: r["price_uzs"] for r in self.query("SELECT product_id, price_uzs FROM price_seen")}
+        new_rows, changed, drops = [], [], []
+        for pid, price in prices.items():
+            try:
+                price = int(price or 0)
+            except (TypeError, ValueError):
+                continue
+            if price <= 0:
+                continue
+            prev = old.get(pid)
+            if prev is None:
+                new_rows.append((pid, price, at))
+            elif price != prev:
+                if prev > 0 and price <= prev * (1 - drop_pct / 100):
+                    drops.append((price, at, prev, at, pid))
+                else:
+                    changed.append((price, at, pid))
+        with self.tx() as c:
+            c.executemany("INSERT INTO price_seen(product_id, price_uzs, seen_at) VALUES(?,?,?)", new_rows)
+            c.executemany("UPDATE price_seen SET price_uzs=?, seen_at=? WHERE product_id=?", changed)
+            c.executemany("UPDATE price_seen SET price_uzs=?, seen_at=?, drop_from=?, dropped_at=? WHERE product_id=?",
+                          drops)
+        return len(drops)
+
+    def price_drops(self) -> dict[str, dict]:
+        """{код: {dropped_at, drop_from, price_uzs}} — товары, у которых цена когда-либо падала на ≥10%."""
+        return {r["product_id"]: {"dropped_at": r["dropped_at"], "drop_from": r["drop_from"], "price_uzs": r["price_uzs"]}
+                for r in self.query("SELECT * FROM price_seen WHERE dropped_at IS NOT NULL")}
+
+    # ------------------------------------------------------------ воронка: корзины
+
+    def set_cart(self, user_id, items: list, at: str | None = None) -> str:
+        """Корзина Mini App (/api/cart) — целиком заменяется; пустой список — удалить. Та же корзина ещё раз
+        (сайт присылает её при каждом открытии) время не обновляет; другая — новая корзина (напоминание заново).
+        'cleared' | 'same' | 'saved'."""
+        uid = _user_id(user_id)
+        if uid is None:
+            return "cleared"
+        at = at or now_iso()
+        data = json.dumps(list(items or []), ensure_ascii=False, sort_keys=True)
+        with self.tx() as c:
+            if not items:
+                c.execute("DELETE FROM carts WHERE telegram_user_id=?", (uid,))
+                return "cleared"
+            r = c.execute("SELECT items_json FROM carts WHERE telegram_user_id=?", (uid,)).fetchone()
+            if r and r["items_json"] == data:
+                return "same"
+            c.execute("INSERT INTO carts(telegram_user_id, items_json, created_at, updated_at, reminded_at) "
+                      "VALUES(?,?,?,?,NULL) ON CONFLICT(telegram_user_id) DO UPDATE SET items_json=excluded.items_json, "
+                      "updated_at=excluded.updated_at, reminded_at=NULL", (uid, data, at, at))
+            return "saved"
+
+    def get_cart(self, user_id) -> dict | None:
+        r = self._conn().execute("SELECT * FROM carts WHERE telegram_user_id=?", (_user_id(user_id),)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        try:
+            d["items"] = json.loads(d["items_json"] or "[]")
+        except ValueError:
+            d["items"] = []
+        return d
+
+    def carts_due(self, older_than: str, not_before: str) -> list[dict]:
+        """Корзины для напоминания: обновлены между not_before и older_than, с вещами, ещё не напоминали,
+        после обновления корзины этот пользователь заказа не оформлял, писать ему можно."""
+        out = []
+        for r in self.query("SELECT * FROM carts WHERE reminded_at IS NULL AND updated_at<=? AND updated_at>=? "
+                            "AND items_json NOT IN ('', '[]') ORDER BY updated_at", (older_than, not_before)):
+            uid = r["telegram_user_id"]
+            if self._conn().execute("SELECT 1 FROM orders WHERE telegram_user_id=? AND created_at>=? LIMIT 1",
+                                    (uid, r["updated_at"])).fetchone():
+                continue
+            if not self.can_message(uid):
+                continue
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d["items_json"] or "[]")
+            except ValueError:
+                continue
+            out.append(d)
+        return out
+
+    def mark_cart_reminded(self, user_id, at: str | None = None) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE carts SET reminded_at=? WHERE telegram_user_id=?", (at or now_iso(), _user_id(user_id)))
+
+    # ------------------------------------------------------------ воронка: после выдачи
+
+    def followups_due(self, delivered_before: str) -> list[dict]:
+        """Заказы «выдан» не позже delivered_before, с привязанным Telegram, которым ещё не писали «Всё подошло?»."""
+        return [d for d in (self.get_order(r["order_no"]) for r in self.query(
+            "SELECT order_no FROM orders WHERE status='delivered' AND status_at<=? AND telegram_user_id IS NOT NULL "
+            "AND followup_at IS NULL ORDER BY status_at", (delivered_before,))) if d]
+
+    def mark_followup(self, order_no: str, result: str, at: str | None = None) -> bool:
+        """result: asked | ok | help | failed. Время ставится один раз (при вопросе)."""
+        with self.tx() as c:
+            cur = c.execute("UPDATE orders SET followup_at=COALESCE(followup_at, ?), followup_result=? WHERE order_no=?",
+                            (at or now_iso(), result, order_no))
+            return cur.rowcount > 0
+
+    # ------------------------------------------------------------ воронка: отчёт
+
+    def orders_between(self, start: str, end: str) -> list[dict]:
+        """Заказы с created_at в [start, end) (местное время): для отчёта воронки."""
+        out = []
+        for r in self.query("SELECT o.order_no, o.created_at, o.status, o.total_uzs, o.source, o.src_first, o.src_last, "
+                            "o.ref_code, o.ref_user_id, o.items_json, o.telegram_user_id, u.username AS ref_username, "
+                            "u.id AS ref_client_no FROM orders o LEFT JOIN tg_users u ON u.user_id=o.ref_user_id "
+                            "WHERE o.created_at>=? AND o.created_at<? ORDER BY o.id", (start, end)):
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.pop("items_json") or "[]")
+            except ValueError:
+                d["items"] = []
+            out.append(d)
+        return out
+
+    def referrer_info(self, user_id) -> dict | None:
+        """Для строки «По рекомендации: @ник / клиент N» (N — номер в tg_users)."""
+        u = self.tg_user(user_id)
+        return {"username": u.get("username") or "", "client_no": u.get("id")} if u else None
 
     def stats(self) -> dict:
         c = self._conn()

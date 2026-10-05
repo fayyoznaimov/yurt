@@ -749,6 +749,143 @@ class OrderApiTest(unittest.TestCase):
         finally:
             s2.close()
 
+    # --- воронка: метки источника, рекомендации, /api/event, /api/cart
+
+    def post_to(self, path, data=None, origin=ORIGIN, raw: bytes | None = None, ctype="text/plain;charset=UTF-8",
+                headers: dict | None = None):
+        h = {"Content-Type": ctype, **(headers or {})}
+        if origin:
+            h["Origin"] = origin
+        body = raw if raw is not None else json.dumps(data, ensure_ascii=False).encode("utf-8")
+        return requests.post(self.s.url + path, data=body, headers=h, timeout=10)
+
+    def test_order_src_and_ref(self):
+        db = self.db()
+        db.touch_tg_user(9001, "best_friend", started=True)
+        code = db.ensure_ref_code(9001, orders_db.ref_code_for(TOKEN, 9001))
+        r = self.s.post(valid_order(src_first="Insta", src_last="tg_channel", ref=code.upper()))
+        d = r.json()
+        self.assertEqual(r.status_code, 200, r.text)
+        o = db.get_order(d["order_no"])
+        self.assertEqual((o["src_first"], o["src_last"], o["ref_code"], o["ref_user_id"]),
+                         ("insta", "tg_channel", code, 9001))
+        self.assertIn("Источник: tg_channel (впервые: insta)", self.sent[-1])
+        self.assertIn(f"По рекомендации: @best_friend / клиент {db.tg_user(9001)['id']}", self.sent[-1])
+        # мусорные метки и неизвестный код — отбрасываются, заказ принимается
+        r = self.s.post(valid_order(src_first="<script>", src_last="x" * 40, ref="nosuchcode"))
+        o = db.get_order(r.json()["order_no"])
+        self.assertEqual((o["src_first"], o["src_last"], o["ref_code"], o["ref_user_id"]), (None, None, "nosuchcode", None))
+        self.assertNotIn("Источник:", self.sent[-1])
+        self.assertNotIn("По рекомендации", self.sent[-1])
+        r = self.s.post(valid_order(src_last="google"))                    # одна метка — без «впервые»
+        self.assertIn("Источник: google\n", self.sent[-1] + "\n")
+        self.assertNotIn("впервые", self.sent[-1])
+
+    def test_miniapp_order_takes_bot_source_and_referrer(self):
+        os.environ["TELEGRAM_BOT_TOKEN"] = TOKEN
+        self.s.app.bot = tg_bot.Bot(TOKEN, db=self.db(), http=FakeTelegram(), log=lambda m: None)
+        db = self.db()
+        db.touch_tg_user(9001, "best_friend", started=True)
+        db.ensure_ref_code(9001, orders_db.ref_code_for(TOKEN, 9001))
+        db.touch_tg_user(424242, "alisher_t", started=True, src="tg_channel")
+        db.set_referrer(424242, 9001)
+        user = {"id": 424242, "first_name": "Алишер", "username": "alisher_t"}
+        r = self.s.post(valid_order(tg_init_data=make_init_data(TOKEN, user)))
+        o = db.get_order(r.json()["order_no"])
+        self.assertEqual((o["src_last"], o["ref_user_id"]), ("tg_channel", 9001))
+        self.assertIn("Источник: tg_channel", self.sent[-1])
+        self.assertIn("По рекомендации: @best_friend", self.sent[-1])
+        self.wait_bg()
+
+    def test_event_endpoint(self):
+        good = {"s": "0123456789ab", "src": "Insta", "ev": [
+            {"t": "visit", "r": "home"}, {"t": "view", "id": "aaaaaa2"},
+            {"t": "cart", "id": "AAAAAA2", "size": "48"}, {"t": "co"}, {"t": "order", "no": "YR-261005-ABCD"},
+            {"t": "order_tg"}, {"t": "q", "q": "  Gucci   сумка ", "n": 0}, {"t": "order_tg", "id": "bbbbbb3"},
+            {"t": "visit", "route": "#/catalog?q=секрет"}]}
+        r = self.post_to("/api/event", good, headers={"X-Forwarded-For": "203.0.113.9"})
+        self.assertEqual(r.status_code, 204, r.text)
+        self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), ORIGIN)
+        files = list((self.root / "data" / "events").glob("*.jsonl"))
+        self.assertEqual(len(files), 1)
+        self.assertRegex(files[0].name, r"^\d{4}-\d{2}-\d{2}\.jsonl$")
+        raw = files[0].read_text(encoding="utf-8")
+        rec = json.loads(raw.strip())
+        self.assertEqual(set(rec), {"ts", "day", "s", "src", "ev"})
+        self.assertEqual(rec["day"], files[0].stem)
+        self.assertEqual((rec["s"], rec["src"]), ("0123456789ab", "insta"))
+        self.assertEqual(rec["ev"][0], {"t": "visit", "r": "home"})
+        self.assertEqual(rec["ev"][5], {"t": "order_tg"})
+        self.assertEqual(rec["ev"][7], {"t": "order_tg", "id": "BBBBBB3"})
+        self.assertEqual(rec["ev"][8], {"t": "visit", "r": "#/catalog"})              # старое имя, без параметров
+        self.assertEqual(rec["ev"][1], {"t": "view", "id": "AAAAAA2"})
+        self.assertEqual(rec["ev"][6], {"t": "q", "q": "Gucci сумка", "n": 0})
+        self.assertNotIn("203.0.113", raw)
+        self.assertNotIn("127.0.0.1", raw)
+        if os.name != "nt":
+            self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+        bad = [
+            {"s": "XYZ", "ev": [{"t": "co"}]},                                  # сессия
+            {"s": "0123456789ab", "ev": []},
+            {"s": "0123456789ab", "ev": [{"t": "hack"}]},
+            {"s": "0123456789ab", "ev": [{"t": "view", "id": "../etc"}]},
+            {"s": "0123456789ab", "ev": [{"t": "order", "no": "123"}]},
+            {"s": "0123456789ab", "ev": [{"t": "order_tg", "id": "<x>"}]},
+            {"s": "0123456789ab", "ev": [{"t": "q", "q": "x" * 61, "n": 1}]},
+            {"s": "0123456789ab", "ev": [{"t": "q", "q": "ok", "n": "много"}]},
+            {"s": "0123456789ab", "ev": [{"t": "co"}] * 51},
+            ["not", "object"],
+        ]
+        for b in bad:
+            self.assertEqual(self.post_to("/api/event", b).status_code, 400, b)
+        self.assertEqual(self.post_to("/api/event", raw=b"x" * (8 * 1024 + 1)).status_code, 413)
+        self.assertEqual(self.post_to("/api/event", good, origin="https://evil.example").status_code, 403)
+        opt = requests.options(self.s.url + "/api/event", headers={"Origin": ORIGIN}, timeout=10)
+        self.assertEqual(opt.status_code, 204)
+        self.assertEqual(len(files[0].read_text(encoding="utf-8").strip().splitlines()), 1)
+        self.assertEqual(self.sent, [])
+
+    def test_event_rate_limit(self):
+        os.environ["EVENT_RATE_LIMIT"] = "3"
+        try:
+            s2 = Server(self.root)
+        finally:
+            os.environ.pop("EVENT_RATE_LIMIT", None)
+        try:
+            body = json.dumps({"s": "0123456789ab", "src": "", "ev": [{"t": "co"}]}).encode()
+            codes = [requests.post(s2.url + "/api/event", data=body, timeout=10,
+                                   headers={"Origin": ORIGIN, "Content-Type": "text/plain"}).status_code for _ in range(4)]
+            self.assertEqual(codes, [204, 204, 204, 429])
+            # лимит событий не мешает заказам
+            r = requests.post(s2.url + "/api/order", data=json.dumps(valid_order()).encode(), timeout=10,
+                              headers={"Origin": ORIGIN, "Content-Type": "application/json"})
+            self.assertEqual(r.status_code, 200, r.text)
+        finally:
+            s2.close()
+
+    def test_cart_endpoint(self):
+        os.environ["TELEGRAM_BOT_TOKEN"] = TOKEN
+        user = {"id": 424242, "first_name": "Алишер", "username": "alisher_t"}
+        init = make_init_data(TOKEN, user)
+        items = [{"id": "aaaaaa2", "size": "48", "qty": 2}, {"id": "BBBBBB3", "size": "M", "qty": 1}]
+        r = self.post_to("/api/cart", {"tg_init_data": init, "items": items})
+        self.assertEqual(r.status_code, 204, r.text)
+        cart = self.db().get_cart(424242)
+        self.assertEqual(cart["items"], [{"id": "AAAAAA2", "size": "48", "qty": 2}, {"id": "BBBBBB3", "size": "M", "qty": 1}])
+        self.assertEqual(self.db().tg_user(424242)["username"], "alisher_t")
+        self.assertIsNone(self.db().tg_user(424242)["started_at"])          # Mini App — ещё не «писал боту»
+        for bad in ({"tg_init_data": make_init_data("999:other", user), "items": items},
+                    {"tg_init_data": init, "items": [{"id": "bad", "qty": 1}]},
+                    {"tg_init_data": init, "items": [{"id": "AAAAAA2", "qty": 99}]},
+                    {"items": items}, {"tg_init_data": init, "items": "x"}):
+            self.assertEqual(self.post_to("/api/cart", bad).status_code, 400, bad)
+        self.assertEqual(self.post_to("/api/cart", {"tg_init_data": init, "items": []}).status_code, 204)
+        self.assertIsNone(self.db().get_cart(424242))                       # пустая — удалена
+        os.environ.pop("TELEGRAM_BOT_TOKEN")
+        self.assertEqual(self.post_to("/api/cart", {"tg_init_data": init, "items": items}).status_code, 400)
+        opt = requests.options(self.s.url + "/api/cart", headers={"Origin": ORIGIN}, timeout=10)
+        self.assertEqual(opt.status_code, 204)
+
 
 class HelpersTest(unittest.TestCase):
     def test_norm_phone(self):

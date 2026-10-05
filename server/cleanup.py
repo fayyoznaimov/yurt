@@ -6,6 +6,7 @@
 Что удаляется:
   * data/logs/*.log старше 30 дней;
   * data/changes/*.json старше 90 дней;
+  * data/events/*.jsonl (счётчик воронки) старше 90 дней;
   * data/backup_local/* старше 7 дней;
   * во «входящих» YOOX (только папка из YURT_YOOX_FOLDER, «Загрузки» на Windows не трогаем) файлы
     yoox_*.json старше 14 дней — run.py их уже не берёт (source_opts.yoox_import.max_age_days);
@@ -44,6 +45,7 @@ def main() -> int:
     victims: list[Path] = []
     victims += [p for p in (DATA / "logs").glob("*.log") if old(p, 30)]
     victims += [p for p in (DATA / "changes").glob("*.json") if old(p, 90)]
+    victims += [p for p in (DATA / "events").glob("*.jsonl") if old(p, 90)]
     if (DATA / "backup_local").is_dir():
         victims += [p for p in (DATA / "backup_local").iterdir() if old(p, 7)]
     inbox = os.environ.get("YURT_YOOX_FOLDER")

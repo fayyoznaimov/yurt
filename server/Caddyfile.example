@@ -11,8 +11,8 @@
 # Затем в site/content.json:  "order_endpoint": "https://orders.example.uz/api/order"
 
 orders.example.uz {
-	# наружу — только API заказов; всё остальное 404
-	@api path /api/order /api/health
+	# наружу — только API заказов и воронки (события, корзина Mini App); всё остальное 404
+	@api path /api/order /api/event /api/cart /api/health
 	handle @api {
 		request_body {
 			max_size 32KB

@@ -14,7 +14,7 @@
     def tg_register(bot): ...           # необязательно: вызывается с работающим ботом после импорта
 
 Регистрация действует только в процессе, где идёт опрос (служба yurt-orders), поэтому служба при старте
-импортирует модули из TG_BOT_PLUGINS (через запятую, по умолчанию «channel»; нет модуля — пропуск).
+импортирует модули из TG_BOT_PLUGINS (через запятую, по умолчанию «channel,funnel»; нет модуля — пропуск).
 Отправить сообщение без опроса (из любого процесса): tg_bot.call("sendMessage", chat_id=..., text=...).
 
     python tg_bot.py --set-menu      # кнопка меню бота «Открыть магазин» (web_app SHOP_URL)
@@ -29,8 +29,18 @@
         base32(HMAC-SHA256(токен, номер)) — ссылку выдаёт только сервер: ответ /api/order → bot_url, или
         --link; заказ ≤30 дней и не привязан к другому Telegram). Ссылка без подписи / с неверной — отказ.
         Другие заказы с тем же телефоном не привязываются (телефон никто не проверяет).
-    /start, /start p_<КОД>   приветствие + кнопка web_app «Открыть магазин» (SHOP_URL, для p_ — карточка товара).
-    /stop              не присылать новинки (статусы активных заказов приходят и дальше).
+    /start, /start p_<КОД>   приветствие + кнопка web_app «Открыть магазин» (SHOP_URL, для p_ — карточка товара);
+        без товара — ещё кнопка «Подобрать вещи моего размера» (анкета funnel.py, callback 'pf:…', если плагин
+        funnel подключён). Части через «-»: p_<КОД>, s_<метка> (источник: tg_users.src_first/src_last),
+        r_<код> (кто порекомендовал: tg_users.referred_by), например /start p_AB12CD3-s_insta. С меткой кнопка
+        магазина ведёт на SHOP_URL?from=<метка>[#/catalog?p=<КОД>] (сайт запомнит метку и уберёт её из адреса).
+    /stop              не присылать новинки и подборки (статусы активных заказов приходят и дальше).
+    callback 'fu:ok:<номер>' / 'fu:help:<номер>' (покупатель этого заказа) — ответ на «Всё подошло?» (funnel.py
+        --followup): «Всё отлично» → спасибо, просьба о фото-отзыве и личная ссылка t.me/<бот>?start=r_<код>
+        с текстом бонуса (order_messages.json referral_bonus); «Нужна помощь с размером» → продавцу в чат заказов.
+        Фото, присланные покупателем в течение 7 дней после «Всё отлично», пересылаются продавцу.
+Тексты покупателю с данными товаров перед отправкой проверяются channel.find_leak (источники, закупка, «возврат»):
+сработало — не отправляется (Bot.send_customer).
 
 Настройки (окружение, на сервере /etc/yurt/yurt.env):
     TELEGRAM_BOT_TOKEN       токен бота (им же подписываются ссылки /start o_…)
@@ -58,7 +68,7 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -98,8 +108,20 @@ DEFAULT_MESSAGES = {
     "help": "Здесь приходят статусы заказов. Вопросы — напишите нам {contact}.",
     "seller_copy": "Покупатель не подключил бота — отправьте ему сами:",
     "seller_linked": "🔗 Покупатель подключил бота: заказ {no}",
+    "button_picks": "Подобрать вещи моего размера",
+    "followup_ask": "Здравствуйте, {name}! Как вам заказ {no}? Всё подошло?",
+    "button_followup_ok": "Всё отлично",
+    "button_followup_help": "Нужна помощь с размером",
+    "followup_ok": "Спасибо, что выбрали нас! Будем очень рады фото-отзыву: пришлите сюда фото в обновке — мы передадим его продавцу.",
+    "referral": "Ваша ссылка для друзей: {ref_link}\n{bonus}",
+    "referral_bonus": "Подарочный сертификат 200 000 сум вам и другу после первого заказа друга.",
+    "followup_help": "Продавец напишет вам в ближайшее время и поможет с размером.",
+    "seller_followup_help": "🆘 Нужна помощь с размером: заказ {no}",
+    "seller_review": "📸 Фото-отзыв по заказу {no}",
+    "review_thanks": "Спасибо за фото! Передали продавцу.",
     "status": {},
 }
+REVIEW_DAYS = 7              # сколько дней после «Всё отлично» фото покупателя пересылаются продавцу
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
@@ -194,10 +216,14 @@ def order_bot_url(bot_username: str, token: str, order_no: str) -> str:
     return f"https://t.me/{u}?start={payload}"
 
 
-def shop_link(shop_url: str, product: str = "") -> str:
+def shop_link(shop_url: str, product: str = "", src: str = "") -> str:
+    """Адрес магазина: SHOP_URL[?from=<метка>][#/catalog?p=<КОД>]. Метку сайт читает сам и убирает из адреса."""
     base = (shop_url or "").strip().split("#", 1)[0]
     if not base:
         return ""
+    tag = orders_db.clean_tag(src)
+    if tag:
+        base += ("&" if "?" in base else "?") + f"from={tag}"
     return base + (f"#/catalog?p={product}" if product else "")
 
 
@@ -224,6 +250,41 @@ def format_items(items: list) -> str:
             s += f" × {int(it['qty'])}"
         out.append(s)
     return "\n".join(out)
+
+
+def find_leak(*objs) -> str | None:
+    """Проверка на утечку перед сообщением покупателю — та же, что у канала (channel.find_leak: источники, закупка,
+    валюты источников, «возврат»). channel импортируется лениво (он сам импортирует tg_bot)."""
+    try:
+        from channel import find_leak as _fl
+    except Exception:                                      # нет channel.py — короткий запасной список
+        def _fl(*xs):
+            for x in xs:
+                low = json.dumps(x, ensure_ascii=False).lower() if not isinstance(x, str) else x.lower()
+                for sub in ("yoox", "trendyol", "akinon", "dsmcdn", "€", "₺", "себестоим", "марж", "закуп", "возврат"):
+                    if sub in low:
+                        return sub
+            return None
+    return _fl(*objs)
+
+
+def parse_start(payload: str) -> dict:
+    """'/start p_AB12CD3-s_insta-r_abcd2345' → {product, src, ref} (неверные части отбрасываются)."""
+    out = {"product": "", "src": "", "ref": ""}
+    for part in str(payload or "").strip().split("-"):
+        head, _, rest = part.partition("_")
+        if head == "p" and PRODUCT_RE.match(rest.strip().upper()):
+            out["product"] = rest.strip().upper()
+        elif head == "s":
+            out["src"] = orders_db.clean_tag(rest)
+        elif head == "r":
+            out["ref"] = orders_db.clean_tag(rest)
+    return out
+
+
+def has_callback(prefix: str) -> bool:
+    with _REG_LOCK:
+        return any(p == prefix for p, _, _ in _CALLBACKS)
 
 
 # ---------------------------------------------------------------- реестр обработчиков
@@ -318,6 +379,7 @@ class Bot:
         self._msg_cache: tuple[float, dict] | None = None
         self._fails: dict[int, deque] = defaultdict(deque)  # неудачные /start o_… по пользователю
         self._hinted: dict[int, float] = {}
+        self._review_told: dict[int, float] = {}
         self.last_error: dict = {}
         self.stop_event = threading.Event()
 
@@ -374,6 +436,37 @@ class Bot:
         if reply_markup:
             p["reply_markup"] = reply_markup
         return self.call("sendMessage", **p)
+
+    def send_customer(self, chat_id, text: str, reply_markup: dict | None = None, html: bool = False, **extra):
+        """Сообщение ПОКУПАТЕЛЮ: сначала проверка на утечку (find_leak по тексту и кнопкам). Сработало — не
+        отправляется (None, last_error.leak). Telegram ответил 403 (бот заблокирован) — отметка в базе."""
+        leak = find_leak(text, reply_markup or {})
+        if leak:
+            self.last_error = {"description": f"leak: {leak}", "leak": leak}
+            self.log(f"сообщение покупателю {uid_tag(chat_id)} НЕ отправлено: найдено «{leak}»")
+            return None
+        res = self.send(chat_id, text, reply_markup=reply_markup, html=html, **extra)
+        if res is None and self.blocked_error():
+            db = self.db
+            if db is not None:
+                try:
+                    db.mark_blocked(chat_id)
+                except Exception as ex:
+                    self.log(f"отметка «заблокировал бота» не записана ({ex.__class__.__name__})")
+        return res
+
+    def blocked_error(self) -> bool:
+        """Последняя ошибка Telegram — 403 (пользователь заблокировал бота / не начинал чат)."""
+        return int((self.last_error or {}).get("error_code") or 0) == 403
+
+    def ref_link(self, user_id) -> str:
+        """Личная реферальная ссылка t.me/<бот>?start=r_<код> (код сохраняется в tg_users). Пусто без ника/токена/базы."""
+        u = self.bot_username
+        db = self.db
+        if db is None or not re.fullmatch(r"[A-Za-z0-9_]{4,32}", u or ""):
+            return ""
+        code = db.ensure_ref_code(user_id, orders_db.ref_code_for(self.token, user_id))
+        return f"https://t.me/{u}?start=r_{code}" if code else ""
 
     def answer(self, cq: dict, text: str | None = None, alert: bool = False) -> None:
         self.call("answerCallbackQuery", callback_query_id=cq.get("id"), text=(text or None) and text[:190],
@@ -445,7 +538,7 @@ class Bot:
         t = str(template or "")
         if not v["name"]:
             t = re.sub(r",?[ \t]*\{name\}", "", t)
-        return re.sub(r"\{(name|no|items|prepay|total|rest|contact)\}", lambda m: v[m.group(1)], t).strip()
+        return re.sub(r"\{([a-z_]{2,20})\}", lambda m: v.get(m.group(1), m.group(0)), t).strip()
 
     # ------------------------------------------------------------ сообщение заказа у продавца
 
@@ -477,7 +570,7 @@ class Bot:
         uid = order.get("telegram_user_id")                # Telegram, привязанный к ЭТОМУ заказу (не к телефону)
         result = "not_linked"
         if uid:
-            ok = self.send(uid, text) is not None
+            ok = self.send_customer(uid, text) is not None
             result = "sent" if ok else "failed"
             if self.db is not None:
                 self.db.add_event(order["order_no"], f"customer_msg {status}: {result}", by="bot")
@@ -530,8 +623,14 @@ class Bot:
         text = str(msg.get("text") or "")
         chat = msg.get("chat") or {}
         user = msg.get("from") or {}
+        private = chat.get("type") == "private" and not user.get("is_bot")
+        if private and not text.startswith("/start"):
+            self._touch(user)
+        if private and (msg.get("photo") or str((msg.get("document") or {}).get("mime_type") or "").startswith("image/")):
+            if self._forward_review(msg):
+                return
         if not text.startswith("/"):
-            if chat.get("type") == "private" and not user.get("is_bot"):
+            if private:
                 self._hint(chat.get("id"), user.get("id"))
             return
         cmd, _, args = text.partition(" ")
@@ -562,6 +661,44 @@ class Bot:
         except Exception as ex:
             self.log(f"/{cmd}: ошибка {ex.__class__.__name__}: {str(ex)[:160]}")
 
+    def _touch(self, user: dict, src: str = "") -> None:
+        """Пользователь сам написал боту в личку — ему можно писать (tg_users.started_at)."""
+        db = self.db
+        if db is None or not user.get("id"):
+            return
+        try:
+            db.touch_tg_user(user.get("id"), user.get("username") or "", started=True, src=src)
+        except Exception as ex:
+            self.log(f"tg_users не записан ({ex.__class__.__name__})")
+
+    def _forward_review(self, msg: dict) -> bool:
+        """Фото от покупателя, которого просили о фото-отзыве (7 дней после «Всё отлично») → в чат заказов.
+        True — переслано (подсказку не показываем)."""
+        user = msg.get("from") or {}
+        uid = user.get("id")
+        db = self.db
+        if db is None or not uid or not self.orders_chat:
+            return False
+        try:
+            no = db.review_target(uid)
+            order = db.get_order(no) if no else None
+        except Exception:
+            return False
+        if not order:
+            return False
+        m = self.messages()
+        now = time.time()
+        if now - self._review_told.get(uid, 0) > 600:          # альбом из 5 фото — одна шапка и одно «спасибо»
+            self._review_told[uid] = now
+            who = f" от @{user['username']}" if re.fullmatch(r"[A-Za-z0-9_]{4,32}", str(user.get("username") or "")) else ""
+            self.send(self.orders_chat, self.render(m.get("seller_review") or DEFAULT_MESSAGES["seller_review"], order) + who)
+            self.send_customer(uid, self.render(m.get("review_thanks") or DEFAULT_MESSAGES["review_thanks"], order))
+        self.call("forwardMessage", chat_id=self.orders_chat, from_chat_id=(msg.get("chat") or {}).get("id"),
+                  message_id=msg.get("message_id"))
+        db.add_event(order["order_no"], "review photo forwarded", by="bot")
+        self.log(f"фото-отзыв по заказу {order['order_no']} переслан продавцу ({uid_tag(uid)})")
+        return True
+
     def _hint(self, chat_id, uid) -> None:
         """Ответ на произвольный текст в личке — не чаще раза в 10 минут на человека."""
         if not chat_id or uid is None:
@@ -575,9 +712,13 @@ class Bot:
         self.send(chat_id, self.render(self.messages().get("help") or DEFAULT_MESSAGES["help"]),
                   reply_markup=self._shop_markup())
 
-    def _shop_markup(self, product: str = "") -> dict | None:
-        btn = shop_button(self.messages().get("button_shop") or "Открыть магазин", shop_link(self.shop_url, product))
-        return {"inline_keyboard": [[btn]]} if btn else None
+    def _shop_markup(self, product: str = "", picks: bool = False, src: str = "") -> dict | None:
+        btn = shop_button(self.messages().get("button_shop") or "Открыть магазин", shop_link(self.shop_url, product, src))
+        rows = [[btn]] if btn else []
+        if picks and has_callback("pf:"):                      # анкета подборок (плагин funnel)
+            rows.append([{"text": self.messages().get("button_picks") or DEFAULT_MESSAGES["button_picks"],
+                          "callback_data": "pf:go"}])
+        return {"inline_keyboard": rows} if rows else None
 
     def _too_many_fails(self, uid) -> bool:
         q = self._fails[uid]
@@ -592,6 +733,7 @@ class Bot:
         uid = user.get("id")
         m = self.messages()
         if payload.startswith("o_"):
+            self._touch(user)
             if self._too_many_fails(uid):
                 self.send(chat_id, self.render(m.get("link_failed") or DEFAULT_MESSAGES["link_failed"]))
                 return
@@ -614,19 +756,27 @@ class Bot:
             self.log(f"/start: заказ {no[:20]} не привязан ({res.code if res else why}) для {uid_tag(uid)}")
             self.send(chat_id, self.render(m.get("link_failed") or DEFAULT_MESSAGES["link_failed"]))
             return
-        product = ""
-        if payload.startswith("p_"):
-            code = payload[2:].strip().upper()
-            product = code if PRODUCT_RE.match(code) else ""
+        st = parse_start(payload)
+        product = st["product"]
+        self._touch(user, st["src"])
+        if st["ref"]:
+            db = self.db
+            try:
+                ref_user = db.user_by_ref_code(st["ref"]) if db is not None else None
+                if ref_user and int(ref_user["user_id"]) != int(uid or 0) and db.set_referrer(uid, ref_user["user_id"]):
+                    self.log(f"/start: {uid_tag(uid)} пришёл по рекомендации {uid_tag(ref_user['user_id'])}")
+            except Exception as ex:
+                self.log(f"/start r_: не записано ({ex.__class__.__name__})")
         text = m.get("start_product") if product else m.get("start_welcome")
         self.send(chat_id, self.render(text or DEFAULT_MESSAGES["start_welcome"]),
-                  reply_markup=self._shop_markup(product))
+                  reply_markup=self._shop_markup(product, picks=not product, src=st["src"]))
 
     def cmd_stop(self, msg: dict) -> None:
         uid = (msg.get("from") or {}).get("id")
         db = self.db
         if db is not None and uid:
             db.set_marketing(uid, False)
+            db.stop_prefs(uid)
         self.send((msg.get("chat") or {}).get("id"), self.render(self.messages().get("stop") or DEFAULT_MESSAGES["stop"]))
 
     # ------------------------------------------------------------ опрос
@@ -749,13 +899,62 @@ def _status_callback(bot: Bot, cq: dict):
 register_callback("st:", _status_callback, admin_only=True)
 
 
+def _followup_callback(bot: Bot, cq: dict):
+    """'fu:ok:<номер>' / 'fu:help:<номер>' — ответ покупателя на «Всё подошло?» (funnel.py --followup)."""
+    parts = str(cq.get("data") or "").split(":")
+    action, no = (parts[1], parts[2].upper()) if len(parts) == 3 else ("", "")
+    if action not in ("ok", "help") or not ORDER_NO_RE.match(no):
+        return "Неверная кнопка"
+    db = bot.db
+    if db is None:
+        return "Попробуйте позже"
+    uid = (cq.get("from") or {}).get("id")
+    order = db.get_order(no)
+    if not order or not uid or int(order.get("telegram_user_id") or 0) != int(uid):
+        return "Заказ не найден"
+    msg = cq.get("message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    if chat_id and msg.get("message_id"):                   # кнопки убрать: ответ один
+        bot.call("editMessageReplyMarkup", chat_id=chat_id, message_id=msg.get("message_id"),
+                 reply_markup={"inline_keyboard": []})
+    if order.get("followup_result") in ("ok", "help"):
+        return "Уже отмечено, спасибо!"
+    m = bot.messages()
+    if action == "ok":
+        db.mark_followup(no, "ok")
+        until = (datetime.now() + timedelta(days=REVIEW_DAYS)).isoformat(timespec="seconds")
+        db.set_review(uid, no, until)
+        text = bot.render(m.get("followup_ok") or DEFAULT_MESSAGES["followup_ok"], order)
+        link = bot.ref_link(uid)
+        if link:
+            text += "\n\n" + bot.render(m.get("referral") or DEFAULT_MESSAGES["referral"], order, ref_link=link,
+                                         bonus=m.get("referral_bonus") or "")
+        bot.send_customer(uid, text.strip())
+        bot.log(f"заказ {no}: покупатель доволен ({uid_tag(uid)})")
+        return "Спасибо!"
+    db.mark_followup(no, "help")
+    head = bot.render(m.get("seller_followup_help") or DEFAULT_MESSAGES["seller_followup_help"], order)
+    tg = str(order.get("customer_telegram") or "")
+    kb = {"inline_keyboard": [[{"text": f"Написать @{tg}", "url": f"https://t.me/{tg}"}]]} \
+        if re.fullmatch(r"[A-Za-z0-9_]{4,32}", tg) else None
+    if bot.orders_chat:
+        bot.send(bot.orders_chat, head + (f"\nПокупатель: {order.get('customer_name') or '—'}"
+                                          + (f", @{tg}" if kb else "")), reply_markup=kb)
+    bot.send_customer(uid, bot.render(m.get("followup_help") or DEFAULT_MESSAGES["followup_help"], order))
+    bot.log(f"заказ {no}: нужна помощь с размером ({uid_tag(uid)})")
+    return "Передали продавцу"
+
+
+register_callback("fu:", _followup_callback, admin_only=False)
+
+
 def load_plugins(bot: Bot | None = None, names: str | None = None, log: Callable | None = None) -> list[str]:
-    """Импортировать модули-плагины бота: TG_BOT_PLUGINS через запятую (по умолчанию 'channel').
+    """Импортировать модули-плагины бота: TG_BOT_PLUGINS через запятую (по умолчанию 'channel,funnel').
     При импорте модуль сам вызывает register_callback/register_command; если в нём есть tg_register(bot) —
     он вызывается с работающим ботом. Нет такого модуля — молча пропускается. Импорт плагина не должен
     ничего делать, кроме регистрации (никакой сети и argparse на уровне модуля)."""
     log = log or _log
-    raw = os.environ.get("TG_BOT_PLUGINS", "channel") if names is None else names
+    raw = os.environ.get("TG_BOT_PLUGINS", "channel,funnel") if names is None else names
     loaded = []
     for name in [n.strip() for n in raw.split(",") if n.strip()]:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,60}", name):

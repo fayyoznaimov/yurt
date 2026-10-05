@@ -449,7 +449,8 @@ class BotTest(unittest.TestCase):
                 self.assertNotIn(bad, low, t)
             self.assertFalse(re.search(r"\btl\b", low), t)
             for ph in re.findall(r"\{(\w+)\}", t):
-                self.assertIn(ph, ("name", "no", "items", "prepay", "total", "rest", "contact"), t)
+                self.assertIn(ph, ("name", "no", "items", "prepay", "total", "rest", "contact",
+                                   "group", "cart", "ref_link", "bonus"), t)        # последние — воронка (funnel.py)
         self.assertIn("Предоплата 50%", data["status"]["confirmed"])
         self.assertIn("Заказываем после оплаты", data["status"]["confirmed"])
         self.assertIn("при получении", data["status"]["confirmed"])
@@ -640,6 +641,39 @@ class BotTest(unittest.TestCase):
                 os.environ.pop("BOT_USERNAME", None)
             else:
                 os.environ["BOT_USERNAME"] = saved
+
+
+class FunnelBotTest(unittest.TestCase):
+    setUp, tearDown, make_bot = BotTest.setUp, BotTest.tearDown, BotTest.make_bot
+    def test_parse_start(self):
+        self.assertEqual(tg_bot.parse_start("p_aaaaaa2-s_Insta-r_abcd2345"),
+                         {"product": "AAAAAA2", "src": "insta", "ref": "abcd2345"})
+        self.assertEqual(tg_bot.parse_start("s_bad!tag-p_../x"), {"product": "", "src": "", "ref": ""})
+        self.assertEqual(tg_bot.shop_link("https://x.uz/?a=1#/old", "AAAAAA2", "Blog"),
+                         "https://x.uz/?a=1&from=blog#/catalog?p=AAAAAA2")
+
+    def test_start_src_and_ref(self):
+        self.db.touch_tg_user(9001, "friend_one", started=True)
+        code = self.db.ensure_ref_code(9001, orders_db.ref_code_for(TOKEN, 9001))
+        self.bot.handle_update(msg(f"/start s_tg_channel-r_{code}"))
+        u = self.db.tg_user(4242)
+        self.assertEqual((u["src_last"], u["referred_by"], u["username"]), ("tg_channel", 9001, "real_name"))
+        self.assertTrue(u["started_at"])
+        url = self.fake.of("sendMessage")[-1]["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"]
+        self.assertEqual(url, "https://shop.example/yurt/?from=tg_channel")
+        self.bot.handle_update(msg("/start r_nosuchcd", uid=5151))             # неизвестный код — просто приветствие
+        self.assertIsNone(self.db.tg_user(5151)["referred_by"])
+
+    def test_send_customer_leak_guard_and_block(self):
+        self.assertIsNone(self.bot.send_customer(4242, "Доставка из Trendyol"))
+        self.assertIsNone(self.bot.send_customer(4242, "Без возврата"))
+        self.assertEqual(self.fake.of("sendMessage"), [])
+        self.assertIn("leak", self.bot.last_error)
+        self.fake.fail["sendMessage"] = {"ok": False, "error_code": 403, "description": "Forbidden: bot was blocked by the user"}
+        self.db.touch_tg_user(4242, started=True)
+        self.assertIsNone(self.bot.send_customer(4242, "Здравствуйте"))
+        self.assertTrue(self.db.tg_user(4242)["blocked_at"])
+        self.assertFalse(self.db.can_message(4242))
 
 
 if __name__ == "__main__":

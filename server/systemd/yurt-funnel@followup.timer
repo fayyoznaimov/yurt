@@ -1,0 +1,12 @@
+# Воронка: «Всё подошло?» через 7 дней после выдачи, каждый день в 12:00 по Ташкенту (funnel.py --followup).
+# ПРИМЕР — не включается сам: sudo systemctl enable --now yurt-funnel@followup.timer
+[Unit]
+Description=yurt: воронка — после выдачи в 12:00 (Ташкент)
+
+[Timer]
+OnCalendar=*-*-* 12:00:00 Asia/Tashkent
+Persistent=true
+Unit=yurt-funnel@followup.service
+
+[Install]
+WantedBy=timers.target

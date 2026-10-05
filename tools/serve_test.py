@@ -28,10 +28,14 @@
   * Telegram Mini App без Telegram: ?tgmock=pre|late|fail|empty — первым скриптом страницы подставляется
     tools/tg_mock.js (подмена Telegram.WebApp, журнал вызовов в window.__tg; режимы и параметры — в начале tg_mock.js).
     Пример: /?tgmock=pre&tgsp=p_ABCDEFG&tgscheme=dark&reducedmotion=1;
-  * приём заказов без сервера заказов: /__mode?endpoint=1[&bot=имя_бота][&fail=1] — content.js / content.json
+  * приём заказов без сервера заказов: /__mode?endpoint=1[&bot=имя_бота][&tg=ник_для_заказов][&fail=1] — content.js / content.json
     отдаются с order_endpoint на этот сервер, POST /api/order записывает тело в память и отвечает как order_api.py
     (fail=1 — первая попытка получает 500); /__orders — записанные тела, /__orders?check=1 — они же через
     order_api.validate; /__mode без параметров — всё выключить;
+  * воронка (при /__mode?endpoint=1 сайт шлёт сюда же): POST /api/event (пачки событий {s, src, ev:[…]}) и
+    POST /api/cart (брошенная корзина Mini App {tg_init_data, items}) — печатаются в консоль и копятся в памяти;
+    /__events, /__carts — что пришло (у событий — пометка pii, если в пачке есть имя/телефон/cid/данные Telegram),
+    ?clear=1 — очистить; /__mode их тоже очищает;
   * /__log — какие фото запрашивались (хост и путь), /__log?clear=1 — очистить.
 
 Слушает только 127.0.0.1. Файлы site/ не меняет. Нужен только Python 3.10+ (без пакетов).
@@ -71,7 +75,26 @@ PLACEHOLDER = (b'<svg xmlns="http://www.w3.org/2000/svg" width="464" height="591
                b'<rect width="464" height="591" fill="#d9dbe0"/><path d="M182 250h100v90H182z" fill="#b9bcc4"/></svg>')
 
 OPT = {"port": 8800, "img": "path", "placeholder": False, "dead": [], "delay_data": 0, "delay_img": 0}
-STATE = {"endpoint": False, "bot": "", "fail": False, "orders": [], "attempts": 0}
+STATE = {"endpoint": False, "bot": "", "tg": "", "fail": False, "orders": [], "attempts": 0, "events": [], "carts": []}
+# в событиях воронки не должно быть персональных данных: такие ключи (на любой глубине) — пометка pii в /__events
+PII_KEYS = {"name", "phone", "telegram", "cid", "customer", "tg_init_data", "initdata", "user", "username", "email"}
+PII_RE = re.compile(r"\+?\d[\d\s()-]{8,}\d|@[A-Za-z0-9_]{4,}|tgWebAppData|hash=|auth_date")
+
+
+def pii_issues(obj, path: str = "") -> list[str]:
+    """Ключи и значения в событиях, похожие на персональные данные (для проверки сайта)."""
+    out: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in PII_KEYS:
+                out.append(f"{path}{k}: ключ")
+            out += pii_issues(v, f"{path}{k}.")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out += pii_issues(v, f"{path}{i}.")
+    elif isinstance(obj, str) and PII_RE.search(obj):
+        out.append(f"{path.rstrip('.')}: «{obj[:40]}»")
+    return out
 LOG: list[dict] = []
 HOST_OF_LABEL: dict[str, str] = {}               # img-<хэш>.localhost -> исходный хост (для журнала и --dead)
 CACHE: dict[tuple, bytes] = {}
@@ -216,6 +239,9 @@ def content_data() -> dict:
         d["order_endpoint"] = f"http://127.0.0.1:{OPT['port']}/api/order"
     if STATE["bot"]:
         d["orders_bot_username"] = STATE["bot"]
+    if STATE["tg"]:
+        d["orders_telegram_username"] = STATE["tg"]      # ник продавца — только для проверки кнопок Telegram
+        d["contacts"] = dict(d.get("contacts") or {}, telegram=STATE["tg"])
     return d
 
 
@@ -233,6 +259,9 @@ def check_orders() -> list:
             v = order_api.validate(o["body"])
             keep = {k: v.get(k) for k in ("cid", "client_order_id", "consent", "consent_marketing", "city", "items")}
             keep["tg_init_data"] = (v.get("tg_init_data") or "")[:40]
+            # воронка: что прислал сайт и что оставила проверка order_api (None — поле не пропущено)
+            keep["src_sent"] = {k: o["body"].get(k) for k in ("src_first", "src_last", "ref") if k in o["body"]}
+            keep["src_valid"] = {k: v.get(k) for k in ("src_first", "src_last", "ref")}
             keep["customer"] = {k: (v.get("customer") or {}).get(k) for k in ("name", "phone", "telegram", "city")}
             out.append({"attempt": o["attempt"], "ok": True, "valid": keep})
         except Exception as e:                    # noqa: BLE001 — ValueError с текстом ошибки и любые другие
@@ -311,10 +340,20 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["endpoint"] = q.get("endpoint", [""])[0] == "1"
                 STATE["bot"] = q.get("bot", [""])[0]
+                STATE["tg"] = q.get("tg", [""])[0]
                 STATE["fail"] = q.get("fail", [""])[0] == "1"
                 STATE["attempts"] = 0
                 STATE["orders"].clear()
-            return self.send_json({k: v for k, v in STATE.items() if k != "orders"})
+                STATE["events"].clear()
+                STATE["carts"].clear()
+            return self.send_json({k: v for k, v in STATE.items() if k not in ("orders", "events", "carts")})
+        if path in ("/__events", "/__carts"):
+            key = path[3:]
+            with LOCK:
+                data = list(STATE[key])
+                if q.get("clear", [""])[0] == "1":
+                    STATE[key].clear()
+            return self.send_json(data)
         if path == "/__orders":
             return self.send_json(check_orders() if q.get("check", [""])[0] == "1" else STATE["orders"])
         if path == "/__tg/mock.js":
@@ -344,9 +383,9 @@ class Handler(BaseHTTPRequestHandler):
             if "tgmock" in q:
                 html = html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<script src="/__tg/mock.js"></script>', 1)
             return self.send(200, html, TYPES[".html"], self.csp())
-        if rel == "content.json" and (STATE["endpoint"] or STATE["bot"]):
+        if rel == "content.json" and (STATE["endpoint"] or STATE["bot"] or STATE["tg"]):
             return self.send_json(content_data())
-        if rel == "content.js" and (STATE["endpoint"] or STATE["bot"]):
+        if rel == "content.js" and (STATE["endpoint"] or STATE["bot"] or STATE["tg"]):
             return self.send(200, "window.SITE_CONTENT = " + json.dumps(content_data(), ensure_ascii=False) + ";\n",
                              TYPES[".js"])
         try:
@@ -364,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlsplit(self.path)
         cors = {"Access-Control-Allow-Origin": "*"}
-        if u.path != "/api/order":
+        if u.path not in ("/api/order", "/api/event", "/api/cart"):
             return self.send_json({}, 404, cors)
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(min(n, 1 << 20)).decode("utf-8", "replace")
@@ -372,6 +411,10 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw)
         except ValueError:
             return self.send_json({"ok": False, "error": "bad json"}, 400, cors)
+        if u.path == "/api/event":
+            return self.funnel_event(body, cors)
+        if u.path == "/api/cart":
+            return self.funnel_cart(body, cors)
         with LOCK:
             STATE["attempts"] += 1
             STATE["orders"].append({"attempt": STATE["attempts"], "body": body, "ctype": self.headers.get("Content-Type")})
@@ -386,6 +429,35 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json({"ok": True, "order_no": no, "duplicate": False, "notified": True, "total_uzs": 0,
                                "prepay_uzs": 0, "unavailable": [], "telegram_linked": linked,
                                "bot_url": f"https://t.me/{bot}?start=o_{no}" if bot else ""}, 200, cors)
+
+    # ---- заглушки воронки: печатают, что пришло, и копят в памяти (/__events, /__carts)
+    def funnel_event(self, body, cors: dict):
+        ev = body.get("ev") if isinstance(body, dict) else None
+        ok = isinstance(body, dict) and isinstance(body.get("s"), str) and bool(re.fullmatch(r"[0-9a-f]{12}", body["s"])) \
+            and isinstance(body.get("src"), str) and isinstance(ev, list) and 0 < len(ev) <= 50
+        issues = pii_issues(body)
+        rec = {"at": round(time.time(), 1), "ctype": self.headers.get("Content-Type"), "origin": self.headers.get("Origin"),
+               "valid": ok, "pii": issues, "body": body}
+        with LOCK:
+            if len(STATE["events"]) < 2000:
+                STATE["events"].append(rec)
+        print(f"[event] s={body.get('s') if isinstance(body, dict) else '?'} src={body.get('src') if isinstance(body, dict) else '?'!r} "
+              f"n={len(ev) if isinstance(ev, list) else '?'} valid={ok}" + (f" PII: {issues}" if issues else "")
+              + "\n        " + json.dumps(ev, ensure_ascii=False)[:600], flush=True)
+        return self.send_json({"ok": ok}, 200 if ok else 400, cors)
+
+    def funnel_cart(self, body, cors: dict):
+        items = body.get("items") if isinstance(body, dict) else None
+        init = body.get("tg_init_data") if isinstance(body, dict) else None
+        ok = isinstance(init, str) and 0 < len(init) <= 4096 and isinstance(items, list) and len(items) <= 30 and all(
+            isinstance(i, dict) and set(i) == {"id", "size", "qty"} for i in items)
+        rec = {"at": round(time.time(), 1), "ctype": self.headers.get("Content-Type"), "valid": ok,
+               "tg_init_data_len": len(init) if isinstance(init, str) else None, "items": items}
+        with LOCK:
+            if len(STATE["carts"]) < 500:
+                STATE["carts"].append(rec)
+        print(f"[cart] valid={ok} tg_init_data={rec['tg_init_data_len']} симв. items={json.dumps(items, ensure_ascii=False)}", flush=True)
+        return self.send_json({"ok": ok}, 200 if ok else 400, cors)
 
 
 def main(argv: list[str] | None = None) -> None:

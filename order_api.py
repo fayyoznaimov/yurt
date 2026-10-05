@@ -17,6 +17,11 @@ API:
                       тогда сайт кнопку «Получать статус в Telegram» не показывает (без подписи бот не привяжет).
                       telegram_linked — к ЭТОМУ заказу привязан проверенный Telegram (initData Mini App).
                       Полное описание полей — data/analysis/contract.md, раздел «T1: order payload & bot».
+                      + необязательные src_first, src_last, ref (метки источника и реферальный код, ^[a-z0-9_]{1,32}$)
+    POST /api/event   text/plain JSON ≤ 8 КБ {s: 12 hex, src, ev:[…≤50]} — события воронки → data/events/ДАТА.jsonl
+                      (visit{r}, view{id}, cart{id,size}, co, order{no}, order_tg{id?}, q{q,n})
+                      (без IP и личных данных) → 204
+    POST /api/cart    text/plain JSON {tg_init_data, items:[{id,size,qty}]} — корзина Mini App (для напоминания) → 204
     GET  /api/health  → {ok:true, products, telegram, db, bot}
     OPTIONS           CORS preflight (только для ORDER_ALLOWED_ORIGINS)
 
@@ -40,6 +45,7 @@ TELEGRAM_ORDERS_CHAT_ID (или TELEGRAM_CHAT_ID) с кнопками стату
     ORDERS_DB_PATH          файл базы (по умолчанию data/orders/orders.sqlite)
     ORDER_VERIFY            0 — не перепроверять наличие у источников после заказа (по умолчанию 1)
     ORDER_BACKUP_KEEP_DAYS  30
+    EVENT_RATE_LIMIT        120 запросов /api/event (и столько же /api/cart) с одного IP за EVENT_RATE_WINDOW 600 с
 """
 from __future__ import annotations
 
@@ -57,7 +63,7 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
@@ -90,7 +96,14 @@ SOURCE_NAMES = {
     "pcardin_tr": "Pierre Cardin TR", "cacharel_tr": "Cacharel TR",
 }
 LANGS = {"ru", "uz", "en"}
+EVENT_MAX_BODY = 8 * 1024
+EVENT_MAX = 50
+SESSION_RE = re.compile(r"^[0-9a-f]{12}$")
+ROUTE_RE = re.compile(r"^[#/A-Za-z0-9_.\-]{0,60}$")
+EVENT_TYPES = {"visit", "view", "cart", "co", "order", "order_tg", "q"}
+API_PATHS = ("/api/order", "/api/event", "/api/cart", "/api/health")
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"     # без 0/O и 1/I
+TASHKENT = timezone(timedelta(hours=5))           # день файла событий — по Ташкенту (без перехода на летнее время)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
@@ -381,7 +394,90 @@ def validate(payload) -> dict:
     return {"items": clean_items, "customer": customer, "page_url": page_url,
             "lang": lang if lang in LANGS else "ru", "cid": cid, "client_order_id": coid,
             "consent_marketing": _flag(payload.get("consent_marketing", cust.get("consent_marketing"))),
-            "tg_init_data": init}
+            "tg_init_data": init, "src_first": orders_db.clean_tag(payload.get("src_first")),
+            "src_last": orders_db.clean_tag(payload.get("src_last")), "ref": orders_db.clean_tag(payload.get("ref"))}
+
+
+def validate_items(items) -> list[dict]:
+    """items корзины (/api/cart): 0–30 позиций {id, size, qty}; Invalid при ошибке."""
+    if not isinstance(items, list):
+        raise Invalid("items: ожидался список")
+    if len(items) > MAX_ITEMS:
+        raise Invalid(f"items: не больше {MAX_ITEMS} позиций")
+    out = []
+    for n, it in enumerate(items, 1):
+        if not isinstance(it, dict):
+            raise Invalid(f"items[{n}]: ожидался объект")
+        pid = _text(it.get("id"), f"items[{n}].id", 7, required=True).upper()
+        if not ID_RE.match(pid):
+            raise Invalid(f"items[{n}].id: неверный код товара")
+        qty = it.get("qty", 1)
+        if isinstance(qty, bool) or not isinstance(qty, int) or not 1 <= qty <= MAX_QTY:
+            raise Invalid(f"items[{n}].qty: от 1 до {MAX_QTY}")
+        out.append({"id": pid, "size": _text(it.get("size"), f"items[{n}].size", 20), "qty": qty})
+    return out
+
+
+def validate_events(payload) -> dict:
+    """/api/event: строгая проверка. {s, src, ev:[…]} или Invalid. Лишние поля событий отбрасываются."""
+    if not isinstance(payload, dict):
+        raise Invalid("ожидался JSON-объект")
+    sid = payload.get("s")
+    if not isinstance(sid, str) or not SESSION_RE.match(sid):
+        raise Invalid("s: 12 шестнадцатеричных знаков")
+    src_raw = payload.get("src", "")
+    if src_raw not in ("", None) and not isinstance(src_raw, str):
+        raise Invalid("src: строка")
+    src = orders_db.clean_tag(src_raw)
+    evs = payload.get("ev")
+    if not isinstance(evs, list) or not evs:
+        raise Invalid("ev: непустой список")
+    if len(evs) > EVENT_MAX:
+        raise Invalid(f"ev: не больше {EVENT_MAX} событий")
+    out = []
+    for n, ev in enumerate(evs, 1):
+        if not isinstance(ev, dict) or ev.get("t") not in EVENT_TYPES:
+            raise Invalid(f"ev[{n}]: неизвестное событие")
+        t = ev["t"]
+        e2: dict = {"t": t}
+        if t == "visit":
+            route = ev.get("r", ev.get("route"))                  # сайт шлёт r (home, catalog …); route — старое имя
+            if route not in (None, ""):
+                if not isinstance(route, str):
+                    raise Invalid(f"ev[{n}].r: строка")
+                route = route.split("?", 1)[0][:60]               # без параметров: в них может быть поиск
+                if ROUTE_RE.match(route):
+                    e2["r"] = route
+        elif t == "order_tg" and ev.get("id") not in (None, ""):
+            pid = ev.get("id")
+            if not isinstance(pid, str) or not ID_RE.match(pid.strip().upper()):
+                raise Invalid(f"ev[{n}].id: неверный код товара")
+            e2["id"] = pid.strip().upper()
+        elif t in ("view", "cart"):
+            pid = ev.get("id")
+            if not isinstance(pid, str) or not ID_RE.match(pid.strip().upper()):
+                raise Invalid(f"ev[{n}].id: неверный код товара")
+            e2["id"] = pid.strip().upper()
+            if t == "cart" and ev.get("size") not in (None, ""):
+                e2["size"] = _text(ev.get("size"), f"ev[{n}].size", 20)
+        elif t == "order":
+            no = ev.get("no")
+            if not isinstance(no, str) or not orders_db.ORDER_NO_RE.match(no.strip().upper()):
+                raise Invalid(f"ev[{n}].no: неверный номер заказа")
+            e2["no"] = no.strip().upper()
+        elif t == "q":
+            q = ev.get("q")
+            if not isinstance(q, str):
+                raise Invalid(f"ev[{n}].q: строка")
+            q = re.sub(r"\s+", " ", CTRL_RE.sub("", q)).strip()
+            if not q or len(q) > 60:
+                raise Invalid(f"ev[{n}].q: 1–60 знаков")
+            cnt = ev.get("n")
+            if isinstance(cnt, bool) or not isinstance(cnt, int) or not 0 <= cnt <= 1_000_000:
+                raise Invalid(f"ev[{n}].n: число найденных")
+            e2.update(q=q, n=cnt)
+        out.append(e2)
+    return {"s": sid, "src": src, "ev": out}
 
 
 def price_order(order: dict, catalog: Catalog) -> dict:
@@ -451,6 +547,15 @@ def build_message(order_no: str, order: dict, priced: dict, created: datetime, i
         out.append(f"Комментарий: {e(c['comment'])}")
     if order.get("consent_marketing"):
         out.append("Согласие на новинки: да")
+    first, last = info.get("src_first") or "", info.get("src_last") or ""
+    if first or last:
+        out.append(f"Источник: {e(last or first)}" + (f" (впервые: {e(first)})" if first and first != (last or first) else ""))
+    ref = info.get("referrer")
+    if ref:
+        who = [f"@{e(ref['username'])}"] if ref.get("username") else []
+        if ref.get("client_no"):
+            who.append(f"клиент {int(ref['client_no'])}")
+        out.append("По рекомендации: " + (" / ".join(who) or "по ссылке друга"))
     for n, l in enumerate(priced["lines"], 1):
         out.append("")
         head = f"<b>{n}. <code>{e(l['id'])}</code></b>"
@@ -670,6 +775,12 @@ class OrderApp:
         window = rate_window or float(os.environ.get("ORDER_RATE_WINDOW") or 600)
         self.orders_rl = RateLimiter(limit, window)            # принятые заказы
         self.attempts_rl = RateLimiter(max(30, limit * 6), window)   # любые POST (мусор, ошибки)
+        ev_limit = int(os.environ.get("EVENT_RATE_LIMIT") or 120)
+        ev_window = float(os.environ.get("EVENT_RATE_WINDOW") or 600)
+        self.events_rl = RateLimiter(ev_limit, ev_window)          # /api/event
+        self.cart_rl = RateLimiter(ev_limit, ev_window)            # /api/cart
+        self.events_dir = root / "data" / "events"
+        self.events_lock = threading.Lock()
         self.trust_proxy = trust_proxy
         self.write_lock = threading.Lock()
         env_db = os.environ.get("ORDERS_DB_PATH")
@@ -771,8 +882,16 @@ class OrderApp:
         if order["tg_init_data"]:                           # неверная подпись — заказ всё равно принимаем
             tg_user = verify_init_data(order["tg_init_data"], os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
         source = "miniapp" if tg_user else "site"
-        info = {"source": source, "tg_user": None, "db_ok": True}
+        info = {"source": source, "tg_user": None, "db_ok": True,
+                "src_first": order["src_first"] or order["src_last"], "src_last": order["src_last"] or order["src_first"]}
         added = None
+        ref_uid = None
+        if db is not None and order["ref"]:
+            try:
+                ru = db.user_by_ref_code(order["ref"])
+                ref_uid = ru["user_id"] if ru else None
+            except sqlite3.Error:
+                ref_uid = None
         if db is not None:
             try:
                 added = db.add_order(
@@ -780,7 +899,8 @@ class OrderApp:
                     total_uzs=priced["total_uzs"], prepay_uzs=priced["prepay_uzs"], created_at=created,
                     client_order_id=coid or None, cid=order["cid"] or None, source=source, lang=order["lang"],
                     comment=order["customer"]["comment"], page_url=order["page_url"],
-                    marketing_opt_in=order["consent_marketing"], telegram_user=tg_user)
+                    marketing_opt_in=order["consent_marketing"], telegram_user=tg_user,
+                    src_first=order["src_first"], src_last=order["src_last"], ref_code=order["ref"], ref_user_id=ref_uid)
             except (sqlite3.Error, orders_db.DuplicateOrderNo) as ex:
                 log(f"база заказов: {ex.__class__.__name__}: {str(ex)[:160]} — заказ только в orders.jsonl")
                 added = None
@@ -794,6 +914,13 @@ class OrderApp:
             linked = bool(tg_user) and added.get("telegram_link") == "linked"     # только этот заказ
             info["tg_user"] = tg_user if linked else None
             info["bot_url"] = "" if linked else self.bot_url(order_no)
+            try:
+                row = db.get_order(order_no) or {}
+                info["src_first"], info["src_last"] = row.get("src_first") or "", row.get("src_last") or ""
+                if row.get("ref_user_id"):
+                    info["referrer"] = db.referrer_info(row["ref_user_id"])
+            except sqlite3.Error:
+                pass
         else:
             order_no = self.new_order_no(now)
             info["db_ok"] = False
@@ -804,7 +931,9 @@ class OrderApp:
                   "cost_uzs": priced["cost_uzs"], "catalog_generated_at": self.catalog.generated_at,
                   "client_order_id": coid or None, "cid": order["cid"] or None, "consent": True,
                   "consent_marketing": order["consent_marketing"],
-                  "telegram_user_id": tg_user["id"] if linked else None, "db": bool(added)}
+                  "telegram_user_id": tg_user["id"] if linked else None, "db": bool(added),
+                  "src_first": info.get("src_first") or None, "src_last": info.get("src_last") or None,
+                  "ref": order["ref"] or None}
         self.save(record)
         text = build_message(order_no, order, priced, now, info)
         res = send_telegram(text, reply_markup=tg_bot.status_keyboard(order_no, "new") if added else None)
@@ -884,6 +1013,54 @@ class OrderApp:
             except sqlite3.Error:
                 pass
             log(f"заказ {order_no}: проверка наличия — {len(out)} строк, telegram {'ok' if ok else 'НЕ ОТПРАВЛЕН'}")
+
+    # ------------------------------------------------------------ воронка: события и корзина
+
+    def handle_event(self, payload, now: datetime | None = None) -> tuple[int, dict | None]:
+        """/api/event → строка {ts, day, s, src, ev} в data/events/<день по Ташкенту>.jsonl (права 600). Без IP."""
+        try:
+            data = validate_events(payload)
+        except Invalid as ex:
+            return 400, {"ok": False, "error": str(ex)}
+        now = now or datetime.now(timezone.utc)
+        local = now.astimezone(TASHKENT)
+        day = local.date().isoformat()
+        rec = {"ts": int(now.timestamp()), "day": day, "s": data["s"], "src": data["src"], "ev": data["ev"]}
+        line = json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n"
+        with self.events_lock:
+            self.events_dir.mkdir(parents=True, exist_ok=True)
+            path = self.events_dir / f"{day}.jsonl"
+            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            try:
+                os.write(fd, line.encode("utf-8"))
+            finally:
+                os.close(fd)
+        return 204, None
+
+    def handle_cart(self, payload) -> tuple[int, dict | None]:
+        """/api/cart: проверенный initData → корзина пользователя Telegram в базе (пустой список — удалить)."""
+        if not isinstance(payload, dict):
+            return 400, {"ok": False, "error": "ожидался JSON-объект"}
+        init = payload.get("tg_init_data")
+        if not isinstance(init, str) or not init:
+            return 400, {"ok": False, "error": "tg_init_data: обязательное поле"}
+        try:
+            items = validate_items(payload.get("items"))
+        except Invalid as ex:
+            return 400, {"ok": False, "error": str(ex)}
+        user = verify_init_data(init, os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
+        if not user:
+            return 400, {"ok": False, "error": "tg_init_data: подпись не подтверждена"}
+        db = self._db()
+        if db is None:
+            return 503, {"ok": False, "error": "база недоступна"}
+        try:
+            db.set_cart(user["id"], items)
+            db.touch_tg_user(user["id"], user.get("username") or "")
+        except sqlite3.Error as ex:
+            log(f"корзина: {ex.__class__.__name__}")
+            return 503, {"ok": False, "error": "база недоступна"}
+        return 204, None
 
     # ------------------------------------------------------------ копии базы
 
@@ -973,7 +1150,7 @@ def make_handler(app: OrderApp):
 
         def do_OPTIONS(self):
             ok = self.cors()
-            if not ok or urlparse(self.path).path not in ("/api/order", "/api/health"):
+            if not ok or urlparse(self.path).path not in API_PATHS:
                 self.send_response(403)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -994,21 +1171,33 @@ def make_handler(app: OrderApp):
             else:
                 self.send_json(404, {"ok": False, "error": "not found"})
 
+        def send_empty(self, code: int = 204) -> None:
+            self.send_response(code)
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            if getattr(self, "_cors_origin", None):
+                self.send_header("Access-Control-Allow-Origin", self._cors_origin)
+                self.send_header("Vary", "Origin")
+            self.end_headers()
+
         def do_POST(self):
             ip = self.client_ip()
             allowed = self.cors()
-            if urlparse(self.path).path != "/api/order":
+            path = urlparse(self.path).path
+            if path not in ("/api/order", "/api/event", "/api/cart"):
                 self.close_connection = True
                 return self.send_json(404, {"ok": False, "error": "not found"})
             if allowed is not True:
                 self.close_connection = True
                 return self.send_json(403, {"ok": False, "error": "origin not allowed"})
-            wait = app.attempts_rl.retry_after(ip)
+            rl = {"/api/order": app.attempts_rl, "/api/event": app.events_rl, "/api/cart": app.cart_rl}[path]
+            wait = rl.retry_after(ip)
             if wait:
                 self.close_connection = True
                 return self.send_json(429, {"ok": False, "error": "слишком много запросов", "retry_after": wait},
                                       {"Retry-After": str(wait)})
-            app.attempts_rl.add(ip)
+            rl.add(ip)
+            max_body = EVENT_MAX_BODY if path == "/api/event" else MAX_BODY
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             if ctype not in ("application/json", "text/plain"):
                 self.close_connection = True
@@ -1020,7 +1209,7 @@ def make_handler(app: OrderApp):
             if length < 0:
                 self.close_connection = True
                 return self.send_json(411, {"ok": False, "error": "нужен Content-Length"})
-            if length > MAX_BODY:
+            if length > max_body:
                 self.close_connection = True
                 if length <= DRAIN_MAX:                   # дочитать: иначе клиент получит обрыв, а не 413
                     try:
@@ -1039,10 +1228,17 @@ def make_handler(app: OrderApp):
             except (OSError, UnicodeDecodeError, ValueError):
                 return self.send_json(400, {"ok": False, "error": "неверный JSON"})
             try:
-                code, data = app.handle_order(payload, ip)
+                if path == "/api/event":
+                    code, data = app.handle_event(payload)
+                elif path == "/api/cart":
+                    code, data = app.handle_cart(payload)
+                else:
+                    code, data = app.handle_order(payload, ip)
             except Exception as ex:                       # не роняем сервер и не показываем детали наружу
-                log(f"ошибка обработки заказа: {ex.__class__.__name__}: {str(ex)[:200]}")
+                log(f"ошибка обработки {path}: {ex.__class__.__name__}: {str(ex)[:200]}")
                 code, data = 500, {"ok": False, "error": "внутренняя ошибка, напишите нам в Telegram"}
+            if data is None:
+                return self.send_empty(code)
             extra = {"Retry-After": str(data["retry_after"])} if code == 429 and data.get("retry_after") else None
             self.send_json(code, data, extra)
 
@@ -1088,7 +1284,7 @@ def main() -> int:
             log("бот не запущен: нет TELEGRAM_BOT_TOKEN (кнопки статусов работать не будут)")
     app.start_maintenance()
     srv = make_server(app, args.bind, args.port)
-    log(f"слушаю http://{args.bind}:{args.port}  (POST /api/order, GET /api/health)")
+    log(f"слушаю http://{args.bind}:{args.port}  (POST /api/order /api/event /api/cart, GET /api/health)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

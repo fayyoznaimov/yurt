@@ -20,6 +20,6 @@ credentials-file: /etc/cloudflared/<UUID>.json
 
 ingress:
   - hostname: orders.example.uz
-    path: ^/api/(order|health)$
+    path: ^/api/(order|event|cart|health)$
     service: http://127.0.0.1:8787
   - service: http_status:404

@@ -1,0 +1,12 @@
+# Воронка: личные подборки каждый день в 10:00 по Ташкенту (не чаще раза в день на человека) (funnel.py --digest).
+# ПРИМЕР — не включается сам: sudo systemctl enable --now yurt-funnel@digest.timer
+[Unit]
+Description=yurt: воронка — подборки в 10:00 (Ташкент)
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 Asia/Tashkent
+Persistent=true
+Unit=yurt-funnel@digest.service
+
+[Install]
+WantedBy=timers.target
