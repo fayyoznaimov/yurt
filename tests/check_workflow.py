@@ -1,14 +1,25 @@
-"""Проверка .github/workflows/update.yml без PyYAML и без GitHub (python tests/check_workflow.py).
+"""Проверка .github/workflows/update.yml и публикации без PyYAML и без GitHub (python tests/check_workflow.py).
 
 Разбирает YAML небольшим парсером (блочные словари/списки, `|`-текст, [списки], кавычки, комментарии —
 ровно то, что есть в нашем файле) и проверяет: структуру workflow, cron, шаги (у каждого run или uses,
 версии actions), что упомянутые скрипты есть в репозитории, порядок шагов (память → сбор → сохранение →
-публикация), что закрытые файлы не публикуются. Код выхода 0 — всё в порядке.
+публикация), что закрытые файлы не публикуются, что заказы не попадают ни в git (.gitignore), ни в архив
+ветки data (datastore.py). Затем пробная публикация: deploy.py собирает маленький выдуманный сайт во временную
+папку, git fetch/push подменены (в сеть — ни шагу) — проверяются теги превью, og.png, отсутствие закрытых
+файлов, предупреждение о контакте и что gh-pages — всегда один коммит без родителей. Код выхода 0 — всё в порядке.
 """
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import os
 import re
+import shutil
+import stat
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -237,6 +248,234 @@ def check(path: Path = WF) -> list[str]:
         errs.append("deploy.py: products-admin.js в публикуемых файлах!")
     if "noindex" not in deploy:
         errs.append("deploy.py: нет noindex")
+    if "commit-tree" not in deploy or '"--force"' not in deploy:
+        errs.append("deploy.py: gh-pages должна публиковаться одним коммитом без родителей (commit-tree + push --force)")
+    for word in ("orders", "customers", "channel_state"):
+        if not re.search(r"FORBIDDEN_IN_PATH\s*=\s*\[[^\]]*\"" + word + '"', deploy):
+            errs.append(f"deploy.py: путь с {word!r} не в FORBIDDEN_IN_PATH")
+    suffixes = re.search(r"FORBIDDEN_SUFFIXES\s*=\s*\((.*?)\)", deploy, re.S)
+    for suf in (".sqlite", ".sqlite-wal", ".sqlite-shm", ".jsonl"):
+        if not suffixes or f'"{suf}"' not in suffixes.group(1):
+            errs.append(f"deploy.py: *{suf} не в FORBIDDEN_SUFFIXES")
+    errs += check_private_storage()
+    return errs
+
+
+def check_private_storage() -> list[str]:
+    """Заказы и покупатели: явные строки в .gitignore, datastore их не архивирует и не распаковывает."""
+    errs = []
+    ignore = {line.strip() for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()}
+    for line in ("data/orders/", "*.sqlite", "*.sqlite-wal", "*.sqlite-shm", "data/channel_state.json",
+                 "data/analysis/"):
+        if line not in ignore:
+            errs.append(f".gitignore: нет строки {line}")
+    sys.path.insert(0, str(ROOT))
+    import datastore
+    for name in ("data/orders/orders.jsonl", "data/orders/orders.sqlite", "data/orders/export/x.csv",
+                 "data/orders.sqlite", "data/x.sqlite-wal", "data/x.sqlite-shm", "data/customers.jsonl"):
+        if datastore.allowed_member(name):
+            errs.append(f"datastore.allowed_member пропускает {name}")
+    for name in ("data/state.json", "data/raw_trendyol.json", "site/admin/a1.js", "site/products-admin.js"):
+        if not datastore.allowed_member(name):
+            errs.append(f"datastore.allowed_member не пропускает нужный {name}")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel in ("data/state.json", "data/raw_x.json", "data/orders/orders.jsonl", "data/orders/orders.sqlite",
+                    "data/orders/orders.sqlite-wal", "data/changes/1.json", "site/admin/a1.js"):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text("{}", encoding="utf-8")
+        got = {p.relative_to(root).as_posix() for p in datastore.bundle_files(root)}
+        if any(datastore.is_private(n) or "orders" in n for n in got):
+            errs.append(f"datastore.bundle_files берёт заказы: {sorted(got)}")
+        if not {"data/state.json", "data/raw_x.json", "site/admin/a1.js"} <= got:
+            errs.append(f"datastore.bundle_files потерял нужные файлы: {sorted(got)}")
+    return errs
+
+
+# ---------- пробная публикация deploy.py (без сети) ----------
+
+def _rmtree(path: Path) -> None:
+    def retry(func, p, _exc):        # объекты .git только для чтения — на Windows иначе не удалить
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if path.exists():
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(path, onexc=retry)
+        else:
+            shutil.rmtree(path, onerror=retry)
+
+
+def _fake_site(root: Path, telegram: str = "", contact_url: str = "https://t.me/your_username") -> Path:
+    site = root / "site"
+    files = {
+        "index.html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n<meta charset=\"utf-8\">\n"
+                      "<title>Брендовая одежда</title>\n<meta property=\"og:title\" content=\"старый\">\n"
+                      "</head>\n<body>каталог</body>\n</html>\n",
+        "products.js": "window.DEALS = [];\n",
+        "content.json": json.dumps({"name": "IPAK", "tagline": "Брендовая одежда из Италии и Турции",
+                                    "hero_text": "Boss, Emporio Armani и ещё десятки брендов со скидками до 80%.",
+                                    "contacts": {"telegram": telegram}, "orders_telegram_username": ""},
+                                   ensure_ascii=False),
+        "data/manifest.json": json.dumps({"layout": 1, "site": {"name": "IPAK", "contact_url": contact_url},
+                                          "shards": [{"file": "i/0.aaaa.js"}], "detail": {"files": ["d/00.bbbb.js"]}}),
+        "data/i/0.aaaa.js": '__DS("i/0",\n{"v":1,"id":["1"]}\n);\n',
+        "data/d/00.bbbb.js": '__DS("d/00",\n{"v":1,"items":{}}\n);\n',
+        "admin/00.js": '{"cost_uzs": 1, "price_now": 2}',             # закрытое — не публикуется
+        "products-admin.js": 'window.ADMIN = {"cost_uzs": 1};',
+        "img/p/1-1.jpg": "jpg",
+        "img/brands/boss.svg": "<svg/>",
+    }
+    for rel, text in files.items():
+        (site / rel).parent.mkdir(parents=True, exist_ok=True)
+        (site / rel).write_text(text, encoding="utf-8")
+    shutil.copytree(ROOT / "site" / "brand", site / "brand")             # настоящие логотипы и og.png
+    (root / "config.json").write_text(json.dumps({"site": {"contact_url": contact_url}}), encoding="utf-8")
+    return site
+
+
+def check_deploy_run() -> list[str]:
+    errs: list[str] = []
+    sys.path.insert(0, str(ROOT))
+    import brands
+    import content
+    import deploy
+    saved = {k: getattr(deploy, k) for k in ("ROOT", "SITE", "OUT", "git")}
+    saved_builds = (content.build, brands.build)
+    real_git = deploy.git
+    state = {"pushed": None, "calls": [], "out": None}
+
+    def fake_git(*args, cwd=None, env=None):
+        state["calls"].append(args)
+        if args[:2] == ("remote", "get-url"):
+            return "https://github.com/example/shop.git"
+        if args[0] == "fetch":            # «ветка на GitHub» — то, что подменённый push отправил последним
+            if not state["pushed"]:
+                raise SystemExit("git fetch: ветки ещё нет (подмена)")
+            (state["out"] / ".git" / "FETCH_HEAD").write_text(state["pushed"] + "\n", encoding="utf-8")
+            return ""
+        if args[0] in ("push", "pull", "clone", "ls-remote"):
+            if args[0] == "push":
+                state["pushed"] = args[-1].split(":")[0]
+            return ""
+        return real_git(*args, cwd=cwd, env=env)
+
+    def run(argv: list[str]) -> tuple[str, str | None]:
+        buf = io.StringIO()
+        fail = None
+        with contextlib.redirect_stdout(buf):
+            try:
+                deploy.main(argv)
+            except SystemExit as e:
+                fail = str(e)
+        return buf.getvalue(), fail
+
+    def published_commits(out: Path) -> tuple[int, str]:
+        g = lambda *a: subprocess.run(["git", *a], cwd=out, capture_output=True, text=True).stdout.strip()
+        return int(g("rev-list", "--count", "refs/heads/gh-pages") or 0), g("cat-file", "-p", "refs/heads/gh-pages")
+
+    tmp = Path(tempfile.mkdtemp(prefix="deploy_check_"))
+    try:
+        deploy.git = fake_git
+        content.build = brands.build = lambda *a, **k: None   # не трогать настоящие site/content.js, brands.js
+        root = tmp / "root"
+        deploy.ROOT, deploy.SITE = root, _fake_site(root)
+        out = state["out"] = tmp / "out"
+
+        # 1. первая публикация
+        log, fail = run(["--out", str(out)])
+        if fail:
+            return [f"deploy.py упал на чистом сайте: {fail}\n{log}"]
+        page = (out / "index.html").read_text(encoding="utf-8")
+        want = {"og:title": "IPAK — брендовая одежда из Италии и Турции", "og:type": "website",
+                "twitter:card": "summary_large_image"}
+        for key, val in want.items():
+            if f'="{key}" content="{val}"' not in page:
+                errs.append(f"index.html: нет {key} = {val!r}")
+        img = re.search(r'property="og:image" content="([^"]+)"', page)
+        if not img or not img.group(1).startswith(deploy.PUBLIC_URL + "brand/og.png"):
+            errs.append(f"index.html: og:image не абсолютный адрес brand/og.png: {img and img.group(1)}")
+        if not img or not img.group(1).startswith("https://"):
+            errs.append("index.html: og:image не https")
+        desc = re.search(r'property="og:description" content="([^"]+)"', page)
+        if not desc or deploy.UNSAFE_TEXT.search(desc.group(1)):
+            errs.append(f"index.html: og:description пустой или с названием источника: {desc and desc.group(1)}")
+        if page.count('property="og:title"') != 1 or "старый" in page:
+            errs.append("index.html: старые og-теги страницы не заменены")
+        if 'name="robots" content="noindex' not in page:
+            errs.append("index.html: нет noindex")
+        if deploy.png_size(out / "brand" / "og.png") != (1200, 630):
+            errs.append("og.png не опубликован или не 1200×630")
+        leaked = [p.relative_to(out).as_posix() for p in out.rglob("*") if ".git" not in p.relative_to(out).parts
+                  and re.search(r"admin|orders|customers|channel_state|\.sqlite|\.jsonl", p.relative_to(out).as_posix())]
+        if leaked:
+            errs.append(f"в публикации закрытые файлы: {leaked}")
+        if "ВНИМАНИЕ: контакт для заказов не настроен" not in log or "your_username" not in log:
+            errs.append("нет громкого предупреждения о заглушке контакта")
+        pushes = [c for c in state["calls"] if c[0] == "push"]
+        if len(pushes) != 1 or "--force" not in pushes[0] or not pushes[0][-1].endswith(":refs/heads/gh-pages"):
+            errs.append(f"push в gh-pages не --force: {pushes}")
+        n, head = published_commits(out)
+        if n != 1 or "\nparent " in head:
+            errs.append(f"после первой публикации в gh-pages {n} коммитов (нужен 1 без родителей)")
+
+        # 2. ничего не изменилось — ничего не отправляется
+        state["calls"].clear()
+        log, fail = run(["--out", str(out)])
+        if fail or "Изменений нет" not in log or any(c[0] == "push" for c in state["calls"]):
+            errs.append(f"повторная публикация без изменений что-то отправила: {fail or log[-300:]}")
+
+        # 2б. в gh-pages старая история (коммит с родителем), сайт тот же — всё равно заменяется одним коммитом
+        g = lambda *a: subprocess.run(["git", *a], cwd=out, capture_output=True, text=True).stdout.strip()
+        tree = g("rev-parse", state["pushed"] + "^{tree}")
+        with_parent = g("-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", tree,
+                        "-p", state["pushed"], "-m", "old history")
+        state["pushed"] = with_parent
+        state["calls"].clear()
+        log, fail = run(["--out", str(out)])
+        n, head = published_commits(out)
+        if fail or state["pushed"] == with_parent or n != 1 or "\nparent " in head:
+            errs.append(f"старая история gh-pages не схлопнута: {fail or log[-300:]}")
+
+        # 3. изменение — снова один коммит без родителей (история не копится)
+        (deploy.SITE / "img" / "p" / "2-1.jpg").write_text("jpg2", encoding="utf-8")
+        state["calls"].clear()
+        first = state["pushed"]
+        log, fail = run(["--out", str(out)])
+        n, head = published_commits(out)
+        if fail or state["pushed"] == first or n != 1 or "\nparent " in head:
+            errs.append(f"вторая публикация: {fail or ''} коммитов {n}, новый {state['pushed'] != first}")
+
+        # 4. --dry-run: без fetch и push
+        state["calls"].clear()
+        log, fail = run(["--out", str(tmp / "dry"), "--dry-run"])
+        if fail or any(c[0] in ("fetch", "push") for c in state["calls"]) or "--dry-run" not in log:
+            errs.append(f"--dry-run ходил в сеть или упал: {fail}")
+
+        # 5. закрытое в публичных папках — публикация останавливается
+        for rel, text in (("brand/orders.jsonl", "{}"), ("img/p/customers.json", "{}"),
+                          ("brand/channel_state.json", "{}"), ("img/p/db.sqlite", "x"),
+                          ("img/p/db.sqlite-wal", "x"), ("img/p/db.sqlite-shm", "x"),
+                          ("data/i/0.aaaa.js", '{"cost_uzs": 5}')):
+            p = deploy.SITE / rel
+            old = p.read_text(encoding="utf-8") if p.exists() else None
+            p.write_text(text, encoding="utf-8")
+            state["calls"].clear()
+            log, fail = run(["--out", str(out)])
+            if not fail or "Стоп" not in fail or any(c[0] == "push" for c in state["calls"]):
+                errs.append(f"site/{rel} не остановил публикацию")
+            p.write_text(old, encoding="utf-8") if old is not None else p.unlink()
+
+        # 6. контакт настроен — предупреждения нет
+        _rmtree(root)
+        deploy.SITE = _fake_site(root, telegram="ipak_shop", contact_url="https://t.me/ipak_shop")
+        log, fail = run(["--out", str(tmp / "dry2"), "--dry-run"])
+        if fail or "ВНИМАНИЕ" in log:
+            errs.append(f"предупреждение о контакте при настроенном контакте: {fail or log[-300:]}")
+    finally:
+        for k, v in saved.items():
+            setattr(deploy, k, v)
+        content.build, brands.build = saved_builds
+        _rmtree(tmp)
     return errs
 
 
@@ -246,6 +485,9 @@ def main() -> int:
     job = next(iter(wf["jobs"].values()))
     print(f"{WF.relative_to(ROOT)}: триггеры {list(wf['on'])}, шагов {len(job['steps'])}, "
           f"секреты {sorted(set(re.findall(r'secrets\.(\w+)', WF.read_text(encoding='utf-8'))))}")
+    deploy_errs = check_deploy_run()
+    print("Пробная публикация deploy.py (без сети): " + ("в порядке" if not deploy_errs else "ОШИБКИ"))
+    errs += deploy_errs
     for e in errs:
         print("ОШИБКА:", e)
     print("Всё в порядке." if not errs else f"Ошибок: {len(errs)}")

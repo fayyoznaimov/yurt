@@ -68,8 +68,21 @@ class StoreError(RuntimeError):
 
 # ---------- что входит в архив ----------
 
+PRIVATE_IN_PATH = ("orders", "customers")          # заказы и покупатели: data/orders/**, customers*.jsonl …
+PRIVATE_SUFFIXES = (".sqlite", ".sqlite-wal", ".sqlite-shm", ".sqlite-journal", ".jsonl")
+
+
+def is_private(name: str) -> bool:
+    """Персональные данные покупателей НЕ архивируются никогда (даже зашифрованными: ветка data — в публичном
+    репозитории): data/orders/**, любой путь с orders / customers, базы *.sqlite* и журналы *.jsonl."""
+    low = name.replace("\\", "/").lower()
+    return (low.startswith("data/orders/") or low.endswith(PRIVATE_SUFFIXES)
+            or any(w in part for part in low.split("/") for w in PRIVATE_IN_PATH))
+
+
 def bundle_files(root: Path = ROOT) -> list[Path]:
-    """Файлы, которые нужны run.py в следующий раз. Пути — относительно root."""
+    """Файлы, которые нужны run.py в следующий раз. Пути — относительно root.
+    Заказы (data/orders/, *.sqlite) сюда не входят никогда — см. is_private()."""
     data = root / "data"
     out: list[Path] = []
     for name in ("state.json", "sold_out.json", "fx.json", "notify_state.json"):
@@ -84,11 +97,11 @@ def bundle_files(root: Path = ROOT) -> list[Path]:
     adir = root / "site" / "admin"                  # то же, когда каталог большой: по частям (catalog_files.py)
     if adir.is_dir():
         out += sorted(p for p in adir.glob("*.js") if p.is_file())
-    return out
+    return [p for p in out if not is_private(p.relative_to(root).as_posix())]
 
 
 def allowed_member(name: str) -> bool:
-    if name.startswith("/") or ".." in Path(name).parts or "\\" in name:
+    if name.startswith("/") or ".." in Path(name).parts or "\\" in name or is_private(name):
         return False
     return (name.startswith("data/") or name == "site/products-admin.js"
             or (name.startswith("site/admin/") and name.count("/") == 2 and name.endswith(".js")))
@@ -152,6 +165,9 @@ def pack(dst: Path, key: str, root: Path = ROOT) -> dict:
     files = bundle_files(root)
     if not any(f.name == "state.json" for f in files):
         raise StoreError(f"В {root / 'data'} нет state.json — упаковывать нечего (сначала python run.py).")
+    bad = [f.relative_to(root).as_posix() for f in files if not allowed_member(f.relative_to(root).as_posix())]
+    if bad:   # то, что unpack не примет (и заказы/покупатели), не упаковываем вовсе
+        raise StoreError(f"в архив попали бы недопустимые файлы: {bad[:5]}")
     with tempfile.TemporaryDirectory() as tmp:
         plain = Path(tmp) / "bundle.tar.gz"
         with tarfile.open(plain, "w:gz", compresslevel=6) as tar:

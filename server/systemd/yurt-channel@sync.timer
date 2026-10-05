@@ -1,0 +1,14 @@
+# Канал Telegram: каждые 3 часа (по Ташкенту 00:35, 03:35 … 21:35 — через полчаса после сборки каталога
+# yurt-update.timer) проданное в постах помечается «⛔ Продано», пропавшие ходовые размеры — новой строкой (channel.py --sync).
+# ПРИМЕР — не включается сам: sudo systemctl enable --now yurt-channel@sync.timer
+[Unit]
+Description=yurt: синхронизация постов канала каждые 3 часа
+
+[Timer]
+OnCalendar=*-*-* 00/3:35:00 Asia/Tashkent
+RandomizedDelaySec=5min
+Persistent=true
+Unit=yurt-channel@sync.service
+
+[Install]
+WantedBy=timers.target

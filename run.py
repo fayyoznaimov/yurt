@@ -28,6 +28,8 @@ from pathlib import Path
 
 import catalog_files
 import describe
+import ranking
+import sizes_norm
 import sync_state
 from pricing import load_rates, sell_price_uzs
 from sources import ADAPTERS
@@ -36,9 +38,13 @@ from sources.base import Product, Query
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 SITE = ROOT / "site"
-PUB_IMG = "img/p"        # фото для сайта под нейтральными именами: site/img/p/<код>-<n>.jpg
+PUB_IMG = "img/p"        # фото для сайта под нейтральными именами: site/img/p/<код IPAK>_<n>.jpg
+# прежнее имя своих фото (до октября 2026) — <код>-<n>.jpg; такие файлы переименовываются, а не скачиваются заново
+LEGACY_PUB_RE = re.compile(r"^([A-Z2-7]{7,12})-(\d{1,3})(\.[A-Za-z0-9]{2,5})$")
 # адаптер -> код источника, который стоит в товарах (product.source) и в source_filters
 PRODUCT_SOURCE = {"yoox_import": "yoox", "feed_yoox": "yoox"}   # feed_yoox — партнёрский фид (не включать вместе с yoox_import)
+COMPACT_RAW = {"yoox_import", "feed_yoox"}   # большие data/raw_<источник>.json пишутся без отступов (в разы меньше)
+YOOX_STALE_HIDE_DAYS = 7  # товар YOOX, который не подтверждался файлами кнопки дольше, на сайте не показываем
 TOP_BRANDS = 25          # сколько брендов печатать в сводке, остальные — одной строкой
 # Поля товара на публичном сайте (products.js / products.json). Только то, что видит покупатель:
 # никаких магазинов-источников, ссылок, исходных названий, валют, закупочных цен и маржи.
@@ -242,8 +248,7 @@ def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: 
             print(f"[{source}] убраны товары брендов не из списка: {n_before - len(rows)}")
     info["gone_ids"] = sorted(set(gone_ids))
 
-    text = json.dumps(rows, ensure_ascii=False, indent=1)
-    raw_path(source).write_text(text, encoding="utf-8")
+    write_raw(source, rows)
     meta = {"source": source, "status": info["status"], "collected_at": info["collected_at"], "note": info["note"],
             "fetched": n_fetched, "rows": len(rows), "verified": info["verified"], "carried": info["carried"],
             "absence_means_gone": info["absence_means_gone"], "gone_ids": info["gone_ids"],
@@ -263,6 +268,82 @@ def load_raw(source: str) -> list[dict]:
     except ValueError as e:
         print(f"[{source}] data/raw_{source}.json не читается ({e}) — считаю пустым")
         return []
+
+
+def write_raw(source: str, rows: list[dict]) -> None:
+    """data/raw_<источник>.json через временный файл; большие (COMPACT_RAW) — без отступов."""
+    if source in COMPACT_RAW:
+        sync_state.write_json(raw_path(source), rows, compact=True)
+    else:
+        sync_state.write_json(raw_path(source), rows, indent=1)
+
+
+def compact_raw(source: str, state: dict) -> int:
+    """Прежний data/raw_<источник>.json с отступами (до COMPACT_RAW) -> без отступов, один раз. Отпечатки
+    (raw_sha1 в meta и в state) переносятся на новый файл, только если совпадали со старым, — так сборка не
+    примет переписанный файл за новые данные источника. Возвращает, на сколько байт файл стал меньше."""
+    p = raw_path(source)
+    try:
+        with p.open("rb") as f:
+            head = f.read(2)
+        st = p.stat()
+    except OSError:
+        return 0
+    if len(head) < 2 or head[:1] != b"[" or head[1:2] not in (b"\n", b"\r", b" "):
+        return 0
+    old_sha = sync_state.file_sha1(p)
+    rows = load_raw(source)
+    if not rows:
+        return 0
+    write_raw(source, rows)
+    # время файла — прежнее: update.py по нему решает, какие файлы кнопки YOOX run.py уже видел
+    os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+    new_sha = sync_state.file_sha1(p)
+    meta = sync_state.read_json(meta_path(source), None)
+    if isinstance(meta, dict) and meta.get("raw_sha1") == old_sha:
+        meta["raw_sha1"] = new_sha
+        sync_state.write_json(meta_path(source), meta, indent=1)
+    rec = state["sources"].get(product_source(source))
+    if isinstance(rec, dict) and rec.get("raw_sha1") == old_sha:
+        rec["raw_sha1"] = new_sha
+        sync_state.save(DATA, state)
+    return st.st_size - p.stat().st_size
+
+
+def trendyol_official_flags(cfg: dict) -> tuple[dict[str, bool], dict[str, bool]]:
+    """Бейдж официального продавца Trendyol: ({id товара: да/нет}, {id продавца: да/нет}). Источники — листинг
+    (data/trendyol_listing.json → items[id]._official, _merchant_id) и кэш страниц товаров
+    (data/trendyol_pdp_cache.json → [id].official). В data/raw_trendyol.json этого поля нет."""
+    so = (cfg.get("source_opts") or {}).get("trendyol") or {}
+
+    def path(key: str, default: str) -> Path:
+        p = Path(so.get(key) or default)
+        return p if p.is_absolute() else ROOT / p
+
+    by_item: dict[str, bool] = {}
+    by_merchant: dict[str, bool] = {}
+    pdp = sync_state.read_json(path("pdp_cache_file", "data/trendyol_pdp_cache.json"), {})
+    for cid, e in (pdp.items() if isinstance(pdp, dict) else []):
+        if isinstance(e, dict) and isinstance(e.get("official"), bool):
+            by_item[str(cid)] = e["official"]
+    listing = sync_state.read_json(path("listing_file", "data/trendyol_listing.json"), {})
+    items = listing.get("items") if isinstance(listing, dict) else None
+    for cid, rec in (items.items() if isinstance(items, dict) else []):
+        if not isinstance(rec, dict) or not isinstance(rec.get("_official"), bool):
+            continue
+        by_item[str(cid)] = rec["_official"]          # листинг свежее и полнее кэша
+        if rec.get("_merchant_id") is not None:
+            by_merchant.setdefault(str(rec["_merchant_id"]), rec["_official"])
+    return by_item, by_merchant
+
+
+def is_official(row: dict, by_item: dict[str, bool], by_merchant: dict[str, bool]) -> bool:
+    """Карточка Trendyol от официального продавца? Неизвестно — нет (обещаем «только официальные продавцы»)."""
+    v = by_item.get(str(row.get("source_item_id")))
+    if v is None:
+        m = re.search(r"[?&]merchantId=(\d+)", str(row.get("url") or ""))
+        v = by_merchant.get(m.group(1)) if m else None
+    return bool(v)
 
 
 def brand_key(s: str) -> str:
@@ -309,6 +390,38 @@ def passes(p: dict, f: dict) -> bool:
     return p.get("in_stock", True)
 
 
+def hidden_rows(rows: list[dict], cfg: dict) -> set[tuple[str, str]]:
+    """Что не показывать на сайте, хотя товар есть в данных источника: (источник, id в магазине).
+    Trendyol при source_opts.trendyol.official_only — всё не от официального продавца (и при сборке --offline);
+    YOOX — что файлы кнопки не подтверждали дольше source_opts.yoox_import.stale_hide_days дней (0 — не скрывать).
+    Эти товары остаются в data/raw_* и в выдаче источника: для памяти (sync_state) они «сняты фильтрами»,
+    а не распроданы."""
+    so = cfg.get("source_opts") or {}
+    out: set[tuple[str, str]] = set()
+    ty = [r for r in rows if r.get("source") == "trendyol"]
+    if ty and (so.get("trendyol") or {}).get("official_only"):
+        by_item, by_merchant = trendyol_official_flags(cfg)
+        bad = [r for r in ty if not is_official(r, by_item, by_merchant)]
+        out.update((r["source"], str(r["source_item_id"])) for r in bad)
+        brands: dict[str, int] = {}
+        for r in bad:
+            brands[r.get("brand") or "?"] = brands.get(r.get("brand") or "?", 0) + 1
+        print(f"[trendyol] только официальные продавцы: {len(ty) - len(bad)} из {len(ty)}"
+              + (f"; скрыто {len(bad)}: " + ", ".join(f"{b} {n}" for b, n in sorted(brands.items(), key=lambda x: -x[1]))
+                 if bad else ""))
+    yx = [r for r in rows if r.get("source") == "yoox"]
+    if yx:
+        try:
+            days = float((so.get("yoox_import") or {}).get("stale_hide_days", YOOX_STALE_HIDE_DAYS) or 0)
+        except (TypeError, ValueError):
+            days = float(YOOX_STALE_HIDE_DAYS)
+        stale = [r for r in yx if days > 0 and _age_days(r.get("fetched_at")) > days]
+        out.update((r["source"], str(r["source_item_id"])) for r in stale)
+        print(f"[yoox] не подтверждались файлами кнопки дольше {days:g} дн. — скрыто с сайта: {len(stale)} из {len(yx)}"
+              if days > 0 else f"[yoox] скрытие устаревших выключено (stale_hide_days = 0)")
+    return out
+
+
 def stats(items: list[dict]) -> dict | None:
     """Сводка: число товаров, цены в сумах, скидки (средняя — только по товарам со скидкой)."""
     if not items:
@@ -344,25 +457,70 @@ def public_id(source: str, item_id: str, n: int = 7) -> str:
     return base64.b32encode(digest).decode("ascii")[:n]
 
 
+def pub_image_name(code: str, n: int, suffix: str = ".jpg") -> str:
+    """Имя своего фото на сайте: <код IPAK>_<n>.jpg (код — public_id). По имени не узнать ни магазин, ни его
+    номер товара."""
+    return f"{code}_{n}{(suffix or '.jpg').lower()}"
+
+
+def _adopt(dst: Path, old: Path) -> bool:
+    """Переименовать уже выложенную копию old в dst (фото не копируется и не скачивается заново).
+    Если dst уже есть — лишняя старая копия удаляется."""
+    if old == dst or not old.is_file():
+        return False
+    try:
+        if dst.exists():
+            old.unlink()
+        else:
+            os.replace(old, dst)
+        return True
+    except OSError:
+        return False
+
+
+def legacy_pub_name(name: str) -> str | None:
+    """«ABCDEFG-2.jpg» (прежнее имя своего фото) -> «ABCDEFG_2.jpg»; другое имя -> None."""
+    m = LEGACY_PUB_RE.match(name)
+    return pub_image_name(m.group(1), int(m.group(2)), m.group(3)) if m else None
+
+
+def migrate_published_names() -> int:
+    """Один раз (и после копии из gh-pages, где ещё старые имена): site/img/p/<код>-<n>.jpg -> <код>_<n>.jpg.
+    Файлы переименовываются на месте — ничего не скачивается и не копируется заново. Возвращает число файлов."""
+    folder = SITE / PUB_IMG
+    moved = 0
+    for f in (sorted(folder.iterdir()) if folder.is_dir() else []):
+        new = legacy_pub_name(f.name) if f.is_file() else None
+        if new and _adopt(folder / new, f):
+            moved += 1
+    return moved
+
+
 def publish_images(code: str, images: list[str], used: set[str]) -> list[str]:
-    """Локальные фото (site/img/yoox/<id в магазине>_1.jpg) -> site/img/p/<код>-<n>.jpg: в адресе фото на сайте
+    """Локальные фото (site/img/yoox/<id в магазине>_1.jpg) -> site/img/p/<код>_<n>.jpg: в адресе фото на сайте
     не должно быть ни имени магазина, ни его номера товара. Жёсткая ссылка, если можно, иначе копия.
+    Уже выложенная копия под прежним именем (<код>-<n>.jpg или имя файла магазина) переименовывается.
     Внешние ссылки (CDN магазинов) остаются как есть."""
     out = []
+    folder = SITE / PUB_IMG
     for n, img in enumerate(images, 1):
         if img.startswith(("http://", "https://", "//")):
             out.append(img)
             continue
         src = SITE / img
+        suffix = src.suffix.lower() or ".jpg"
+        name = pub_image_name(code, n, suffix)
+        dst = folder / name
+        if not dst.exists():
+            for old in (f"{code}-{n}{suffix}", src.name):
+                if (folder / old) != src and _adopt(dst, folder / old):
+                    break
         if not src.exists():
             # оригинала нет (в облаке нет site/img/yoox), но копия уже выложена — берём её (её дал gh-pages)
-            name = f"{code}-{n}{src.suffix.lower() or '.jpg'}"
-            if (SITE / PUB_IMG / name).is_file():
+            if dst.is_file():
                 used.add(name)
                 out.append(f"{PUB_IMG}/{name}")
             continue
-        name = f"{code}-{n}{src.suffix.lower() or '.jpg'}"
-        dst = SITE / PUB_IMG / name
         used.add(name)
         if not (dst.exists() and dst.stat().st_size == src.stat().st_size):
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -377,14 +535,24 @@ def publish_images(code: str, images: list[str], used: set[str]) -> list[str]:
 
 
 def keep_published_images(images: list[str], used: set[str]) -> list[str]:
-    """Фото карточки распроданного товара (уже лежат в site/img/p): не удалять и не ссылаться на пропавшие."""
+    """Фото карточки распроданного товара (уже лежат в site/img/p): не удалять и не ссылаться на пропавшие.
+    Ссылки прошлой сборки на прежние имена (<код>-<n>.jpg) переводятся на новые."""
     out = []
+    folder = SITE / PUB_IMG
     for img in images or []:
         if img.startswith(("http://", "https://", "//")):
             out.append(img)
-        elif img.startswith(PUB_IMG + "/") and (SITE / img).exists():
-            used.add(img.split("/")[-1])
-            out.append(img)
+            continue
+        if not img.startswith(PUB_IMG + "/"):
+            continue
+        name = img.split("/")[-1]
+        new = legacy_pub_name(name)
+        if new:
+            _adopt(folder / new, folder / name)
+            name = new
+        if (folder / name).is_file():
+            used.add(name)
+            out.append(f"{PUB_IMG}/{name}")
     return out
 
 
@@ -412,6 +580,21 @@ def plural(n: int, forms: tuple[str, str, str]) -> str:
     """plural(3, ("бренд", "бренда", "брендов")) -> "бренда"."""
     a, b = n % 100, n % 10
     return forms[2] if 10 < a < 20 else forms[0] if b == 1 else forms[1] if 1 < b < 5 else forms[2]
+
+
+def rank_report(public: list[dict], first: int = ranking.WINDOW) -> str:
+    """Строка сводки: что видно первым в «Рекомендуем» (первые first по r)."""
+    top = sorted(public, key=lambda p: -(p.get("r") or 0))[:first]
+    if not top:
+        return "Порядок «Рекомендуем»: товаров нет"
+    brands: dict[str, int] = {}
+    for p in top:
+        brands[p.get("brand") or "?"] = brands.get(p.get("brand") or "?", 0) + 1
+    b, k = max(brands.items(), key=lambda x: (x[1], x[0]))
+    titles = len({(p.get("brand"), p.get("title")) for p in top})
+    return (f"Порядок «Рекомендуем» (ranking.py): в первых {len(top)} — {len(brands)} "
+            f"{plural(len(brands), ('бренд', 'бренда', 'брендов'))}, разных названий {titles}; "
+            f"больше всего {b} — {k}")
 
 
 def stats_line(st: dict) -> str:
@@ -459,9 +642,11 @@ def main() -> None:
 
     # два run.py одновременно испортили бы state.json и файлы сайта — второй ждёт первого
     lock = sync_state.Lock(DATA / "run.lock", "run.py " + " ".join(sys.argv[1:]), max_age_s=4 * 3600)
-    if not lock.acquire(wait_s=45 * 60):
-        raise SystemExit("Другой запуск run.py не закончился за 45 минут — выхожу. "
-                         "Если он завис, удалите data/run.lock.")
+    if not lock.acquire(wait_s=45 * 60):      # живой замок старше 4 ч — sync_state.LockStuck с подсказкой
+        o = lock.info()
+        raise SystemExit(f"Другой запуск run.py (pid {o.get('pid')}, {o.get('what') or '?'}, с {o.get('started')}) "
+                         f"не закончился за 45 минут — выхожу. Замок живого процесса не снимаю; если он завис, "
+                         f"завершите его (taskkill /PID {o.get('pid')} /F) — замок снимется сам.")
     try:
         build(cfg, sc, sources, args)
     finally:
@@ -474,6 +659,10 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
     src_info: dict[str, dict] = {}       # по коду источника в товаре (yoox, trendyol, …)
     for s in cfg["sources"]:
         psrc = product_source(s)
+        if s in COMPACT_RAW and (args.offline or s not in sources):
+            saved = compact_raw(s, state)
+            if saved > 0:
+                print(f"[{s}] data/raw_{s}.json переписан без отступов: меньше на {saved / 1e6:.1f} МБ")
         prev = load_raw(s)
         if s in sources and not args.offline:
             got, info = collect(s, cfg, prev, sync_state.watched(state, psrc), args.accept_drop)
@@ -501,15 +690,19 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
     # дубли внутри источника
     rows = list({(r["source"], r["source_item_id"]): r for r in rows}.values())
 
-    rates = load_rates({r["currency"] for r in rows} or {"EUR"}, cfg["pricing"].get("fx_manual"))
+    need = {r["currency"] for r in rows} or {"EUR"}
+    if cfg["pricing"].get("cargo_usd_per_kg"):
+        need.add("USD")                      # карго считается в долларах за кг
+    rates = load_rates(need, cfg["pricing"].get("fx_manual"))
     for r in rows:
         country = ADAPTERS[r["source"]][2]
-        r.update(sell_price_uzs(r["price_now"], r["currency"], country, rates, cfg["pricing"]))
+        r.update(sell_price_uzs(r["price_now"], r["currency"], country, rates, cfg["pricing"], r.get("type")))
         r["country"] = country
 
     # у каждого источника свои фильтры: filters + source_filters[источник]
     eff = {s: filters_for(s, cfg) for s in {r["source"] for r in rows}}
-    kept = sorted((r for r in rows if passes(r, eff[r["source"]])),
+    hide = hidden_rows(rows, cfg)
+    kept = sorted((r for r in rows if (r["source"], str(r["source_item_id"])) not in hide and passes(r, eff[r["source"]])),
                   key=lambda r: (-(r.get("discount_pct") or 0), r["price_uzs"]))
 
     by_brand: dict[str, list] = {}
@@ -535,6 +728,9 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
     describe.MISSING.clear()
     live, admin = [], {}
     used_imgs: set[str] = set()
+    renamed = migrate_published_names()      # прежние имена своих фото -> <код>_<n>.jpg (на месте, без скачивания)
+    if renamed:
+        print(f"Свои фото: {renamed} файлов в site/{PUB_IMG} переименованы в <код>_<n>.jpg")
     for r in kept:
         n = 7
         code = public_id(r["source"], r["source_item_id"], n)
@@ -566,10 +762,19 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
         if pub.get("id") in admin:
             continue
         pub["images"] = keep_published_images(pub.get("images") or [], used_imgs)
+        title, brand = str(pub.get("title") or ""), str(pub.get("brand") or "").strip()
+        if brand and title != brand and title.endswith(" " + brand):    # снимок старой сборки: «Рубашка Boss»
+            pub["title"] = title[: -len(brand)].strip()                  # -> «Рубашка» (бренд на карточке отдельно)
         public.append({k: pub.get(k, [] if k == "sizes_out" else None) for k in PUBLIC_FIELDS})
         if pub["id"] in sold_adm:
             admin[pub["id"]] = sold_adm[pub["id"]]
     removed = cleanup_images(used_imgs)
+    # для фильтров и поиска витрины (не поля карточки): ключи размеров — по размерам после clean_sizes
+    # (sizes_norm.py; показываемый список sizes не меняется — заказ проверяется по нему), основы слов для
+    # поиска — из цвета, состава и пунктов карточки (describe.keywords). catalog_files пишет их в столбцы zk / kw.
+    for pub in public:
+        pub["zk"] = sizes_norm.filter_keys(pub.get("sizes") or [], pub.get("type"), pub.get("gender"))
+        pub["kw"] = describe.keywords(pub)
 
     sources_report = {s: {"status": i["status"], "note": i.get("note") or "", "adapter": i["adapter"],
                           "collected_at": i.get("collected_at"), "verified": i.get("verified", 0),
@@ -582,6 +787,13 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
     admin["_meta"] = {"generated_at": summary["generated_at"], "rates": summary["rates"],
                       "by_source": summary["by_source"], "filters": eff, "sources": sources_report,
                       "sold_out_shown": len(public) - len(live)}
+
+    # Порядок «Рекомендуем» (ranking.py): оценка товара + перемешивание брендов -> столбец r в индексе каталога
+    # (больше — раньше; распроданные — в конце). По r catalog_files строит порядок витрины и «голову».
+    ranker = ranking.Ranker.from_config(cfg)
+    for pub, r_ in zip(public, ranker.ranks(public)):
+        pub["r"] = r_
+    rank_line = rank_report(public)
 
     # Каталог частями: site/data/ (манифест, индекс, подробности; см. catalog_files.py), закрытое — site/admin/.
     # При ≤ catalog_files.LEGACY_MAX товаров дополнительно products.js / products.json / products-admin.js
@@ -624,6 +836,10 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
             print(f"  …ещё {len(rest)} {plural(len(rest), ('бренд', 'бренда', 'брендов'))} "
                   f"({sum(len(by_brand[b]) for b in rest)} шт)")
     n_pub = len(public)
+    n_cg = sum(1 for p in public if describe.color_group(p.get("color")) >= 0)
+    print(f"Заголовки: разных {len({p['title'] for p in public})} на {n_pub} карточек; группа цвета у {n_cg}, "
+          f"ключи размеров у {sum(1 for p in public if p.get('zk'))}, слова для поиска у "
+          f"{sum(1 for p in public if p.get('kw'))} (в среднем {sum(len(p.get('kw') or []) for p in public) / max(1, n_pub):.1f})")
     print(f"Карточки: цвет переведён у {sum(1 for p in public if p['color'])} из {n_pub}, "
           f"состав — у {sum(1 for p in public if p['composition'])}, "
           f"с пунктами описания — {sum(1 for p in public if p['details'])}; "
@@ -641,6 +857,7 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
                                              "; products.js — только оглавление (каталог больше "
                                              f"{catalog_files.LEGACY_MAX:,} товаров)")
           + (f"; удалено устаревших частей: {layout['stale_removed']}" if layout["stale_removed"] else ""))
+    print(rank_line)
     if changes_file:
         print(f"Подробно: {changes_file.relative_to(ROOT)}")
     try:                              # тексты продавца: site/content.json -> site/content.js

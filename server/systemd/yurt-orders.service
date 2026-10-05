@@ -1,9 +1,12 @@
-# Приём заказов с сайта → Telegram (order_api.py). Работает всегда, слушает только 127.0.0.1:8787 —
+# Приём заказов с сайта → база + Telegram (order_api.py). Работает всегда, слушает только 127.0.0.1:8787 —
 # наружу его выставляет Caddy (HTTPS) или Cloudflare Tunnel, см. README «Заказы с сайта».
+# Внутри этой же службы потоком работает бот заказов (tg_bot.py: кнопки статусов, /start, Mini App) —
+# единственный потребитель getUpdates; long polling идёт наружу, входящие порты и вебхук не нужны.
+# Позиция опроса — data/orders/bot_offset.json, база — data/orders/orders.sqlite, копии — data/orders/backup/.
 # @USER@ и @APP@ подставляет server/setup.sh. Раз в сутки перезапускается сам (RuntimeMaxSec), чтобы
-# подхватить новый код после git pull; каталог (products.json) он перечитывает и без перезапуска.
+# подхватить новый код после git pull; каталог он перечитывает и без перезапуска, бот продолжает с offset.
 [Unit]
-Description=yurt: приём заказов с сайта (order_api.py)
+Description=yurt: приём заказов с сайта и бот заказов (order_api.py + tg_bot.py)
 Wants=network-online.target
 After=network-online.target
 

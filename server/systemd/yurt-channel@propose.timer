@@ -1,0 +1,12 @@
+# Канал Telegram: каждый день в 09:00 по Ташкенту продавцу приходят 8 готовых постов (channel.py --propose 8).
+# ПРИМЕР — не включается сам: sudo systemctl enable --now yurt-channel@propose.timer
+[Unit]
+Description=yurt: предложения для канала в 09:00 (Ташкент)
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Tashkent
+Persistent=true
+Unit=yurt-channel@propose.service
+
+[Install]
+WantedBy=timers.target

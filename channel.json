@@ -1,0 +1,62 @@
+{
+  "_help": "Канал Telegram (channel.py). Пробный план: python channel.py --plan. Отправка — только если в окружении CHANNEL_ENABLED=1, TELEGRAM_BOT_TOKEN и CHANNEL_ID (@ник канала или -100…); личка продавца для предложений — CHANNEL_REVIEW_CHAT_ID (иначе первый id из TELEGRAM_ADMIN_IDS). Пустые ссылки: site_url — из SHOP_URL / PUBLIC_URL (иначе https://fayyoznaimov.github.io/yurt/); mini_app_url — если задан (например https://t.me/<бот>), кнопка «Заказать» открывает товар в Mini App: <mini_app_url>?startapp=p_<КОД>; contact_url — кнопка «Написать нам» (пусто — ник из SELLER_TELEGRAM или site/content.json; нет ника — кнопки нет).",
+  "site_url": "",
+  "mini_app_url": "",
+  "contact_url": "",
+  "gates": {
+    "_help": "Какие товары годятся в канал: скидка от min_discount %, цена в сумах от price_min_uzs до price_max_uzs, размеров в наличии не меньше min_sizes и среди них ходовой (ranking.py), фото в каталоге не меньше min_photos, из них можно отправить (свой файл site/img/p или фото с разрешённого CDN магазина) не меньше min_sendable_photos.",
+    "min_discount": 40,
+    "price_min_uzs": 1200000,
+    "price_max_uzs": 15000000,
+    "min_sizes": 2,
+    "need_popular_size": true,
+    "min_photos": 2,
+    "min_sendable_photos": 1,
+    "in_stock": true
+  },
+  "score": {
+    "_help": "Оценка = rank × ranking.score() (0..1) + fresh × свежесть (1 — только появился, 0 — старше fresh_days дней) + saving × экономия (разница со старой ценой, 1 — от saving_cap_uzs сум).",
+    "rank": 1.0,
+    "fresh": 0.15,
+    "fresh_days": 7,
+    "saving": 0.15,
+    "saving_cap_uzs": 10000000
+  },
+  "quotas": {
+    "_help": "На один день по Ташкенту (посты и сегодняшние предложения, ждущие решения): не больше per_brand одного бренда и per_type одного типа, пол по плану gender_plan (М/Ж по кругу; нет товара нужного пола — берётся другой, если gender_fallback), не больше max_expensive вещей дороже expensive_uzs. Похожий товар (бренд | исходное название | цвет) — не чаще раза в dedupe_days дней; один код — только один раз.",
+    "per_brand": 2,
+    "per_type": 2,
+    "gender_plan": ["М", "Ж", "М", "М", "Ж"],
+    "gender_fallback": true,
+    "expensive_uzs": 10000000,
+    "max_expensive": 1,
+    "dedupe_days": 14
+  },
+  "caption": {
+    "_help": "Подпись поста: «<b>Бренд</b> — название / <b>цена сум</b> <s>старая</s> −скидка% / Размеры: … / footer». Старая цена — из скидки, округление до round_old_to. Не больше max_len знаков. Запрещённые слова (магазины, валюты, закупка — список LEAK_SUBSTRINGS в channel.py) проверяются перед каждой отправкой.",
+    "footer": "Оригинал · предоплата 50% · доставка до 10 дней",
+    "max_len": 1000,
+    "order_button": "Заказать",
+    "contact_button": "Написать нам",
+    "round_old_to": 10000
+  },
+  "photos": {
+    "_help": "album: false — одно фото с подписью и кнопками (рекомендуется: кнопки работают, пометка «Продано» убирает их); true — альбом до album_max фото, ссылки «Заказать · Написать нам» в подписи (у альбома кнопок не бывает).",
+    "album": false,
+    "album_max": 4
+  },
+  "propose": {
+    "_help": "--propose N: сколько постов по умолчанию предлагать (count, таймер берёт CHANNEL_PROPOSE_N или 8); предложение можно опубликовать ttl_days дней; «Пропустить» — товар не предлагается skip_days дней.",
+    "count": 8,
+    "ttl_days": 3,
+    "skip_days": 30
+  },
+  "sync": {
+    "_help": "--sync проверяет посты не старше days дней: продано → «⛔ Продано» и без кнопок; пропали все ходовые размеры или товар исчез из каталога — правка только после confirm_runs запусков подряд; не больше max_edits правок за запуск.",
+    "days": 14,
+    "confirm_runs": 2,
+    "max_edits": 20
+  },
+  "send_pause_s": 1.5,
+  "tz_offset_hours": 5
+}

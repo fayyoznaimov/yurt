@@ -21,12 +21,28 @@
 "td":[словарь названий части]?, "ty":[тип], "g":[пол], "o":[страна], "c":[цвет], "ss":[система размеров],
 "p":[цена/price_unit], "d":[скидка*disc_scale или null], "s":[[размер,...]], "soi":[строки], "sov":[[размеры]],
 "out":[строки «нет в наличии»], "f":[first_seen: минут от seen_epoch (секунды) или null], "ip":[префикс фото],
-"im":[середина адреса первого фото], "is":[хвост адреса], "ni":[сколько всего фото]}. Номера словарей — из
-manifest.dict (0 = null). Часть 0 («голова») — первые HEAD_DISC товаров в порядке витрины (скидка ↓, цена ↑) и
-HEAD_NEW самых новых и по HEAD_PRICE самых дешёвых и дорогих: первые страницы каталога (по скидке, новинки,
-по цене) не перестраиваются, когда приходят остальные части.
+"im":[середина адреса первого фото], "is":[хвост адреса], "ni":[сколько всего фото],
+"r":[место в порядке «Рекомендуем»: целое, больше — показывать раньше], "cg":[группа цвета], "zk":[ключи размеров],
+"kw":[основы слов для поиска]}. Номера словарей — из manifest.dict (0 = null).
+cg — номер группы цвета в manifest.dict.cgroup ([{name, hex}], 12 групп, describe.COLOR_GROUPS) или -1 (нет группы).
+zk — ключи фильтра размеров (sizes_norm.filter_keys) номерами manifest.dict.zk (номер = порядок показа): список
+номеров или 0 — «как у размеров строки»: объединение manifest.dict.szk[x] по номерам размеров x из "s"
+(szk[x] — ключи размера dict.size[x] без учёта товара, sizes_norm.default_keys). Список пишется только там, где
+ключи зависят от товара (низ по талии «W30», рубашки по вороту «ворот 40», ремни «см 90» …) — так столбец в 5 раз
+меньше. kw — основы слов (describe.keywords) номерами manifest.dict.kw без основ цвета; основы цвета строки —
+manifest.dict.ckw[номер цвета "c"]. Полный набор строки = ckw[c] + kw (до describe.KW_MAX).
+manifest.facets.colors = {"all"|тип: [[всего, в наличии] × 12 групп]}, manifest.facets.zk = {"all"|тип:
+[[номер ключа, всего, в наличии], ...]} в порядке показа.
+r = N − место в итоговом порядке ranking.py (оценка + перемешивание брендов), N — товаров в каталоге: r уникальны
+(1..N), сортировка по r по убыванию повторяет этот порядок; у распроданных r самые маленькие. Части без "r"
+(старые сборки) читаются как раньше. Порядок витрины по умолчанию (_default_key) — по r.
+Часть 0 («голова») — HEAD_TOP первых по r, по HEAD_PER_GROUP первых по r в каждой паре тип × пол, HEAD_NEW самых
+новых, по HEAD_PRICE самых дешёвых и дорогих и HEAD_DISC с самой большой скидкой (без повторов): первые страницы
+каталога («Рекомендуем», категории, новинки, по цене, по скидке) не перестраиваются, когда приходят остальные части.
 Остальные части — по корзинам fnv1a32(id) & 255 (manifest.shards[k].b = [от, до]): товар из прямой ссылки
 ?p=ID страница находит, загрузив сначала его часть.
+Строки головы идут в порядке витрины (r ↓); в остальных частях порядок строк НЕ означает порядок показа — они
+сгруппированы по бренду, типу и названию (_pack_key: так части сжимаются на ~15% лучше). Страница всегда сортирует сама.
 
 Подробности: {"v":1, "pre":[...], "suf":[...], "items": {id: [description, details, composition,
 [префикс, середина, хвост, ...все фото], fetched_at]}}; корзина = fnv1a32(id) & (detail.shards - 1).
@@ -43,12 +59,17 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
+import describe
+import sizes_norm
+
 LAYOUT = 1
 LEGACY_MAX = 30_000            # до стольких товаров пишутся и старые products.js / products.json целиком
 ADMIN_COMBINED_MAX = 30_000    # до стольких — и products-admin.js одним файлом
-HEAD_DISC = 2500               # «голова»: первые товары витрины по скидке …
-HEAD_NEW = 1000                # … самые новые …
-HEAD_PRICE = 500               # … и самые дешёвые / дорогие (первые страницы сортировок по цене)
+HEAD_TOP = 1500                # «голова»: первые товары витрины по r («Рекомендуем») …
+HEAD_PER_GROUP = 60            # … первые по r в каждой паре тип × пол (первые страницы категорий) …
+HEAD_NEW = 500                 # … самые новые …
+HEAD_PRICE = 200               # … самые дешёвые / дорогие (первые страницы сортировок по цене) …
+HEAD_DISC = 200                # … и с самой большой скидкой (первая страница «По скидке»)
 HASH_BUCKETS = 256             # виртуальные корзины для частей индекса после головы
 SHARD_TARGET = 2_500_000       # байт (без сжатия) в одной части индекса
 DETAIL_PER_SHARD = 150         # товаров в файле подробностей (число файлов — степень двойки, 16…1024)
@@ -62,6 +83,9 @@ PUBLIC_FIELDS = ("id", "brand", "title", "type", "gender", "origin", "price_uzs"
                  "sizes_out", "size_system", "color", "composition", "details", "description", "images",
                  "in_stock", "fetched_at", "first_seen")
 LETTER_SIZES = ["XXXS", "XXS", "XS", "S", "M", "L", "XL", "XXL", "2XL", "XXXL", "3XL", "4XL", "5XL"]
+# поля для витрины сверх карточки (не входят в PUBLIC_FIELDS): r — место в «Рекомендуем», zk — ключи фильтра
+# размеров (sizes_norm.py), kw — основы слов для поиска (describe.keywords), cg — группа цвета (describe.color_group)
+EXTRA_FIELDS = ("r", "zk", "kw", "cg")
 ADMIN_LEAK_MARKERS = (b'"cost_uzs"', b'"margin_uzs"', b'"source_item_id"', b'"price_now"')
 
 
@@ -183,8 +207,26 @@ class _Dict:
 # ---------------------------------------------------------------- запись
 
 def _default_key(i: int, p: dict):
-    """Порядок витрины по умолчанию (index.html SORT_KEYS.disc, распроданные в конце)."""
-    return (1 if p.get("in_stock") is False else 0, -(p.get("discount_pct") or 0), p.get("price_uzs") or 0, i)
+    """Порядок витрины по умолчанию: «Рекомендуем» — r по убыванию (при равенстве скидка ↓, цена ↑),
+    распроданные в конце."""
+    return (1 if p.get("in_stock") is False else 0, -(p.get("r") or 0), -(p.get("discount_pct") or 0),
+            p.get("price_uzs") or 0, i)
+
+
+def _pack_key(i: int, p: dict):
+    """Порядок строк в частях после головы: похожие рядом (бренд, тип, название, цена) — лучше сжатие.
+    На показ не влияет: страница сортирует по r / скидке / цене сама."""
+    return (p.get("brand") or "", p.get("type") or "", p.get("title") or "", p.get("price_uzs") or 0, p.get("id") or "", i)
+
+
+def _ranks(products: list[dict]) -> list[int]:
+    """r каждой карточки: поле "r" (run.py → ranking.py), а если его нет ни у кого — порядок списка
+    (products приходят в порядке витрины: первый получает r = N)."""
+    have = [p.get("r") for p in products]
+    if any(isinstance(x, (int, float)) and not isinstance(x, bool) for x in have):
+        return [int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else 0 for x in have]
+    n = len(products)
+    return [n - i for i in range(n)]
 
 
 def _encode_index(k: int, rows: list[dict], D: dict, epoch: int, unit: int, scale: int) -> dict:
@@ -194,7 +236,7 @@ def _encode_index(k: int, rows: list[dict], D: dict, epoch: int, unit: int, scal
     out = {"v": 1, "k": k, "n": len(rows), "id": [r["id"] for r in rows]}
     out["b"] = [D["brand"](r.get("brand")) for r in rows]
     if use_td:
-        td = sorted(uniq, key=lambda t: (-uniq[t], t))
+        td = sorted(uniq)                   # по алфавиту: «Рубашка, белая, …» рядом — словарь сжимается лучше
         ti = {t: i for i, t in enumerate(td)}
         out["td"] = td
         out["t"] = [ti[t] for t in titles]
@@ -239,6 +281,10 @@ def _encode_index(k: int, rows: list[dict], D: dict, epoch: int, unit: int, scal
             ip.append(0), im.append(""), is_.append(0)
     out["ipd"] = pre.list
     out["ip"], out["im"], out["is"], out["ni"] = ip, im, is_, ni
+    out["r"] = [int(r.get("r") or 0) for r in rows]
+    out["cg"] = [r["cg"] for r in rows]
+    out["zk"] = [r["_zke"] for r in rows]
+    out["kw"] = [r["_kwe"] for r in rows]
     return out
 
 
@@ -261,10 +307,16 @@ def _encode_detail(rows: list[dict]) -> dict:
     return {"v": 1, "pre": pre, "suf": suf, "items": items}
 
 
-def _facets(products: list[dict]) -> dict:
+def _facets(products: list[dict], zk_dict: "_Dict | None" = None) -> dict:
+    """Счётчики для фильтров: [всего, в наличии]. colors — по группам цвета (номер = индекс manifest.dict.cgroup),
+    zk — ключи размеров [номер в manifest.dict.zk, всего, в наличии] в порядке sizes_norm.sort_key;
+    у colors и zk — "all" и по каждому типу (имя типа как в types)."""
     brands: dict[str, list[int]] = {}
     types: dict[str, list[int]] = {}
     sizes, genders = set(), set()
+    ng = len(describe.COLOR_GROUPS)
+    colors: dict[str, list[list[int]]] = {"all": [[0, 0] for _ in range(ng)]}
+    zk: dict[str, dict[str, list[int]]] = {"all": {}}
     sold = 0
     for p in products:
         out = p.get("in_stock") is False
@@ -279,8 +331,35 @@ def _facets(products: list[dict]) -> dict:
             genders.add(p["gender"])
         if not out:
             sizes.update(str(s).strip() for s in p.get("sizes") or [] if str(s).strip())
+        g = p.get("cg")
+        if isinstance(g, int) and 0 <= g < ng:
+            for key in ("all", t):
+                c = colors.setdefault(key, [[0, 0] for _ in range(ng)])[g]
+                c[0] += 1
+                c[1] += 0 if out else 1
+        for k in p.get("zk") or []:
+            for key in ("all", t):
+                c = zk.setdefault(key, {}).setdefault(k, [0, 0])
+                c[0] += 1
+                c[1] += 0 if out else 1
+    zk_out = {t: [[zk_dict(k) if zk_dict else k, *n] for k, n in sorted(m.items(), key=lambda x: sizes_norm.sort_key(x[0]))]
+              for t, m in zk.items()}
     return {"brands": brands, "types": types, "sizes": sorted(sizes, key=_size_key),
-            "genders": sorted(genders), "sold": sold, "count": len(products), "avail": len(products) - sold}
+            "genders": sorted(genders), "sold": sold, "count": len(products), "avail": len(products) - sold,
+            "colors": colors, "zk": zk_out}
+
+
+def _extras(p: dict) -> dict:
+    """zk / kw / cg карточки: готовые из run.py (поля "zk", "kw") или посчитанные по самой карточке."""
+    zk = p.get("zk")
+    if not isinstance(zk, list):
+        zk = sizes_norm.filter_keys(p.get("sizes") or [], p.get("type"), p.get("gender"))
+    kw = p.get("kw")
+    if not isinstance(kw, list):
+        kw = describe.keywords(p)
+    ckw = describe.color_keywords(p.get("color"))            # основы цвета всегда первые (в файле — через dict.ckw)
+    kw = ckw + [str(k) for k in kw if k and str(k) not in ckw]
+    return {"zk": [str(k) for k in zk if k], "kw": kw[:describe.KW_MAX], "cg": describe.color_group(p.get("color"))}
 
 
 def _remove_stale(folder: Path, keep: set[str]) -> int:
@@ -295,11 +374,12 @@ def _remove_stale(folder: Path, keep: set[str]) -> int:
 def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], admin: dict, *,
                legacy_max: int = LEGACY_MAX, admin_combined_max: int = ADMIN_COMBINED_MAX) -> dict:
     """Пишет каталог в site/: data/ (части + манифест), admin/ (закрытое), products.js и при малом каталоге —
-    products.json / products-admin.js. products — публичные карточки (PUBLIC_FIELDS) в порядке витрины,
-    admin — {id: закупка, "_meta": {...}}. Возвращает сводку (размеры, число файлов)."""
+    products.json / products-admin.js. products — публичные карточки (PUBLIC_FIELDS) и, по желанию, "r"
+    (место в «Рекомендуем», ranking.py; без него r — по порядку списка), admin — {id: закупка, "_meta": {...}}.
+    Возвращает сводку (размеры, число файлов)."""
     site = Path(site)
     data_dir = site / DATA_DIR
-    products = [{k: p.get(k) for k in PUBLIC_FIELDS} for p in products]
+    products = [dict({k: p.get(k) for k in PUBLIC_FIELDS}, r=rk, **_extras(p)) for p, rk in zip(products, _ranks(products))]
     n = len(products)
 
     # словари (общие для всех частей индекса)
@@ -316,6 +396,21 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
         "size": _Dict((s for p in products for s in (p.get("sizes") or []) + (p.get("sizes_out") or [])), key=_size_key),
         "imgsuf": _Dict(suf_c),
     }
+    # ключи размеров: номер в словаре = порядок показа (sizes_norm.sort_key); szk — ключи каждого размера словаря
+    # size без учёта товара (sizes_norm.default_keys): строка, чьи ключи совпадают с ними, пишет в zk 0
+    size_keys = [sizes_norm.default_keys(x) if x else [] for x in D["size"].list]
+    D["zk"] = _Dict(Counter(k for ks in [p["zk"] for p in products] + size_keys for k in ks), key=sizes_norm.sort_key)
+    # основы для поиска: основы цвета — в словаре цветов (ckw), в строке kw — остальные
+    color_kw = [describe.color_keywords(c) if c else [] for c in D["color"].list]
+    D["kw"] = _Dict(Counter(k for ks in [p["kw"] for p in products] + color_kw for k in ks))
+    szk = [[D["zk"](k) for k in ks] for ks in size_keys]
+    ckw = [[D["kw"](k) for k in ks] for ks in color_kw]
+    for p in products:
+        zk = [D["zk"](k) for k in p["zk"]]
+        own = set(color_kw[D["color"](p.get("color"))])
+        p["_kwe"] = [D["kw"](k) for k in p["kw"] if k not in own]
+        derived = {x for s in p.get("sizes") or [] for x in szk[D["size"](s)]}
+        p["_zke"] = 0 if set(zk) == derived else zk
     stamps = [t for t in (_ts(p.get("first_seen")) for p in products) if t is not None]
     epoch = min(stamps) if stamps else 0
     prices = [int(p.get("price_uzs") or 0) for p in products]
@@ -323,16 +418,23 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
     discs = [p["discount_pct"] for p in products if p.get("discount_pct") is not None]
     scale = 10 if all(abs(d * 10 - round(d * 10)) < 1e-6 for d in discs) else 1000
 
-    # голова: первые товары витрины + самые новые; остальные — по корзинам id
+    # голова: первые по r, первые по r в каждой паре тип × пол, самые новые, дешёвые, дорогие, с большой скидкой;
+    # остальные — по корзинам id
     order = sorted(range(n), key=lambda i: _default_key(i, products[i]))
-    head = set(order[:HEAD_DISC])
-    newest = sorted((i for i in range(n) if products[i].get("in_stock") is not False),
-                    key=lambda i: (-(_ts(products[i].get("first_seen")) or 0), i))
+    head = set(order[:HEAD_TOP])
+    instock = [i for i in order if products[i].get("in_stock") is not False]
+    per_group: Counter = Counter()
+    for i in instock:
+        g = (products[i].get("type") or "", products[i].get("gender") or "")
+        if per_group[g] < HEAD_PER_GROUP:
+            per_group[g] += 1
+            head.add(i)
+    newest = sorted(instock, key=lambda i: (-(_ts(products[i].get("first_seen")) or 0), i))
     head.update(newest[:HEAD_NEW])
-    instock = [i for i in range(n) if products[i].get("in_stock") is not False]
     by_price = sorted(instock, key=lambda i: (products[i].get("price_uzs") or 0, -(products[i].get("discount_pct") or 0), i))
     head.update(by_price[:HEAD_PRICE])
     head.update(sorted(instock, key=lambda i: (-(products[i].get("price_uzs") or 0), -(products[i].get("discount_pct") or 0), i))[:HEAD_PRICE])
+    head.update(sorted(instock, key=lambda i: (-(products[i].get("discount_pct") or 0), products[i].get("price_uzs") or 0, i))[:HEAD_DISC])
     head_rows = [products[i] for i in order if i in head]
     rest = [i for i in order if i not in head]
     by_bucket: dict[int, list[int]] = {}
@@ -350,7 +452,7 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
             cur += ids
             acc += est.get(b, 0)
             if (acc >= per * (len(groups) + 1) and len(groups) < n_parts - 1) or b == HASH_BUCKETS - 1:
-                groups.append((lo, b, sorted(cur, key=lambda i: _default_key(i, products[i]))))
+                groups.append((lo, b, sorted(cur, key=lambda i: _pack_key(i, products[i]))))
                 lo, cur = b + 1, []
 
     shards, keep_i = [], set()
@@ -396,8 +498,10 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
     version = _hash8(("|".join(s["file"] for s in shards) + "|" + "|".join(dfiles)).encode())
     manifest = {
         "layout": LAYOUT, "version": version, "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "summary": summary, "site": site_cfg, "count": n, "facets": _facets(products),
-        "dict": {k: d.list for k, d in D.items()}, "price_unit": unit, "disc_scale": scale, "seen_epoch": epoch, "seen_unit": SEEN_UNIT,
+        "summary": summary, "site": site_cfg, "count": n, "facets": _facets(products, D["zk"]),
+        "dict": dict({k: d.list for k, d in D.items()}, szk=szk, ckw=ckw,
+                     cgroup=[{"name": name, "hex": hx} for name, hx in describe.COLOR_GROUPS]),
+        "price_unit": unit, "disc_scale": scale, "seen_epoch": epoch, "seen_unit": SEEN_UNIT,
         "hash": "fnv1a32", "buckets": HASH_BUCKETS, "shards": shards,
         "detail": {"shards": nd, "prefix_len": hexw, "files": dfiles, "bytes": dbytes, "gz": dgz},
         "legacy": n <= legacy_max,
@@ -408,7 +512,8 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
 
     # старый формат целиком (file:// и старые инструменты) — только для небольшого каталога
     if n <= legacy_max:
-        payload = _dumps({"summary": full_summary, "site": site_cfg, "products": products})
+        legacy = [{k: v for k, v in p.items() if not k.startswith("_")} for p in products]   # + r, zk, kw, cg
+        payload = _dumps({"summary": full_summary, "site": site_cfg, "products": legacy})
         _write_atomic(site / "products.json", payload.encode("utf-8"))
         _write_atomic(site / "products.js", ("window.DEALS = " + payload + ";").encode("utf-8"))
     else:
@@ -446,6 +551,7 @@ def write_admin(site: Path, admin: dict, combined: bool) -> dict:
     meta = {"v": 1, "shards": na, "prefix_len": hexw, "count": len(items), "_meta": admin.get("_meta") or {}}
     _write_atomic(folder / "meta.js", wrap("a/meta", meta))
     keep.add("meta.js")
+    keep.add("admin.js")          # модуль страницы ?admin=1 (site/index.html), не данные
     _remove_stale(folder, keep)
     combined_path = Path(site) / "products-admin.js"
     if combined:
@@ -489,11 +595,27 @@ def admin_signature(site: Path):
 
 def decode_index(sh: dict, m: dict) -> list[dict]:
     """Часть индекса -> карточки (без подробностей: description/details/composition/fetched_at = None,
-    images — только первое фото)."""
+    images — только первое фото). "_r" — место в «Рекомендуем» (None у частей старых сборок без "r")."""
     D, unit, scale, epoch = m["dict"], m.get("price_unit", 1), m.get("disc_scale", 10), m.get("seen_epoch", 0)
     su = m.get("seen_unit", 1)
     n = sh["n"]
     td = sh.get("td")
+    rr = sh.get("r") if isinstance(sh.get("r"), list) and len(sh["r"]) == n else None
+    cg = sh.get("cg") if isinstance(sh.get("cg"), list) and len(sh["cg"]) == n else None
+    zk = sh.get("zk") if isinstance(sh.get("zk"), list) and len(sh["zk"]) == n else None
+    kw = sh.get("kw") if isinstance(sh.get("kw"), list) and len(sh["kw"]) == n else None
+    dzk, dkw, szk, ckw = D.get("zk") or [None], D.get("kw") or [None], D.get("szk") or [], D.get("ckw") or []
+
+    def zk_of(i):
+        z = zk[i]
+        if z != 0:
+            return [dzk[x] for x in z]
+        keys = {x for s in sh["s"][i] for x in (szk[s] if s < len(szk) else [])}
+        return [dzk[x] for x in sorted(keys)]
+
+    def kw_of(i):
+        c = sh["c"][i]
+        return [dkw[x] for x in (ckw[c] if c < len(ckw) else []) + kw[i]]
     sov = dict(zip(sh.get("soi") or [], sh.get("sov") or []))
     out_rows = set(sh.get("out") or [])
     pre, suf = sh.get("ipd") or D.get("imgpre") or [None], D.get("imgsuf") or [None]
@@ -514,6 +636,10 @@ def decode_index(sh: dict, m: dict) -> list[dict]:
             "composition": None, "details": None, "description": None, "images": img,
             "in_stock": i not in out_rows, "fetched_at": None,
             "first_seen": None if f is None else _iso(epoch + f * su), "_n_img": sh["ni"][i],
+            "_r": rr[i] if rr is not None else None,
+            "_cg": cg[i] if cg is not None else None,
+            "_zk": zk_of(i) if zk is not None else None,
+            "_kw": kw_of(i) if kw is not None else None,
         })
     return rows
 
@@ -535,6 +661,8 @@ class PublicCatalog(Mapping):
         self.site = Path(site)
         self.manifest = load_manifest(self.site)
         self._rows: dict[str, dict] = {}
+        self._rank: dict[str, int] = {}
+        self._extra: dict[str, dict] = {}
         self._details: dict[int, dict] = {}
         self.summary, self.site_cfg, self.legacy = {}, {}, False
         if self.manifest:
@@ -542,15 +670,36 @@ class PublicCatalog(Mapping):
             self.summary, self.site_cfg = m.get("summary") or {}, m.get("site") or {}
             for s in m["shards"]:
                 for r in decode_index(unwrap((self.site / DATA_DIR / s["file"]).read_bytes()), m):
-                    self._rows.setdefault(r["id"], r)
+                    if r["id"] not in self._rows:
+                        self._rows[r["id"]] = r
+                        if r.get("_r") is not None:
+                            self._rank[r["id"]] = r["_r"]
+                        if r.get("_zk") is not None:
+                            self._extra[r["id"]] = {"cg": r["_cg"], "zk": r["_zk"], "kw": r["_kw"]}
         else:
             path = self.site / "products.json"
             if path.is_file():
                 data = json.loads(path.read_text(encoding="utf-8"))
                 self.summary, self.site_cfg, self.legacy = data.get("summary") or {}, data.get("site") or {}, True
                 for p in data.get("products") or []:
-                    if isinstance(p, dict) and p.get("id"):
-                        self._rows.setdefault(p["id"], p)
+                    if isinstance(p, dict) and p.get("id") and p["id"] not in self._rows:
+                        if isinstance(p.get("r"), int):
+                            self._rank[p["id"]] = p["r"]
+                        if isinstance(p.get("zk"), list):
+                            self._extra[p["id"]] = {k: p.get(k) for k in ("cg", "zk", "kw")}
+                        self._rows[p["id"]] = {k: v for k, v in p.items() if k not in EXTRA_FIELDS}
+
+    def rank(self, pid: str) -> int | None:
+        """Место в «Рекомендуем» (столбец r: больше — раньше); None — сборка без r."""
+        return self._rank.get(pid)
+
+    def ranks(self) -> dict[str, int]:
+        return dict(self._rank)
+
+    def extras(self, pid: str) -> dict | None:
+        """{"cg": группа цвета или -1, "zk": [ключи размеров], "kw": [основы для поиска]}; None — старая сборка."""
+        e = self._extra.get(pid)
+        return None if e is None else {"cg": e["cg"], "zk": list(e["zk"]), "kw": list(e["kw"])}
 
     def _full(self, r: dict) -> dict:
         if self.legacy or "_n_img" not in r:

@@ -1,39 +1,58 @@
-"""Приём заказов с сайта → Telegram владельцу. Работает на вашем сервере (сайт на GitHub Pages статичный,
-поэтому токен бота живёт только здесь и никогда не попадает в публичные файлы).
+"""Приём заказов с сайта → база заказов + Telegram владельцу. Работает на вашем сервере (сайт на GitHub Pages
+статичный, поэтому токен бота живёт только здесь и никогда не попадает в публичные файлы).
 
-    python order_api.py                    # слушать 127.0.0.1:8787 (за Caddy / Cloudflare Tunnel)
+    python order_api.py                    # слушать 127.0.0.1:8787 (за Caddy / Cloudflare Tunnel) + бот
+    python order_api.py --no-bot           # без опроса Telegram (кнопки статусов не работают)
     python order_api.py --check            # проверить настройки и данные, ничего не запуская
     python order_api.py --test-telegram    # пробное сообщение в чат заказов
 
 API:
     POST /api/order   JSON {items:[{id, size, qty}], customer:{name, phone, telegram, city, comment},
+                      consent:true, consent_marketing, cid, client_order_id, city, tg_init_data,
                       page_url, lang, website}  (website — ловушка для ботов, должна быть пустой)
-                      → {ok:true, order_no, notified, unavailable:[...]} или {ok:false, error}
-    GET  /api/health  → {ok:true, products, telegram}
+                      → {ok:true, order_no, duplicate, notified, total_uzs, prepay_uzs, unavailable:[...],
+                         telegram_linked, bot_url} или {ok:false, error}
+                      bot_url — https://t.me/<BOT_USERNAME>?start=o_<номер>_<подпись> (подпись HMAC токена бота,
+                      см. orders_db.start_payload); пусто, если не заданы BOT_USERNAME или TELEGRAM_BOT_TOKEN —
+                      тогда сайт кнопку «Получать статус в Telegram» не показывает (без подписи бот не привяжет).
+                      telegram_linked — к ЭТОМУ заказу привязан проверенный Telegram (initData Mini App).
+                      Полное описание полей — data/analysis/contract.md, раздел «T1: order payload & bot».
+    GET  /api/health  → {ok:true, products, telegram, db, bot}
     OPTIONS           CORS preflight (только для ORDER_ALLOWED_ORIGINS)
 
-Цены пересчитываются здесь по site/products.json (цена с сайта клиента не принимается вовсе),
-закупочные данные — из site/products-admin.js. Оба файла перечитываются, когда меняются.
-Каждый заказ дописывается в data/orders/orders.jsonl (полные контакты — только там) и уходит
-в Telegram: TELEGRAM_ORDERS_CHAT_ID (или TELEGRAM_CHAT_ID).
+Цены пересчитываются здесь по каталогу сайта (цена с сайта клиента не принимается вовсе), закупочные
+данные — из закрытой части каталога. Файлы перечитываются, когда меняются.
+Каждый заказ: база data/orders/orders.sqlite (orders_db.py: покупатель по телефону +998…, статусы),
+сырой журнал data/orders/orders.jsonl (полные контакты — только на сервере) и сообщение в Telegram
+TELEGRAM_ORDERS_CHAT_ID (или TELEGRAM_CHAT_ID) с кнопками статусов. Кнопки обрабатывает tg_bot.py —
+он работает потоком внутри этой же службы (единственный потребитель getUpdates). После ответа сайту
+в фоне перепроверяется наличие у Trendyol / Pierre Cardin / Cacharel (вторым сообщением продавцу).
+Раз в сутки — копия базы в data/orders/backup/ (хранится ORDER_BACKUP_KEEP_DAYS дней).
 
 Настройки — переменные окружения (на сервере /etc/yurt/yurt.env):
-    TELEGRAM_BOT_TOKEN, TELEGRAM_ORDERS_CHAT_ID (иначе TELEGRAM_CHAT_ID)
+    TELEGRAM_BOT_TOKEN, TELEGRAM_ORDERS_CHAT_ID (иначе TELEGRAM_CHAT_ID), TELEGRAM_ADMIN_IDS, SHOP_URL,
+    BOT_USERNAME            — см. tg_bot.py
     ORDER_ALLOWED_ORIGINS   через запятую; по умолчанию https://fayyoznaimov.github.io
     ORDER_API_PORT          8787        ORDER_API_BIND   127.0.0.1
     ORDER_RATE_LIMIT        5 заказов   ORDER_RATE_WINDOW 600 секунд (на один IP)
     ORDER_TRUST_PROXY       1 — брать IP клиента из CF-Connecting-IP / X-Forwarded-For
                             (по умолчанию 1, если слушаем 127.0.0.1, т.е. стоим за прокси)
+    ORDERS_DB_PATH          файл базы (по умолчанию data/orders/orders.sqlite)
+    ORDER_VERIFY            0 — не перепроверять наличие у источников после заказа (по умолчанию 1)
+    ORDER_BACKUP_KEEP_DAYS  30
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import html
+import importlib
 import json
 import os
 import re
 import secrets
+import sqlite3
 import sys
 import threading
 import time
@@ -41,20 +60,30 @@ from collections import defaultdict, deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import requests
 
 import catalog_files
+import orders_db
+import tg_bot
 
 ROOT = Path(__file__).resolve().parent
 MAX_BODY = 20 * 1024
+DRAIN_MAX = 256 * 1024                                     # лишнее тело дочитываем, чтобы клиент увидел 413
 MAX_ITEMS = 30
 MAX_QTY = 10
 TG_LIMIT = 4096
 ID_RE = re.compile(r"^[A-Z0-9]{7}$")
 TG_USER_RE = re.compile(r"^[A-Za-z0-9_]{4,32}$")
 PHONE_CHARS_RE = re.compile(r"^[0-9+()\-.\s]{5,25}$")
+CID_RE = re.compile(r"^[A-Za-z0-9-]{20,40}$")
+CLIENT_ORDER_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+UZ_FIRST_DIGITS = set("9876532")                           # первая цифра номера после +998
+INIT_DATA_MAX = 4096
+INIT_DATA_MAX_AGE = 24 * 3600
+VERIFY_SOURCES = {"trendyol", "pcardin_tr", "cacharel_tr"} # проверяются по ссылке автоматически
+MANUAL_SOURCES = {"yoox", "yoox_import", "feed_yoox"}      # YOOX — только вручную, никаких запросов отсюда
 CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f​-‏  ‪-‮]")
 SOURCE_NAMES = {
     "yoox": "YOOX", "yoox_import": "YOOX", "trendyol": "Trendyol",
@@ -205,14 +234,30 @@ def _text(v, field: str, maxlen: int, required: bool = False, minlen: int = 0) -
 
 
 def norm_phone(s: str) -> str:
+    """Телефон → E.164. Узбекистан: 9 цифр (90 123 45 67) → +998901234567; 998901234567 → +998…;
+    00… → +…; иностранный номер — только с явным «+». Остальное — Invalid."""
     if not s:
         return ""
     if not PHONE_CHARS_RE.match(s):
         raise Invalid("customer.phone: неверный номер")
-    digits = re.sub(r"\D", "", s)
-    if not 7 <= len(digits) <= 15:
-        raise Invalid("customer.phone: неверный номер")
-    return ("+" if s.lstrip().startswith("+") else "") + digits
+    st = s.strip()
+    digits = re.sub(r"\D", "", st)
+    plus = st.startswith("+")
+    if not plus and digits.startswith("00"):
+        digits, plus = digits[2:], True
+    if plus:
+        if digits.startswith("998"):
+            if len(digits) == 12 and digits[3] in UZ_FIRST_DIGITS:
+                return "+" + digits
+            raise Invalid("customer.phone: неверный номер (+998 и 9 цифр)")
+        if not digits or digits[0] == "0" or not 8 <= len(digits) <= 15:
+            raise Invalid("customer.phone: неверный номер")
+        return "+" + digits
+    if len(digits) == 9 and digits[0] in UZ_FIRST_DIGITS:
+        return "+998" + digits
+    if len(digits) == 12 and digits.startswith("998") and digits[3] in UZ_FIRST_DIGITS:
+        return "+" + digits
+    raise Invalid("customer.phone: неверный номер (+998 и 9 цифр; другой страны — с «+»)")
 
 
 def norm_telegram(s: str) -> str:
@@ -222,6 +267,61 @@ def norm_telegram(s: str) -> str:
     if not TG_USER_RE.match(s):
         raise Invalid("customer.telegram: укажите ник вида @name")
     return s
+
+
+def verify_init_data(init_data: str, bot_token: str, max_age: int = INIT_DATA_MAX_AGE,
+                     now: float | None = None) -> dict | None:
+    """Проверка Telegram.WebApp.initData (Mini App): HMAC-SHA256 с ключом HMAC_SHA256('WebAppData', токен),
+    сравнение за постоянное время, auth_date не старше max_age. {id, username, first_name, start_param} или None."""
+    if not init_data or not bot_token or not isinstance(init_data, str) or len(init_data) > INIT_DATA_MAX:
+        return None
+    try:
+        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return None
+    data: dict[str, str] = {}
+    for k, v in pairs:
+        if k in data:                                      # повтор ключа — подделка
+            return None
+        data[k] = v
+    got = data.pop("hash", "").lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", got):
+        return None
+    check = "\n".join(f"{k}={data[k]}" for k in sorted(data))
+    secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    calc = hmac.new(secret, check.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc, got):
+        return None
+    try:
+        auth = int(data.get("auth_date") or "")
+    except ValueError:
+        return None
+    now = time.time() if now is None else now
+    if auth > now + 300 or now - auth > max_age:
+        return None
+    try:
+        user = json.loads(data.get("user") or "")
+    except ValueError:
+        return None
+    if not isinstance(user, dict):
+        return None
+    uid = user.get("id")
+    if not isinstance(uid, int) or isinstance(uid, bool) or uid <= 0:
+        return None
+    uname = str(user.get("username") or "")
+    return {"id": uid, "username": uname if TG_USER_RE.match(uname) else "",
+            "first_name": CTRL_RE.sub("", str(user.get("first_name") or ""))[:64],
+            "start_param": str(data.get("start_param") or "")[:64]}
+
+
+def _flag(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v == 1
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return False
 
 
 def validate(payload) -> dict:
@@ -260,17 +360,28 @@ def validate(payload) -> dict:
         "name": _text(cust.get("name"), "customer.name", 80, required=True, minlen=2),
         "phone": norm_phone(_text(cust.get("phone"), "customer.phone", 25)),
         "telegram": norm_telegram(_text(cust.get("telegram"), "customer.telegram", 64)),
-        "city": _text(cust.get("city"), "customer.city", 60),
+        "city": _text(cust.get("city"), "customer.city", 60) or _text(payload.get("city"), "city", 60),
         "comment": _text(cust.get("comment"), "customer.comment", 500),
     }
     if not (customer["phone"] or customer["telegram"]):
         raise Invalid("customer: укажите телефон или Telegram")
+    consent = payload.get("consent", cust.get("consent"))
+    if not _flag(consent):
+        raise Invalid("consent: нужно согласие на обработку данных для оформления заказа")
     page_url = _text(payload.get("page_url"), "page_url", 300)
     if page_url and not page_url.startswith(("https://", "http://")):
         page_url = ""
     lang = _text(payload.get("lang"), "lang", 8).lower()[:2]
+    cid = payload.get("cid")
+    cid = cid.strip() if isinstance(cid, str) and CID_RE.match(cid.strip()) else ""
+    coid = payload.get("client_order_id")
+    coid = coid.strip() if isinstance(coid, str) and CLIENT_ORDER_RE.match(coid.strip()) else ""
+    init = payload.get("tg_init_data")
+    init = init if isinstance(init, str) and 0 < len(init) <= INIT_DATA_MAX else ""
     return {"items": clean_items, "customer": customer, "page_url": page_url,
-            "lang": lang if lang in LANGS else "ru"}
+            "lang": lang if lang in LANGS else "ru", "cid": cid, "client_order_id": coid,
+            "consent_marketing": _flag(payload.get("consent_marketing", cust.get("consent_marketing"))),
+            "tg_init_data": init}
 
 
 def price_order(order: dict, catalog: Catalog) -> dict:
@@ -285,6 +396,7 @@ def price_order(order: dict, catalog: Catalog) -> dict:
             "brand": (prod or {}).get("brand", ""), "title": (prod or {}).get("title", ""),
             "price_uzs": price, "sum_uzs": price * it["qty"],
             "source": adm.get("source", ""), "shop": shop_name(adm) if adm else "",
+            "source_item_id": str(adm.get("source_item_id") or ""),
             "url": adm.get("url", ""), "title_original": adm.get("title_original", ""),
             "price_now": adm.get("price_now"), "price_old": adm.get("price_old"),
             "currency": adm.get("currency", ""), "cost_uzs": adm.get("cost_uzs"), "margin_uzs": adm.get("margin_uzs"),
@@ -301,6 +413,7 @@ def price_order(order: dict, catalog: Catalog) -> dict:
     if not known:
         raise Invalid("товары не найдены в каталоге — обновите страницу")
     return {"lines": lines, "total_uzs": total, "cost_uzs": cost, "margin_uzs": total - cost if cost else None,
+            "prepay_uzs": orders_db.prepay_for(total),
             "unavailable": unavailable, "pieces": sum(l["qty"] for l in lines if l["price_uzs"])}
 
 
@@ -310,18 +423,34 @@ def e(s) -> str:
     return html.escape(str(s or ""), quote=True)
 
 
-def build_message(order_no: str, order: dict, priced: dict, created: datetime) -> str:
+def build_message(order_no: str, order: dict, priced: dict, created: datetime, info: dict | None = None) -> str:
+    """Сообщение продавцу (только чат заказов: здесь можно источник, ссылку и себестоимость).
+    info: customer_orders (сколько заказов у покупателя с этим), tg_user (проверенный initData), source,
+    db_ok (False — база недоступна, кнопок статусов нет), bot_url (подписанная ссылка на статусы этого заказа)."""
+    info = info or {}
     c = order["customer"]
-    out = [f"<b>Заказ {e(order_no)}</b>", f"{created:%d.%m.%Y %H:%M} · язык: {e(order['lang'])}", "",
+    out = [f"<b>Заказ {e(order_no)}</b>", tg_bot.status_line("new"),
+           f"{created:%d.%m.%Y %H:%M} · язык: {e(order['lang'])}"
+           + (" · из Telegram (Mini App)" if info.get("source") == "miniapp" else ""), "",
            "<b>Покупатель</b>", f"Имя: {e(c['name'])}"]
+    n = info.get("customer_orders")
+    if n:
+        out.append(f"Клиент: {int(n)}-й заказ" + (" (новый покупатель)" if int(n) == 1 else " — постоянный покупатель"))
     if c["phone"]:
         out.append(f'Телефон: <a href="tel:{e(c["phone"])}">{e(c["phone"])}</a>')
     if c["telegram"]:
         out.append(f'Telegram: <a href="https://t.me/{e(c["telegram"])}">@{e(c["telegram"])}</a>')
+    tgu = info.get("tg_user")
+    if tgu:
+        who = f'<a href="https://t.me/{e(tgu["username"])}">@{e(tgu["username"])}</a>' if tgu.get("username") \
+            else e(tgu.get("first_name") or "без ника")
+        out.append(f"Telegram подтверждён: {who} — статусы будут приходить ему от бота")
     if c["city"]:
         out.append(f"Город: {e(c['city'])}")
     if c["comment"]:
         out.append(f"Комментарий: {e(c['comment'])}")
+    if order.get("consent_marketing"):
+        out.append("Согласие на новинки: да")
     for n, l in enumerate(priced["lines"], 1):
         out.append("")
         head = f"<b>{n}. <code>{e(l['id'])}</code></b>"
@@ -350,6 +479,8 @@ def build_message(order_no: str, order: dict, priced: dict, created: datetime) -
         out.append(("Наличие: " if l["ok"] else "⚠ Наличие: ") + e(l["availability"]))
     out.append("")
     tot = f"<b>Итого: {money(priced['total_uzs'])} сум</b> ({priced['pieces']} шт.)"
+    if priced.get("prepay_uzs"):
+        tot += f"\nПредоплата 50%: {money(priced['prepay_uzs'])} сум · остаток {money(priced['total_uzs'] - priced['prepay_uzs'])} сум"
     if priced["cost_uzs"]:
         tot += f"\nСебестоимость {money(priced['cost_uzs'])} · маржа {money(priced['margin_uzs'])} сум"
     out.append(tot)
@@ -357,6 +488,10 @@ def build_message(order_no: str, order: dict, priced: dict, created: datetime) -
         out.append(f"⚠ Проверить наличие: {e(', '.join(priced['unavailable']))}")
     if order["page_url"]:
         out.append(f"Страница: {e(order['page_url'])}")
+    if info.get("bot_url"):                                # если покупатель не нажал кнопку на сайте — переслать ему
+        out.append(f"Статусы в Telegram (ссылку можно переслать покупателю): {e(info['bot_url'])}")
+    if info.get("db_ok") is False:
+        out.append("⚠ Заказ НЕ записан в базу (ошибка базы) — есть только в orders.jsonl; кнопок статусов нет")
     return "\n".join(out)
 
 
@@ -384,25 +519,36 @@ def orders_chat() -> str:
     return (os.environ.get("TELEGRAM_ORDERS_CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 
 
-def send_telegram(text: str) -> bool:
-    """Отправка в чат заказов. Тесты подменяют эту функцию."""
+def send_telegram(text: str, reply_markup: dict | None = None, reply_to: int | None = None):
+    """Отправка в чат заказов (длинный текст — несколькими сообщениями; клавиатура — на последнем).
+    Возвращает сообщение Telegram последней части (dict с message_id и chat) — или False/None, если не ушло.
+    Тесты подменяют эту функцию."""
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), orders_chat()
     if not (token and chat):
         log("telegram: не настроен (TELEGRAM_BOT_TOKEN / TELEGRAM_ORDERS_CHAT_ID)")
         return False
-    ok = True
-    for part in split_message(text):
+    ok, last = True, None
+    parts = split_message(text)
+    for i, part in enumerate(parts):
         sent = False
+        body = {"chat_id": chat, "text": part, "parse_mode": "HTML", "disable_web_page_preview": True}
+        if reply_markup and i == len(parts) - 1:
+            body["reply_markup"] = reply_markup
+        if reply_to and i == 0:
+            body["reply_parameters"] = {"message_id": int(reply_to), "allow_sending_without_reply": True}
         for _ in range(3):
             try:
-                r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", timeout=20, data={
-                    "chat_id": chat, "text": part, "parse_mode": "HTML", "disable_web_page_preview": "true"})
+                r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", timeout=20, json=body)
             except requests.RequestException as ex:
                 log(f"telegram: {ex.__class__.__name__}")
                 time.sleep(1.5)
                 continue
             if r.status_code == 200:
                 sent = True
+                try:
+                    last = (r.json() or {}).get("result") or last
+                except ValueError:
+                    pass
                 break
             if r.status_code == 429:
                 try:
@@ -416,7 +562,71 @@ def send_telegram(text: str) -> bool:
                 break                                     # неверный чат/токен — повтор не поможет
             time.sleep(1.5)
         ok = ok and sent
-    return ok
+    return (last or True) if ok else False
+
+
+def _sent_ids(res) -> tuple[str | None, int | None]:
+    """(chat_id, message_id) из ответа send_telegram (dict сообщения) — или (None, None)."""
+    if isinstance(res, dict):
+        mid = res.get("message_id")
+        chat = (res.get("chat") or {}).get("id")
+        if isinstance(mid, int):
+            return (str(chat) if chat is not None else orders_chat()) or None, mid
+    return None, None
+
+
+# ---------------------------------------------------------------- проверка наличия после заказа
+
+def load_verifier(source: str):
+    """(verify, opts) адаптера источника из sources.ADAPTERS — или None. Тесты подменяют эту функцию."""
+    from sources import ADAPTERS
+    entry = ADAPTERS.get(source)
+    if not entry:
+        return None
+    mod = importlib.import_module(entry[0])
+    fn = getattr(mod, "verify", None)
+    return (fn, dict(entry[1])) if callable(fn) else None
+
+
+def verify_lines(lines: list[dict]) -> list[str]:
+    """Строки сообщения «Проверка наличия» (HTML). Пусто — проверять нечего (нет товаров Trendyol/Akinon)."""
+    auto = [l for l in lines if l.get("source") in VERIFY_SOURCES and l.get("source_item_id") and safe_link(l.get("url"))]
+    if not auto:
+        return []
+    auto_ids = {id(l) for l in auto}
+    results: dict[str, dict] = {}
+    for src in sorted({l["source"] for l in auto}):
+        rows = [{"source_item_id": l["source_item_id"], "url": l["url"]} for l in auto if l["source"] == src]
+        try:
+            v = load_verifier(src)
+            results[src] = (v[0](rows, None, **v[1]) or {}) if v else {}
+        except Exception as ex:                            # сеть, блокировка, разбор страницы
+            log(f"проверка наличия {src}: {ex.__class__.__name__}: {str(ex)[:160]}")
+            results[src] = {}
+    out = []
+    for l in lines:
+        head = f"<code>{e(l['id'])}</code>" + (f" {e(l['brand'])}" if l.get("brand") else "") \
+            + (f", размер {e(l['size'])}" if l.get("size") else "")
+        src = l.get("source") or ""
+        if id(l) in auto_ids:
+            res = results.get(src, {})
+            sid = l["source_item_id"]
+            if sid not in res:
+                out.append(f"{head}: ❓ проверить не удалось — проверить по ссылке вручную")
+            elif res[sid] is None:
+                out.append(f"{head}: ❌ нет в наличии")
+            else:
+                sizes = [str(s) for s in (res[sid].get("sizes") or [])]
+                now = ", ".join(sizes) or "—"
+                if l.get("size") and sizes and l["size"] not in sizes:
+                    out.append(f"{head}: ⚠ размера {e(l['size'])} нет, размеры сейчас: {e(now)}")
+                else:
+                    out.append(f"{head}: ✅ есть, размеры сейчас: {e(now)}")
+        elif src in MANUAL_SOURCES:
+            out.append(f"{head}: 🔗 YOOX — проверить по ссылке вручную")
+        elif src:
+            out.append(f"{head}: проверить по ссылке вручную")
+    return out
 
 
 # ---------------------------------------------------------------- HTTP
@@ -449,7 +659,8 @@ class RateLimiter:
 
 class OrderApp:
     def __init__(self, root: Path = ROOT, origins: list[str] | None = None, rate_limit: int | None = None,
-                 rate_window: float | None = None, trust_proxy: bool = False):
+                 rate_window: float | None = None, trust_proxy: bool = False, db_path: Path | None = None,
+                 verify: bool | None = None):
         self.root = root
         self.catalog = Catalog(root / "site")
         self.orders_dir = root / "data" / "orders"
@@ -461,14 +672,39 @@ class OrderApp:
         self.attempts_rl = RateLimiter(max(30, limit * 6), window)   # любые POST (мусор, ошибки)
         self.trust_proxy = trust_proxy
         self.write_lock = threading.Lock()
-        self.issued: set[str] = set()
+        env_db = os.environ.get("ORDERS_DB_PATH")
+        self.db_path = Path(db_path) if db_path else (
+            Path(env_db) if env_db and root == ROOT else self.orders_dir / "orders.sqlite")
+        self.db: orders_db.OrdersDB | None = None
+        self._db_retry_at = 0.0
+        self._db()
+        self.verify_enabled = (os.environ.get("ORDER_VERIFY", "1").strip() != "0") if verify is None else verify
+        self.bot: tg_bot.Bot | None = None                    # работающий бот (ставит main); иначе — только отправка
+        self._sender: tg_bot.Bot | None = None
+        self._bg: list[threading.Thread] = []
+        self._bg_lock = threading.Lock()
+        self._verify_sem = threading.Semaphore(1)             # к источникам — по одному заказу за раз
+
+    # ------------------------------------------------------------ база
+
+    def _db(self) -> orders_db.OrdersDB | None:
+        """База заказов; если не открылась — новая попытка не чаще раза в минуту (заказы при этом принимаются)."""
+        if self.db is None and time.time() >= self._db_retry_at:
+            try:
+                self.db = orders_db.OrdersDB(self.db_path)
+            except (sqlite3.Error, OSError) as ex:
+                self._db_retry_at = time.time() + 60
+                log(f"база заказов не открылась ({ex.__class__.__name__}: {str(ex)[:120]}) — пишу только orders.jsonl")
+        return self.db
+
+    def close(self) -> None:
+        self.join_background(5)
+        if self.db is not None:
+            self.db.close()
 
     def new_order_no(self, now: datetime) -> str:
-        while True:
-            no = f"YR-{now:%y%m%d}-" + "".join(secrets.choice(ALPHABET) for _ in range(4))
-            if no not in self.issued:
-                self.issued.add(no)
-                return no
+        """Случайный номер; уникальность проверяет база (orders_db.add_order повторяет при совпадении)."""
+        return f"YR-{now:%y%m%d}-" + "".join(secrets.choice(ALPHABET) for _ in range(4))
 
     def save(self, record: dict) -> None:
         with self.write_lock:
@@ -483,11 +719,45 @@ class OrderApp:
                 except OSError:
                     pass
 
+    @staticmethod
+    def bot_url(order_no: str) -> str:
+        """Подписанная ссылка на бота для ЭТОГО заказа (o_<номер>_<подпись>); пусто без BOT_USERNAME или токена."""
+        return tg_bot.order_bot_url(os.environ.get("BOT_USERNAME") or "", os.environ.get("TELEGRAM_BOT_TOKEN") or "",
+                                    order_no)
+
+    def _duplicate_response(self, o: dict) -> dict:
+        """Ответ на повтор того же client_order_id: прежний заказ, без нового сообщения и записи."""
+        full = None
+        try:
+            full = self.db.get_order(o["order_no"], with_events=True) if self.db is not None else None
+        except sqlite3.Error:
+            pass
+        events = (full or {}).get("events") or []
+        unavailable = [str(l.get("id")) + (f" ({l['size']})" if l.get("size") else "")
+                       for l in (o.get("items") or []) if isinstance(l, dict) and not l.get("ok")]
+        return {"ok": True, "order_no": o["order_no"], "duplicate": True,
+                "notified": not any(ev.get("note") == "seller_notify_failed" for ev in events),
+                "total_uzs": int(o.get("total_uzs") or 0), "prepay_uzs": int(o.get("prepay_uzs") or 0),
+                "unavailable": unavailable, "telegram_linked": bool(o.get("telegram_user_id")),
+                "bot_url": self.bot_url(o["order_no"])}
+
+    # ------------------------------------------------------------ заказ
+
     def handle_order(self, payload, ip: str) -> tuple[int, dict]:
         try:
             order = validate(payload)
         except Invalid as ex:
             return 400, {"ok": False, "error": str(ex)}
+        db = self._db()
+        coid = order["client_order_id"]
+        if coid and db is not None:                         # повтор той же отправки (сеть, двойное нажатие)
+            try:
+                prev = db.get_order_by_client_id(coid)
+            except sqlite3.Error:
+                prev = None
+            if prev:
+                log(f"заказ {prev['order_no']}: повтор client_order_id — без нового сообщения")
+                return 200, self._duplicate_response(prev)
         wait = self.orders_rl.retry_after(ip)
         if wait:
             return 429, {"ok": False, "error": "слишком много заказов, попробуйте позже", "retry_after": wait}
@@ -496,25 +766,162 @@ class OrderApp:
         except Invalid as ex:
             return 400, {"ok": False, "error": str(ex)}
         now = datetime.now()
-        order_no = self.new_order_no(now)
+        created = now.isoformat(timespec="seconds")
+        tg_user = None
+        if order["tg_init_data"]:                           # неверная подпись — заказ всё равно принимаем
+            tg_user = verify_init_data(order["tg_init_data"], os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
+        source = "miniapp" if tg_user else "site"
+        info = {"source": source, "tg_user": None, "db_ok": True}
+        added = None
+        if db is not None:
+            try:
+                added = db.add_order(
+                    order_no=lambda: self.new_order_no(now), customer=order["customer"], items=priced["lines"],
+                    total_uzs=priced["total_uzs"], prepay_uzs=priced["prepay_uzs"], created_at=created,
+                    client_order_id=coid or None, cid=order["cid"] or None, source=source, lang=order["lang"],
+                    comment=order["customer"]["comment"], page_url=order["page_url"],
+                    marketing_opt_in=order["consent_marketing"], telegram_user=tg_user)
+            except (sqlite3.Error, orders_db.DuplicateOrderNo) as ex:
+                log(f"база заказов: {ex.__class__.__name__}: {str(ex)[:160]} — заказ только в orders.jsonl")
+                added = None
+        if added and added["duplicate"]:                    # одновременный повтор: первый уже записан
+            prev = db.get_order(added["order_no"])
+            return 200, self._duplicate_response(prev or {"order_no": added["order_no"]})
+        linked = False
+        if added:
+            order_no = added["order_no"]
+            info["customer_orders"] = added["orders_count"]
+            linked = bool(tg_user) and added.get("telegram_link") == "linked"     # только этот заказ
+            info["tg_user"] = tg_user if linked else None
+            info["bot_url"] = "" if linked else self.bot_url(order_no)
+        else:
+            order_no = self.new_order_no(now)
+            info["db_ok"] = False
         self.orders_rl.add(ip)
-        record = {"order_no": order_no, "created_at": now.isoformat(timespec="seconds"), "ip": ip_tag(ip),
+        record = {"order_no": order_no, "created_at": created, "ip": ip_tag(ip), "source": source,
                   "customer": order["customer"], "lang": order["lang"], "page_url": order["page_url"],
-                  "items": priced["lines"], "total_uzs": priced["total_uzs"], "cost_uzs": priced["cost_uzs"],
-                  "catalog_generated_at": self.catalog.generated_at}
+                  "items": priced["lines"], "total_uzs": priced["total_uzs"], "prepay_uzs": priced["prepay_uzs"],
+                  "cost_uzs": priced["cost_uzs"], "catalog_generated_at": self.catalog.generated_at,
+                  "client_order_id": coid or None, "cid": order["cid"] or None, "consent": True,
+                  "consent_marketing": order["consent_marketing"],
+                  "telegram_user_id": tg_user["id"] if linked else None, "db": bool(added)}
         self.save(record)
-        notified = send_telegram(build_message(order_no, order, priced, now))
+        text = build_message(order_no, order, priced, now, info)
+        res = send_telegram(text, reply_markup=tg_bot.status_keyboard(order_no, "new") if added else None)
+        notified = bool(res)
+        chat_id, msg_id = _sent_ids(res)
+        if added:
+            try:
+                if msg_id:
+                    db.set_tg_message(order_no, chat_id, msg_id, split_message(text)[-1])
+                db.add_event(order_no, "seller_notified" if notified else "seller_notify_failed", by="api")
+            except sqlite3.Error as ex:
+                log(f"база заказов: {ex.__class__.__name__} при записи сообщения")
         if not notified:
             self.save({"order_no": order_no, "event": "telegram_failed", "at": datetime.now().isoformat(timespec="seconds")})
         log(f"заказ {order_no}: позиций {len(priced['lines'])}, {money(priced['total_uzs'])} сум, "
-            f"тел {mask_phone(order['customer']['phone'])}, ip {ip_tag(ip)}, telegram {'ok' if notified else 'НЕ ОТПРАВЛЕН'}")
-        return 200, {"ok": True, "order_no": order_no, "notified": notified, "total_uzs": priced["total_uzs"],
-                     "unavailable": priced["unavailable"]}
+            f"тел {mask_phone(order['customer']['phone'])}, ip {ip_tag(ip)}, "
+            f"клиент: {info.get('customer_orders') or '?'}-й заказ, {source}, telegram {'ok' if notified else 'НЕ ОТПРАВЛЕН'}")
+        self.start_background(order_no, priced["lines"], msg_id, tg_user if linked else None)
+        return 200, {"ok": True, "order_no": order_no, "duplicate": False, "notified": notified,
+                     "total_uzs": priced["total_uzs"], "prepay_uzs": priced["prepay_uzs"],
+                     "unavailable": priced["unavailable"], "telegram_linked": linked, "bot_url": self.bot_url(order_no)}
+
+    # ------------------------------------------------------------ фон после ответа сайту
+
+    def start_background(self, order_no: str, lines: list[dict], reply_to: int | None, tg_user: dict | None) -> None:
+        if not (self.verify_enabled or tg_user):
+            return
+        t = threading.Thread(target=self._after_order, args=(order_no, lines, reply_to, tg_user),
+                             name=f"after-{order_no}", daemon=True)
+        with self._bg_lock:
+            self._bg = [x for x in self._bg if x.is_alive()]
+            self._bg.append(t)
+        t.start()
+
+    def join_background(self, timeout: float = 10) -> None:
+        """Дождаться фоновых проверок (для тестов и остановки)."""
+        end = time.time() + timeout
+        with self._bg_lock:
+            threads = list(self._bg)
+        for t in threads:
+            t.join(max(0.0, end - time.time()))
+
+    def sender(self) -> tg_bot.Bot | None:
+        """Бот для сообщений покупателю: работающий (main) или только для отправки (без опроса)."""
+        if self.bot is not None:
+            return self.bot
+        if self._sender is None and os.environ.get("TELEGRAM_BOT_TOKEN", "").strip():
+            self._sender = tg_bot.Bot.from_env(db=lambda: self._db())
+        return self._sender
+
+    def _after_order(self, order_no: str, lines: list[dict], reply_to: int | None, tg_user: dict | None) -> None:
+        if tg_user:                                         # заказ из Mini App: подтверждение покупателю в Telegram
+            try:
+                bot = self.sender()
+                o = self.db.get_order(order_no) if self.db is not None else None
+                tmpl = bot.messages().get("created") if bot else ""
+                if bot and o and tmpl:
+                    ok = bot.send(tg_user["id"], bot.render(tmpl, o)) is not None
+                    self.db.add_event(order_no, f"customer_msg created: {'sent' if ok else 'failed'}", by="api")
+            except Exception as ex:
+                log(f"заказ {order_no}: сообщение покупателю не ушло ({ex.__class__.__name__})")
+        if not self.verify_enabled:
+            return
+        with self._verify_sem:
+            try:
+                out = verify_lines(lines)
+            except Exception as ex:
+                log(f"заказ {order_no}: проверка наличия упала ({ex.__class__.__name__}: {str(ex)[:160]})")
+                out = []
+            if not out:
+                return
+            text = f"<b>Проверка наличия · заказ {e(order_no)}</b>\n" + "\n".join(out)
+            ok = bool(send_telegram(text, reply_to=reply_to))
+            try:
+                if self.db is not None:
+                    self.db.add_event(order_no, "verify " + ("sent" if ok else "not sent"), by="api")
+            except sqlite3.Error:
+                pass
+            log(f"заказ {order_no}: проверка наличия — {len(out)} строк, telegram {'ok' if ok else 'НЕ ОТПРАВЛЕН'}")
+
+    # ------------------------------------------------------------ копии базы
+
+    def daily_backup(self, now: datetime | None = None, keep_days: int | None = None) -> Path | None:
+        """Копия базы за сегодня (если её ещё нет и уже 03:00+) и чистка старых. Путь новой копии или None."""
+        now = now or datetime.now()
+        if self.db is None or now.hour < 3:
+            return None
+        folder = self.orders_dir / "backup"
+        path = folder / f"orders-{now:%Y%m%d}.sqlite.gz"
+        if path.exists():
+            return None
+        try:
+            made = self.db.backup(path)
+        except (sqlite3.Error, OSError) as ex:
+            log(f"копия базы не сделана: {ex.__class__.__name__}: {str(ex)[:120]}")
+            return None
+        keep = keep_days if keep_days is not None else int(os.environ.get("ORDER_BACKUP_KEEP_DAYS") or 30)
+        orders_db.prune_backups(folder, keep)
+        log(f"копия базы заказов: {made.name}")
+        return made
+
+    def start_maintenance(self, stop: threading.Event | None = None) -> threading.Thread:
+        stop = stop or threading.Event()
+
+        def loop():
+            while not stop.is_set():
+                self.daily_backup()
+                stop.wait(600)
+        t = threading.Thread(target=loop, name="orders-backup", daemon=True)
+        t.start()
+        return t
 
     def health(self) -> dict:
         self.catalog.refresh()
         return {"ok": True, "products": len(self.catalog.products), "catalog": self.catalog.generated_at,
-                "telegram": bool(os.environ.get("TELEGRAM_BOT_TOKEN") and orders_chat())}
+                "telegram": bool(os.environ.get("TELEGRAM_BOT_TOKEN") and orders_chat()),
+                "db": self.db is not None, "bot": self.bot is not None}
 
 
 def make_handler(app: OrderApp):
@@ -615,6 +1022,16 @@ def make_handler(app: OrderApp):
                 return self.send_json(411, {"ok": False, "error": "нужен Content-Length"})
             if length > MAX_BODY:
                 self.close_connection = True
+                if length <= DRAIN_MAX:                   # дочитать: иначе клиент получит обрыв, а не 413
+                    try:
+                        left = length
+                        while left > 0:
+                            chunk = self.rfile.read(min(left, 65536))
+                            if not chunk:
+                                break
+                            left -= len(chunk)
+                    except OSError:
+                        pass
                 return self.send_json(413, {"ok": False, "error": "слишком большой запрос"})
             try:
                 raw = self.rfile.read(length)
@@ -644,6 +1061,7 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=int(os.environ.get("ORDER_API_PORT") or 8787))
     ap.add_argument("--check", action="store_true", help="проверить настройки и данные")
     ap.add_argument("--test-telegram", action="store_true", help="пробное сообщение в чат заказов")
+    ap.add_argument("--no-bot", action="store_true", help="не опрашивать Telegram (кнопки статусов не работают)")
     args = ap.parse_args()
     tp = os.environ.get("ORDER_TRUST_PROXY")
     trust = (tp == "1") if tp in ("0", "1") else args.bind in ("127.0.0.1", "::1", "localhost")
@@ -654,15 +1072,31 @@ def main() -> int:
         return 0 if ok else 1
     h = app.health()
     log(f"товаров: {h['products']}, закрытых записей: {len(app.catalog.admin)}, telegram: {'да' if h['telegram'] else 'НЕТ'}, "
-        f"разрешённые сайты: {', '.join(sorted(app.origins))}, IP из прокси: {'да' if trust else 'нет'}")
+        f"база: {'да' if h['db'] else 'НЕТ'}, разрешённые сайты: {', '.join(sorted(app.origins))}, "
+        f"IP из прокси: {'да' if trust else 'нет'}")
     if args.check:
-        return 0 if h["products"] and h["telegram"] else 1
+        warn = tg_bot.channel_admin_warning()
+        if warn:
+            log("ВНИМАНИЕ: " + warn)
+        if os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() and not app.bot_url("YR-000101-AAAA"):
+            log("ВНИМАНИЕ: BOT_USERNAME не задан — сайт не покажет кнопку «Получать статус в Telegram»")
+        return 0 if h["products"] and h["telegram"] and h["db"] else 1
+    if not args.no_bot:
+        # единственный потребитель getUpdates; база — через функцию: открылась позже — бот её подхватит
+        app.bot = tg_bot.start_in_thread(db=lambda: app._db())
+        if app.bot is None:
+            log("бот не запущен: нет TELEGRAM_BOT_TOKEN (кнопки статусов работать не будут)")
+    app.start_maintenance()
     srv = make_server(app, args.bind, args.port)
     log(f"слушаю http://{args.bind}:{args.port}  (POST /api/order, GET /api/health)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        if app.bot is not None:
+            app.bot.stop_event.set()
+        app.close()
     return 0
 
 

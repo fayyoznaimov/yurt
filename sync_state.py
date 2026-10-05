@@ -63,11 +63,14 @@ def read_json(path: Path, default):
         return default
 
 
-def write_json(path: Path, data, indent: int | None = None) -> None:
-    """Запись через временный файл: при сбое посередине старый файл остаётся целым."""
+def write_json(path: Path, data, indent: int | None = None, compact: bool = False) -> None:
+    """Запись через временный файл: при сбое посередине старый файл остаётся целым.
+    compact — без отступов и пробелов после «,» и «:» (большие файлы данных)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
+    text = (json.dumps(data, ensure_ascii=False, separators=(",", ":")) if compact
+            else json.dumps(data, ensure_ascii=False, indent=indent))
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -114,33 +117,156 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+PROC_DIR = Path("/proc")
+BOOT_ID_PATH = PROC_DIR / "sys" / "kernel" / "random" / "boot_id"
+
+
+def boot_id() -> str:
+    """Идентификатор текущей загрузки системы (Linux: /proc/sys/kernel/random/boot_id); нет — пусто."""
+    try:
+        return BOOT_ID_PATH.read_text(encoding="ascii").strip()[:64]
+    except (OSError, ValueError):
+        return ""
+
+
+def stat_starttime(raw: str) -> str:
+    """Поле 22 (starttime) строки /proc/<pid>/stat. Имя процесса в скобках может содержать пробелы и «)»,
+    поэтому считаем поля после ПОСЛЕДНЕЙ «)». Не разобрать — пусто."""
+    try:
+        rest = raw[raw.rindex(")") + 2:].split()           # после «pid (имя) » идёт поле 3 (state) — индекс 0
+        v = rest[22 - 3]
+    except (ValueError, IndexError):
+        return ""
+    return v if v.isdigit() else ""
+
+
+def process_start(pid: int) -> str:
+    """Время старта процесса pid как метка «способ:значение» — чтобы отличить наш процесс от чужого, получившего
+    тот же номер после перезагрузки. Linux: поле 22 /proc/<pid>/stat (такты с загрузки), иначе psutil
+    (create_time), иначе Windows (GetProcessTimes). Нельзя узнать (нет процесса, нет доступа) — пусто."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return ""
+    if pid <= 0:
+        return ""
+    if (PROC_DIR / "self" / "stat").exists():
+        try:
+            st = stat_starttime((PROC_DIR / str(pid) / "stat").read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            return ""
+        return ("proc:" + st) if st else ""
+    try:
+        import psutil                                      # необязательная зависимость
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        try:
+            return f"psutil:{psutil.Process(pid).create_time():.3f}"
+        except Exception:                                  # NoSuchProcess, AccessDenied, ZombieProcess
+            return ""
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.windll.kernel32
+            h = k32.OpenProcess(0x1000, False, pid)        # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return ""
+            try:
+                ft = [wintypes.FILETIME() for _ in range(4)]
+                if not k32.GetProcessTimes(h, *(ctypes.byref(x) for x in ft)):
+                    return ""
+                return f"win:{(ft[0].dwHighDateTime << 32) | ft[0].dwLowDateTime}"
+            finally:
+                k32.CloseHandle(h)
+        except (OSError, AttributeError, ValueError):
+            return ""
+    return ""
+
+
+class LockStuck(SystemExit):
+    """Замок держит живой процесс дольше max_age_s: сами не снимаем (он, может быть, ещё пишет файлы) — выходим
+    с понятным сообщением. Наследник SystemExit: без обработки программа завершится с этим текстом."""
+
+
 class Lock:
-    """Файл-замок: {"pid", "started", "what"}. Чужой замок старше max_age_s или от умершего процесса снимается."""
+    """Файл-замок: {"pid", "started", "what", "boot_id", "pid_start"}. Замок умершего процесса снимается.
+    Умершим считается и замок, у которого pid вроде бы жив, но это уже другой процесс: система перезагружалась
+    (boot_id другой) или у процесса с этим pid другое время старта (pid_start) — после перезагрузки номер часто
+    достаётся другой программе. Замок ЖИВОГО процесса (тот же boot_id и то же время старта, или сравнить нечем —
+    старый замок без этих полей) не снимается никогда: пока он моложе max_age_s — ждём / «занято», старше —
+    LockStuck (выход с сообщением, что делать). Файл без pid (другой запуск как раз его создаёт) считается
+    занятым первые FRESH_S секунд."""
+
+    FRESH_S = 60
+
+    @staticmethod
+    def _owner_gone(other: dict, pid: int) -> bool:
+        """True — процесса, создавшего замок, точно нет (даже если pid сейчас занят кем-то другим)."""
+        then, now = str(other.get("boot_id") or ""), boot_id()
+        if then and now and then != now:
+            return True                                    # перезагрузка: все процессы того запуска умерли
+        if not pid_alive(pid):
+            return True
+        start_then = str(other.get("pid_start") or "")
+        if start_then:
+            start_now = process_start(pid)
+            if start_now and start_now.split(":", 1)[0] == start_then.split(":", 1)[0] and start_now != start_then:
+                return True                                # тот же номер, но другой процесс
+        return False
 
     def __init__(self, path: Path, what: str, max_age_s: float = 6 * 3600):
         self.path, self.what, self.max_age_s, self.held = path, what, max_age_s, False
 
     def info(self) -> dict:
-        return read_json(self.path, {}) if self.path.exists() else {}
+        data = read_json(self.path, {}) if self.path.exists() else {}
+        return data if isinstance(data, dict) else {}
+
+    def _stuck_message(self, other: dict, pid: int, age: float) -> str:
+        return (f"Замок {self.path.name} держит работающий процесс pid {pid} ({other.get('what') or '?'}, "
+                f"с {other.get('started') or '?'}) уже {age / 3600:.1f} ч — дольше {self.max_age_s / 3600:g} ч. "
+                f"Сам не снимаю: процесс жив и, может быть, ещё пишет файлы. Если он завис — завершите его "
+                f"(Windows: taskkill /PID {pid} /F; Linux: kill {pid}) и запустите снова: замок умершего процесса "
+                f"снимается сам. Если pid {pid} — вовсе не этот запуск (номер достался другой программе), "
+                f"удалите файл {self.path}.")
 
     def try_acquire(self) -> bool:
+        """True — замок наш; False — занят живым процессом; LockStuck — живой процесс держит его дольше max_age_s."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         for _ in range(2):
             try:
                 fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             except FileExistsError:
                 other = self.info()
-                age = time.time() - (self.path.stat().st_mtime if self.path.exists() else time.time())
-                if not pid_alive(int(other.get("pid") or 0)) or age > self.max_age_s:
-                    try:
-                        self.path.unlink()             # замок от упавшего/зависшего запуска
-                    except OSError:
-                        return False
-                    continue
-                return False
+                try:
+                    age = time.time() - self.path.stat().st_mtime
+                except OSError:
+                    continue                           # замок только что сняли — пробуем ещё раз
+                try:
+                    pid = int(other.get("pid") or 0)
+                except (TypeError, ValueError):
+                    pid = 0
+                if pid <= 0 and age < self.FRESH_S:
+                    return False                       # файл только создан, pid ещё не записан
+                if pid > 0 and not self._owner_gone(other, pid):
+                    if age > self.max_age_s:
+                        raise LockStuck(self._stuck_message(other, pid, age))
+                    return False
+                if self.info() != other:
+                    continue                           # пока смотрели, замок сменился — посмотреть заново
+                try:
+                    self.path.unlink()                 # замок от упавшего запуска (процесса уже нет)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    return False
+                continue
+            me = os.getpid()
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump({"pid": os.getpid(), "started": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-                           "what": self.what}, f, ensure_ascii=False)
+                json.dump({"pid": me, "started": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+                           "what": self.what, "boot_id": boot_id(), "pid_start": process_start(me)},
+                          f, ensure_ascii=False)
             self.held = True
             return True
         return False

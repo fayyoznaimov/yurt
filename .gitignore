@@ -1,5 +1,14 @@
 # Собранные данные и курсы — пересобираются командой python run.py
 data/
+# Заказы и покупатели (телефоны, имена), состояние канала, исследования конкурентов — только локально,
+# никогда в git (репозиторий публичный). Строки явные, даже если data/ выше когда-нибудь уберут.
+data/orders/
+data/channel_state.json
+data/analysis/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
 
 # Сайт: файлы товаров и фото генерирует run.py
 site/products.js
@@ -11,7 +20,8 @@ site/img/*
 !site/img/brands/
 # закупочные цены, маржа и ссылки на магазины — никогда не публиковать
 site/products-admin.js
-site/admin/
+site/admin/*
+!site/admin/admin.js
 
 # Python
 __pycache__/

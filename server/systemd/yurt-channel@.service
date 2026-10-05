@@ -1,0 +1,41 @@
+# Канал Telegram (channel.py) — одно задание: yurt-channel@propose / @sync / @post.
+#   propose  продавцу в личку CHANNEL_PROPOSE_N (по умолчанию 8) готовых постов с кнопками «Опубликовать» / «Пропустить»
+#            (кнопки обрабатывает бот внутри yurt-orders — отдельного опроса Telegram здесь нет)
+#   sync     посты за 14 дней: проданное → «⛔ Продано» без кнопок, пропали ходовые размеры → новая строка размеров
+#   post     автомат: один товар сразу в канал (для полного автомата — свой таймер со слотами)
+# ПРИМЕР: server/setup.sh копирует файл, но таймеры НЕ включает. Включить, когда канал готов:
+#   sudo systemctl enable --now yurt-channel@propose.timer yurt-channel@sync.timer
+# В /etc/yurt/yurt.env нужны CHANNEL_ENABLED=1, CHANNEL_ID (@ник канала или -100…), TELEGRAM_BOT_TOKEN (бот —
+# администратор канала с правом публикации) и, по желанию, CHANNEL_REVIEW_CHAT_ID; без них — пробный прогон.
+# Замок — свой (data/channel.lock), общий data/server.lock не берётся: задание не ждёт сборку каталога.
+# @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: канал Telegram — %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+Environment=PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
+# $$ — так systemd пропускает $ в bash; YURT_PYTHON из yurt.env, иначе системный python3
+ExecStart=/usr/bin/env bash -c 'case "%i" in propose) set -- --propose "$${CHANNEL_PROPOSE_N:-8}" ;; sync) set -- --sync ;; post) set -- --post ;; *) echo "неизвестное задание: %i (propose|sync|post)" >&2; exit 2 ;; esac; exec "$${YURT_PYTHON:-python3}" @APP@/channel.py "$$@"'
+TimeoutStartSec=30min
+Nice=10
+MemoryMax=512M
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@APP@/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes

@@ -3,6 +3,10 @@
     from describe import describe
     d = describe(product_dict)   # {"title", "color", "composition", "details", "description", "size_system"}
 
+title — «вид, цвет, свойство» без бренда: «Рубашка, белая, slim fit», «Лоферы, коричневые, натуральная кожа»
+(title_ru; свойства — только из данных товара). Для витрины: color_group(цвет) -> группа 0…11 / -1
+(COLOR_GROUPS), keywords(карточка) -> основы слов для поиска, color_keywords(цвет) (см. catalog_files.py).
+
 На входе — товар из data/raw_*.json (Product.to_dict() + country из run.py). Используются только
 бренд, тип, категория, исходное название и сырые свойства product["attrs"] (итальянские у YOOX,
 турецкие у Pierre Cardin / Cacharel / Trendyol). Названия магазинов, цены и ссылки в текст не попадают.
@@ -17,6 +21,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+
+import sizes_norm
 
 # ---------------------------------------------------------------- нормализация
 
@@ -166,6 +172,52 @@ def color_phrase(color: str | None) -> str | None:
     stem, end = m.groups()
     gen = "его" if end == "ий" and not re.search(r"[гкхжшчщ]$", stem) else "ого"
     return f"{stem}{gen} цвета"
+
+
+# ---------------------------------------------------------------- группы цветов (фильтр витрины)
+# 12 групп; номер группы — столбец "cg" индекса каталога (catalog_files.py), имена и образцы — manifest.dict.cgroup.
+# Группа определяется по последнему слову составного цвета: «тёмно-синий» -> синий, «серо-бежевый» -> бежевый,
+# «сине-зелёный» -> зелёный; «… меланж» не считается. Неизвестный цвет (и «прозрачный») — без группы (-1).
+
+COLOR_GROUPS = [
+    ("чёрный", "#1d1d1f"), ("белый", "#ffffff"), ("серый", "#a3a5aa"), ("синий", "#2f4e8c"),
+    ("бежевый", "#d8c3a2"), ("коричневый", "#7b5236"), ("зелёный", "#5b7f52"), ("красный", "#b83a32"),
+    ("розовый", "#e8a7b8"), ("жёлтый/оранжевый", "#e8a53c"), ("фиолетовый", "#7d5698"), ("разноцветный", "#b7a4d6"),
+]
+_CG = {name: i for i, (name, _) in enumerate(COLOR_GROUPS)}
+COLOR_GROUP_OF = {
+    "чёрный": "чёрный",
+    "белый": "белый", "молочный": "белый",
+    "серый": "серый", "серебристый": "серый",
+    "синий": "синий", "голубой": "синий", "индиго": "синий", "бирюзовый": "синий",
+    "бежевый": "бежевый", "песочный": "бежевый", "кремовый": "бежевый", "телесный": "бежевый",
+    "коричневый": "коричневый", "шоколадный": "коричневый", "коньячный": "коричневый", "кэмел": "коричневый",
+    "бронзовый": "коричневый", "терракотовый": "коричневый",
+    "зелёный": "зелёный", "хаки": "зелёный", "лаймовый": "зелёный", "изумрудный": "зелёный", "оливковый": "зелёный",
+    "мятный": "зелёный", "фисташковый": "зелёный",
+    "красный": "красный", "бордовый": "красный", "вишнёвый": "красный", "кирпичный": "красный",
+    "коралловый": "красный",
+    "розовый": "розовый", "фуксия": "розовый", "пудровый": "розовый", "лососевый": "розовый",
+    "жёлтый": "жёлтый/оранжевый", "оранжевый": "жёлтый/оранжевый", "горчичный": "жёлтый/оранжевый",
+    "охристый": "жёлтый/оранжевый", "абрикосовый": "жёлтый/оранжевый", "золотистый": "жёлтый/оранжевый",
+    "золотой": "жёлтый/оранжевый", "рыжий": "жёлтый/оранжевый",
+    "фиолетовый": "фиолетовый", "сиреневый": "фиолетовый", "лиловый": "фиолетовый", "сливовый": "фиолетовый",
+    "пурпурный": "фиолетовый",
+    "разноцветный": "разноцветный",
+}
+
+
+def _color_base(color) -> str:
+    """«тёмно-синий меланж» -> «синий»: последнее слово составного цвета, без «меланж»."""
+    c = str(color or "").strip().lower().replace("ë", "ё")
+    c = re.sub(r"\s+меланж$", "", c)
+    return c.split()[-1].split("-")[-1] if c else ""
+
+
+def color_group(color) -> int:
+    """Номер группы цвета в COLOR_GROUPS (0 — чёрный … 11 — разноцветный); нет группы -> -1."""
+    g = COLOR_GROUP_OF.get(_color_base(color))
+    return _CG[g] if g else -1
 
 
 # ---------------------------------------------------------------- состав (волокна IT + TR + EN -> RU)
@@ -479,7 +531,7 @@ KIND_DEFAULT = {
 }
 _KIND_RE = {t: [(re.compile(p), n) for p, n in rules] for t, rules in KIND_RULES.items()}
 # род существительного для «Женская/Женский/Женское/Женские …», если не угадывается по окончанию
-NOUN_GENDER = {"Худи": "n", "Поло": "n", "Бельё": "n", "Термобельё": "n"}
+NOUN_GENDER = {"Худи": "n", "Поло": "n", "Бельё": "n", "Термобельё": "n", "Обувь": "f"}
 WOMEN = {"m": "Женский", "f": "Женская", "n": "Женское", "pl": "Женские"}
 
 
@@ -520,8 +572,8 @@ def _kind_text(p: dict) -> str:
     return fold(" | ".join(str(b) for b in bits if b))
 
 
-def title_ru(p: dict) -> str:
-    brand = (p.get("brand") or "").strip()
+def kind_ru(p: dict) -> str | None:
+    """Вид товара по-русски, с «Женские …» у женских: «Рубашка», «Женские брюки». Неясно -> None."""
     ptype = p.get("type")
     text = _kind_text(p)
     noun = None
@@ -534,10 +586,178 @@ def title_ru(p: dict) -> str:
         if ptype == "обувь":
             _miss("вид обуви (слово «Обувь»)", p.get("category"))
     if not noun:
-        return brand
+        return None
     if p.get("gender") == "women" and ptype not in ("платья", "юбки") and noun not in ("Блузка", "Туника"):
         noun = WOMEN[_noun_gender(noun)] + " " + noun[0].lower() + noun[1:]
-    return f"{noun} {brand}".strip()
+    return noun
+
+
+def _kind_brand(p: dict, noun: str | None) -> str:
+    """«Рубашка Pierre Cardin» — начало описания (как раньше был заголовок)."""
+    brand = (p.get("brand") or "").strip()
+    return f"{noun or ''} {brand}".strip()
+
+
+# ---------------------------------------------------------------- заголовок: вид + цвет + одно свойство
+# «Рубашка, белая, slim fit», «Пуховик, тёмно-синий, с капюшоном», «Лоферы, коричневые, натуральная кожа».
+# Бренд в заголовок не входит (на карточке он стоит отдельно). Свойства — только из данных товара:
+# пункт details (по теме) или состав из одного волокна. Чего нет в TITLE_ATTR — в заголовок не идёт.
+
+_ADJ_END = {"ый": {"m": "ый", "f": "ая", "n": "ое", "pl": "ые"},
+            "ой": {"m": "ой", "f": "ая", "n": "ое", "pl": "ые"},
+            "ий": {"m": "ий", "f": "яя", "n": "ее", "pl": "ие"}}
+
+
+def color_agree(color: str | None, gender: str) -> str | None:
+    """Цвет (м. р.) в роде/числе вида: («тёмно-синий», "f") -> «тёмно-синяя», («белый», "pl") -> «белые».
+    Несклоняемые — «цвета хаки»; составные («серый меланж») — как есть."""
+    if not color:
+        return None
+    if color in COLOR_GEN:
+        return COLOR_GEN[color]
+    m = re.fullmatch(r"([а-яё-]+?)(ый|ой|ий)", color)
+    if not m:
+        return color
+    stem, end = m.groups()
+    if end == "ий" and re.search(r"[гкхжшчщ]$", stem):          # «яркий» -> «яркая» (таких цветов пока нет)
+        return stem + {"m": "ий", "f": "ая", "n": "ое", "pl": "ие"}[gender]
+    if end in ("ый", "ой") and gender == "pl" and re.search(r"[гкхжшчщ]$", stem):
+        return stem + "ие"
+    return stem + _ADJ_END[end][gender]
+
+
+# пункт details -> слова в заголовке
+TITLE_ATTR = {
+    "fit": {
+        "Приталенный крой (slim fit)": "slim fit", "Узкий крой (extra slim)": "extra slim",
+        "Облегающий крой (skinny)": "skinny", "Прямой крой (regular fit)": "regular fit",
+        "Свободный крой": "свободный крой", "Оверсайз": "оверсайз", "Прямой крой": "прямой крой",
+        "Крой «морковка» (carrot fit)": "carrot fit", "Зауженный книзу крой": "зауженный крой",
+        "Полуприталенный крой (modern fit)": "modern fit", "Свободный прямой крой (boxy)": "boxy",
+        "Свободный крой (mom fit)": "mom fit", "Свободный крой (dad fit)": "dad fit",
+        "Расклешённый крой": "расклешённый крой", "А-силуэт": "А-силуэт", "Широкие штанины": "широкие штанины",
+        "Крой bootcut (расклешённые от колена)": "bootcut",
+        # силуэт (Trendyol «Siluet») — та же тема в заголовке
+        "Приталенный силуэт": "приталенный силуэт", "Модель-джоггеры": "джоггеры", "Асимметричный крой": "асимметричный крой",
+    },
+    "collar": {
+        "Воротник-поло": "с воротником-поло", "Круглый вырез": "с круглым вырезом",
+        "V-образный вырез": "с V-образным вырезом", "Высокое горло": "с высоким горлом",
+        "Невысокое горло": "с невысоким горлом", "Воротник-стойка": "с воротником-стойкой",
+        "С капюшоном": "с капюшоном", "Рубашечный воротник": "с рубашечным воротником",
+        "Итальянский воротник": "с итальянским воротником", "Воротник на пуговицах (button-down)": "button-down",
+        "Воротник апаш": "с воротником апаш", "Воротник на молнии": "с воротником на молнии",
+        "Воротник-поло на молнии": "с воротником-поло на молнии", "Воротник-шалька": "с воротником-шалькой",
+        "Квадратный вырез": "с квадратным вырезом", "Вырез-лодочка": "с вырезом-лодочкой",
+        "Глубокий круглый вырез": "с глубоким вырезом", "Отложной воротник": "с отложным воротником",
+    },
+    "hood": {"С капюшоном": "с капюшоном"},
+    "fabric": {
+        "Трикотаж": "трикотаж", "Деним": "деним", "Ткань пике": "пике", "Мягкий хлопковый трикотаж (пенье)": "пенье",
+        "Ткань оксфорд": "оксфорд", "Поплин": "поплин", "Сатин": "сатин", "Футер-трёхнитка": "футер",
+        "Футер-двухнитка": "футер", "С начёсом": "с начёсом", "Габардин": "габардин", "Твил": "твил",
+        "Трикотаж супрем": "трикотаж", "Трикотаж в рубчик": "трикотаж в рубчик", "Трикотаж интерлок": "интерлок",
+        "Канвас": "канвас", "Шамбре": "шамбре", "Фланель": "фланель", "Вельвет": "вельвет", "Флис": "флис",
+        "Футер-трёхнитка с начёсом": "футер с начёсом",
+    },
+    "pattern": {
+        "В полоску": "в полоску", "В клетку": "в клетку", "С узором": "с узором", "С принтом": "с принтом",
+        "С логотипом": "с логотипом", "В горошек": "в горошек", "Камуфляжная расцветка": "камуфляж",
+        "Цветочный принт": "цветочный принт", "Геометрический узор": "геометрический узор",
+        "Мелкий узор": "мелкий узор", "Жаккардовый узор": "жаккард", "С надписью": "с надписью",
+        "Узор «гусиная лапка»": "гусиная лапка", "Узор «ёлочка»": "ёлочка", "Колор-блок": "колор-блок",
+        "Тай-дай": "тай-дай", "Узор пейсли": "пейсли", "С вышивкой": "с вышивкой", "Этнический узор": "этнический узор",
+        "Тропический принт": "тропический принт", "В рубчик": "в рубчик", "Узор ромбами": "узор ромбами",
+        "Многоцветный узор": "многоцветный узор", "Фактурное плетение (добби)": "добби",
+        "Вафельная фактура": "вафельная фактура", "Ткань оксфорд": "оксфорд", "Фланель": "фланель", "Вельвет": "вельвет",
+    },
+}
+# состав из одного волокна -> в заголовок (только натуральные — синтетика остаётся в составе карточки)
+TITLE_FIBRES = {
+    "хлопок", "органический хлопок", "хлопок пима", "лён", "шерсть", "натуральная шерсть", "шерсть мериноса",
+    "шерсть ягнёнка", "шерсть альпаки", "кашемир", "мохер", "шёлк", "верблюжья шерсть", "шерсть яка",
+    "натуральная кожа", "телячья кожа", "козья кожа", "кожа ягнёнка", "оленья кожа", "конская кожа", "овечья кожа",
+    "замша", "нубук", "лакированная кожа", "овчина", "шерсть эскориал",
+}
+# что важнее показать в заголовке по типу (после цвета); "comp" — состав из одного волокна
+TITLE_PRIORITY = {
+    "обувь": ["comp", "pattern"],
+    "сумки": ["comp", "pattern"],
+    "аксессуары": ["comp", "pattern"],
+    "куртки и пальто": ["hood", "comp", "fabric", "pattern", "fit", "collar"],
+    "пиджаки и костюмы": ["comp", "fit", "pattern", "fabric"],
+    "рубашки": ["fit", "pattern", "collar", "comp", "fabric"],
+    "футболки и поло": ["pattern", "fit", "collar", "comp", "fabric"],
+    "свитеры и кардиганы": ["comp", "collar", "pattern", "fit", "fabric", "hood"],
+    "толстовки": ["hood", "pattern", "fit", "fabric", "comp", "collar"],
+    "брюки": ["fit", "comp", "pattern", "fabric"],
+    "джинсы": ["fit", "pattern", "comp"],
+    "шорты": ["fit", "pattern", "comp", "fabric"],
+    "платья": ["pattern", "comp", "fit", "collar", "fabric"],
+    "юбки": ["pattern", "comp", "fit", "fabric"],
+    "нижнее бельё": ["comp", "pattern", "fit"],
+}
+TITLE_PRIORITY_DEFAULT = ["fit", "pattern", "comp", "collar", "fabric", "hood"]
+# расплывчатый рисунок («с узором») — только если других свойств нет
+TITLE_WEAK = {"с узором", "мелкий узор", "многоцветный узор"}
+TITLE_MAX_ATTRS = 2
+# свойство уже сказано видом товара («Худи» + «с капюшоном», «Водолазка» + «с высоким горлом»)
+_REDUNDANT = [(r"худи", "капюшон"), (r"водолазк", "высоким горлом"), (r"поло", "поло"), (r"джинс", "деним"),
+              (r"трикотаж", "трикотаж"), (r"кожан", "кож"), (r"на молнии", "на молнии"),
+              (r"джоггер|спортивн", "джоггеры")]
+
+
+def _title_candidates(topics: dict[str, list[str]], comp_parts) -> dict[str, str]:
+    """Тема -> слова для заголовка (первое подходящее значение темы; расплывчатый рисунок — тема "weak")."""
+    out = {}
+    for topic in ("fit", "collar", "hood", "fabric", "pattern"):
+        src = topics.get(topic, []) + (topics.get("silhouette", []) if topic == "fit" else [])
+        phrases = [TITLE_ATTR[topic][b] for b in src if TITLE_ATTR[topic].get(b)]
+        strong = [x for x in phrases if x not in TITLE_WEAK]
+        if strong:
+            out[topic] = strong[0]
+        elif phrases:
+            out["weak"] = phrases[0]
+    if comp_parts and len(comp_parts) == 1 and comp_parts[0][1] in TITLE_FIBRES:
+        out["comp"] = comp_parts[0][1]
+    if out.get("collar") == "с капюшоном":            # капюшон из «воротника» — та же тема hood
+        out.setdefault("hood", out.pop("collar"))
+    return out
+
+
+_UNSET = object()
+
+
+def title_ru(p: dict, color=_UNSET, topics=_UNSET, comp_parts=_UNSET, noun=_UNSET) -> str:
+    """Заголовок карточки: вид, цвет (в роде вида), одно-два свойства из данных. Без бренда.
+    color / topics / comp_parts / noun — уже посчитанные describe() (не переданы — считаются здесь)."""
+    if noun is _UNSET:
+        noun = kind_ru(p)
+    if not noun:
+        return (p.get("brand") or "").strip()
+    if topics is _UNSET:
+        topics = details_topics(p)
+    if color is _UNSET:
+        color = next((c for c in (color_ru(raw) for raw in _color_raw(p) if raw) if c), None)
+    if comp_parts is _UNSET:
+        comp_parts = _composition(p)
+    ptype = p.get("type")
+    attrs = []
+    c = color_agree(color, _noun_gender(noun))
+    if c:
+        attrs.append(c)
+    cands = _title_candidates(topics, comp_parts)
+    low = noun.lower()
+    for key in TITLE_PRIORITY.get(ptype, TITLE_PRIORITY_DEFAULT) + ["weak"]:
+        if len(attrs) >= TITLE_MAX_ATTRS:
+            break
+        phrase = cands.get(key)
+        if not phrase or phrase in attrs:
+            continue
+        if any(re.search(n, low) and a in phrase for n, a in _REDUNDANT):
+            continue
+        attrs.append(phrase)
+    return ", ".join([noun] + attrs)
 
 
 # ---------------------------------------------------------------- свойства -> пункты «details»
@@ -894,7 +1114,19 @@ def _raw_pairs(p: dict) -> list[tuple[str, str]]:
     return pairs
 
 
-def details_ru(p: dict) -> list[str]:
+def details_ru(p: dict, topics: dict[str, list[str]] | None = None) -> list[str]:
+    """Пункты карточки по порядку TOPIC_ORDER (не больше MAX_DETAILS)."""
+    by_topic = details_topics(p) if topics is None else topics
+    out = []
+    for t in TOPIC_ORDER:
+        for b in by_topic.get(t, []):
+            if b not in out:
+                out.append(b)
+    return out[:MAX_DETAILS]
+
+
+def details_topics(p: dict) -> dict[str, list[str]]:
+    """Тема (fit, collar, hood, pattern, fabric, …) -> русские пункты из свойств товара."""
     by_topic: dict[str, list[str]] = {}
 
     def add(topic: str, bullet: str | None) -> None:
@@ -928,12 +1160,7 @@ def details_ru(p: dict) -> list[str]:
     # «С капюшоном» из воротника и из отдельного свойства — один пункт
     if "hood" in by_topic and "С капюшоном" in by_topic.get("collar", []):
         by_topic["collar"].remove("С капюшоном")
-    out = []
-    for t in TOPIC_ORDER:
-        for b in by_topic.get(t, []):
-            if b not in out:
-                out.append(b)
-    return out[:MAX_DETAILS]
+    return by_topic
 
 
 # ---------------------------------------------------------------- состав и цвет по источнику
@@ -990,8 +1217,8 @@ def size_system(p: dict) -> str | None:
         if not m:
             return None
         nums.append(int(m.group(1)))
-    if ptype in ("джинсы", "брюки", "шорты") and all(24 <= n <= 42 for n in nums):
-        return "W"
+    if ptype in sizes_norm.BOTTOMS and sizes_norm.waist_mode(sizes, ptype, p.get("gender")):
+        return "W"          # по талии: «28W-32L», нечётные 23–41, мужские до 42 (см. sizes_norm.waist_mode)
     if ptype in ("аксессуары", "сумки") or min(nums) < 34:
         return None
     return "IT" if p.get("country") == "IT" else "EU"
@@ -1031,15 +1258,8 @@ def description_ru(title: str, color: str | None, comp_parts, details: list[str]
     return " ".join(sentences)
 
 
-def describe(p: dict) -> dict:
-    """Всё, что видит покупатель в карточке: заголовок, цвет, состав, пункты, описание, размерная сетка."""
-    title = title_ru(p)
-    color = None
-    for raw in _color_raw(p):
-        if raw:
-            color = color_ru(raw)
-            if color:
-                break
+def _composition(p: dict):
+    """Состав по источнику: [(доля, именительный, родительный), ...] или None."""
     comp_parts = None
     for raw in _composition_raw(p):
         if raw:
@@ -1049,13 +1269,127 @@ def describe(p: dict) -> dict:
     # «из текстиля» у одежды ничего не говорит (так Trendyol пишет «Materyal» у футболок) — не показываем
     if comp_parts and [c[1] for c in comp_parts] == ["текстиль"] and p.get("type") not in ("обувь", "сумки", "аксессуары"):
         comp_parts = None
-    details = details_ru(p)
+    return comp_parts
+
+
+def describe(p: dict) -> dict:
+    """Всё, что видит покупатель в карточке: заголовок, цвет, состав, пункты, описание, размерная сетка."""
+    color = None
+    for raw in _color_raw(p):
+        if raw:
+            color = color_ru(raw)
+            if color:
+                break
+    comp_parts = _composition(p)
+    topics = details_topics(p)
+    details = details_ru(p, topics)
     origin = p.get("country")
+    noun = kind_ru(p)
     return {
-        "title": title,
+        "title": title_ru(p, color, topics, comp_parts, noun),
         "color": color,
         "composition": composition_text(comp_parts),
         "details": details,
-        "description": description_ru(title, color, comp_parts, details, origin),
+        # описание начинается, как раньше, с «Рубашка Pierre Cardin белого цвета …»
+        "description": description_ru(_kind_brand(p, noun), color, comp_parts, details, origin),
         "size_system": size_system(p),
     }
+
+
+# ---------------------------------------------------------------- слова для поиска (столбец "kw")
+# До KW_MAX основ слов в нижнем регистре, «ё» -> «е», только из данных карточки: цвет (и его группа),
+# основные волокна состава, крой, рисунок, детали. Поиск на странице сравнивает их с основами слов запроса
+# (правило — в data/analysis/contract.md, раздел P2).
+
+KW_MAX = 6
+KW_FIBRE_MIN_PCT = 15          # волокно из состава — если его не меньше 15% (или доля не указана)
+_KW_COLOR = {"хаки": "хаки", "кэмел": "кэмел", "индиго": "индиго", "фуксия": "фукси"}
+_KW_ORANGE = {"оранжевый", "абрикосовый", "рыжий"}
+# (regex по именительному названию волокна, основы)
+KW_FIBRES = [
+    (r"кашемир", ["кашемир"]), (r"меринос", ["шерст", "меринос"]), (r"альпак", ["шерст", "альпак"]),
+    (r"мохер", ["мохер"]), (r"шерст", ["шерст"]), (r"хлоп", ["хлоп"]), (r"л[её]н\b", ["лен", "льн"]),
+    (r"ш[её]лк", ["шелк"]), (r"замш", ["замш"]), (r"нубук", ["нубук"]), (r"овчин", ["овчин"]),
+    (r"кож", ["кож"]), (r"вискоз", ["вискоз"]),
+]
+# пункт details (начало строки, без регистра) -> основа; порядок = важность
+KW_DETAILS = [
+    # крой
+    (r"приталенный крой|узкий крой", "slim"), (r"облегающий крой", "skinny"), (r"прямой крой \(regular", "regular"),
+    (r"прямой крой|прямые штанины", "прям"), (r"свободный", "свобод"), (r"оверсайз", "оверсайз"),
+    (r"зауженн", "зауж"), (r"полуприталенный", "modern"), (r"расклеш", "расклеш"), (r"широкие штанины", "широк"),
+    (r"крой bootcut", "bootcut"), (r"крой «морковка»", "carrot"),
+    # рисунок
+    (r"в полоску", "полос"), (r"в клетку", "клет"), (r"цветочный принт", "цветоч"), (r"тропический принт", "принт"),
+    (r"с принтом", "принт"), (r"в горошек", "горош"), (r"с логотипом", "логотип"), (r"камуфляж", "камуфляж"),
+    (r"жаккард", "жаккард"), (r"с вышивкой", "вышив"), (r"узор «ёлочка»", "елочк"), (r"узор пейсли", "пейсли"),
+    # детали
+    (r"с капюшоном", "капюшон"), (r"застёжка на молнию|воротник на молнии|воротник-поло на молнии|короткая молния",
+                                  "молни"),
+    (r"высокое горло|невысокое горло", "горл"), (r"воротник-стойка", "стойк"), (r"с начёсом", "начес"),
+    (r"утеплённая подкладка", "утепл"), (r"стёганая", "стеган"), (r"двубортная", "двуборт"),
+    (r"водоотталкивающая", "водоотталк"), (r"укороченная модель", "укороч"),
+    (r"короткий рукав", "коротк"), (r"длинный рукав", "длинн"),
+    # ткань
+    (r"деним", "деним"), (r"трикотаж", "трикотаж"), (r"ткань пике", "пике"), (r"поплин", "поплин"),
+    (r"фланель", "фланел"), (r"вельвет", "вельвет"), (r"флис", "флис"), (r"футер", "футер"), (r"твил", "твил"),
+    (r"габардин", "габардин"), (r"ткань оксфорд", "оксфорд"), (r"сатин", "сатин"),
+]
+_KW_DETAILS_RE = [(re.compile(p), k) for p, k in KW_DETAILS]
+
+
+def _kw_norm(s: str) -> str:
+    return str(s or "").lower().replace("ё", "е").replace("ë", "е")
+
+
+def _adj_stem(word: str) -> str:
+    """«чёрный» -> «черн», «синий» -> «син», «голубой» -> «голуб» (ё -> е)."""
+    w = _kw_norm(word)
+    return _KW_COLOR.get(w) or re.sub(r"(ый|ий|ой)$", "", w)
+
+
+def color_keywords(color) -> list[str]:
+    """Основы цвета: свой цвет и, если другая, его группа: «молочный» -> ["молочн", "бел"], «тёмно-синий» -> ["син"]."""
+    out = []
+    base = _color_base(color)
+    if base and base != "прозрачный":
+        out.append(_adj_stem(base))
+        g = color_group(color)
+        if 0 <= g < 11:                                     # группа: «молочный» находится и по «белый»
+            gst = _adj_stem("оранжевый" if base in _KW_ORANGE else COLOR_GROUPS[g][0].split("/")[0])
+            if gst not in out:
+                out.append(gst)
+    return out
+
+
+def keywords(card: dict) -> list[str]:
+    """Основы слов для поиска по карточке (color, composition, details): до KW_MAX, без повторов.
+    «Рубашка, белая, slim fit» из 100% хлопка в полоску -> ["бел", "хлоп", "slim", "полос"]."""
+    out: list[str] = []
+
+    def add(*stems):
+        for s in stems:
+            if s and s not in out:
+                out.append(s)
+
+    add(*color_keywords(card.get("color")))
+    comp = card.get("composition")
+    if comp:
+        parts = []
+        for part in str(comp).split(","):
+            m = re.match(r"\s*(\d+(?:[.,]\d+)?)%\s*(.+)", part)
+            pct, name = (float(m.group(1).replace(",", ".")), m.group(2)) if m else (None, part)
+            if pct is None or pct >= KW_FIBRE_MIN_PCT:
+                parts.append((-(pct or 100), name.strip().lower()))
+        for _, name in sorted(parts, key=lambda x: x[0]):
+            for rx, stems in KW_FIBRES:
+                if re.search(rx, name):
+                    add(*stems)
+                    break
+    for d in card.get("details") or []:
+        low = str(d).lower()
+        for rx, stem in _KW_DETAILS_RE:
+            if rx.search(low):
+                add(stem)
+                break
+    return out[:KW_MAX]

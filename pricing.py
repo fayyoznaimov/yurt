@@ -46,17 +46,36 @@ def load_rates(currencies: set[str], manual: dict | None = None) -> dict[str, fl
     return rates
 
 
-def sell_price_uzs(price: float, currency: str, country: str, rates: dict, cfg: dict) -> dict:
-    """Цена продажи по формуле из плана (раздел 10).
+def cargo_uzs(type_: str | None, country: str, rates: dict, cfg: dict) -> float:
+    """Карго до Ташкента. cargo_usd_per_kg × вес вещи по типу (weight_kg); без них — старый
+    фиксированный cargo_uzs_per_item по стране."""
+    per_kg = cfg.get("cargo_usd_per_kg")
+    if per_kg:
+        weights = cfg.get("weight_kg") or {}
+        kg = float(weights.get(type_ or "", weights.get("_default", 1.0)))
+        return float(per_kg) * kg * rates["USD"]
+    return float(cfg.get("cargo_uzs_per_item", {}).get(country, 0))
 
-    себестоимость = цена × курс × (1 + наценка_на_курс) + карго
-    цена = max(себестоимость × (1 + маржа), себестоимость + мин_маржа), округлённая вверх
+
+def margin_pct(cost: float, cfg: dict) -> float:
+    """Маржа по ступеням себестоимости: margin_tiers = [{"max_cost_uzs": N, "pct": P}, ..., {"pct": P}]."""
+    for tier in cfg.get("margin_tiers") or []:
+        if "max_cost_uzs" not in tier or cost <= tier["max_cost_uzs"]:
+            return float(tier["pct"])
+    return float(cfg.get("margin_pct", 0))
+
+
+def sell_price_uzs(price: float, currency: str, country: str, rates: dict, cfg: dict,
+                   type_: str | None = None) -> dict:
+    """Цена продажи.
+
+    себестоимость = цена × курс × (1 + наценка_на_курс) + карго (по весу типа вещи)
+    цена = max(себестоимость × (1 + маржа ступени), себестоимость + мин_маржа), округлённая вверх
     """
     fx = rates[currency.upper()] * (1 + cfg.get("fx_markup_pct", 0) / 100)
     goods = price * fx
-    cargo = float(cfg.get("cargo_uzs_per_item", {}).get(country, 0))
-    cost = goods + cargo
-    with_margin = max(cost * (1 + cfg.get("margin_pct", 0) / 100), cost + cfg.get("min_margin_uzs", 0))
+    cost = goods + cargo_uzs(type_, country, rates, cfg)
+    with_margin = max(cost * (1 + margin_pct(cost, cfg) / 100), cost + cfg.get("min_margin_uzs", 0))
     step = cfg.get("round_to_uzs", 1000) or 1
     final = math.ceil(with_margin / step) * step
     return {"price_uzs": int(final), "cost_uzs": int(round(cost)), "margin_uzs": int(round(final - cost))}

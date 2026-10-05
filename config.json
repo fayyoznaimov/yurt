@@ -90,15 +90,48 @@
     }
   },
   "pricing": {
+    "_help": "себестоимость = цена × курс ЦБ × (1 + fx_markup_pct) + карго (cargo_usd_per_kg × weight_kg по типу вещи); цена = max(себестоимость × (1 + маржа ступени), себестоимость + min_margin_uzs), вверх до round_to_uzs",
     "fx_markup_pct": 2,
     "margin_pct": 25,
+    "margin_tiers": [
+      {"max_cost_uzs": 3000000, "pct": 25},
+      {"pct": 30}
+    ],
     "min_margin_uzs": 300000,
     "round_to_uzs": 10000,
+    "cargo_usd_per_kg": 10,
+    "weight_kg": {
+      "футболки и поло": 0.3,
+      "рубашки": 0.4,
+      "нижнее бельё": 0.2,
+      "аксессуары": 0.3,
+      "шорты": 0.4,
+      "юбки": 0.4,
+      "платья": 0.5,
+      "свитеры и кардиганы": 0.6,
+      "брюки": 0.7,
+      "джинсы": 0.8,
+      "толстовки": 0.7,
+      "сумки": 1.0,
+      "пиджаки и костюмы": 1.2,
+      "обувь": 1.3,
+      "куртки и пальто": 1.8,
+      "_default": 0.8
+    },
     "cargo_uzs_per_item": {
       "TR": 40000,
       "IT": 160000
     },
     "fx_manual": {}
+  },
+  "brand_tier": {
+    "_help": "Вес бренда в порядке «Рекомендуем» (ranking.py): 1.0 — самые желанные, 0.35 — массовые; бренд не из списка — default. Регистр, пробелы и знаки в названии не важны.",
+    "default": 0.5,
+    "1.0": ["Gucci", "Dior", "Kiton", "Dolce&Gabbana", "Tod's", "Bally", "Giorgio Armani", "Canali", "Moorer", "Eleventy", "Barba Napoli"],
+    "0.8": ["Boss", "Emporio Armani", "Michael Kors", "Paul & Shark", "Jacob Cohën", "Harmont & Blaine", "Hackett", "Lacoste", "Doucal's", "Tramarossa", "Gran Sasso", "Tombolini", "Filippo De Laurentiis", "Montecore", "Boggi Milano", "Karl Lagerfeld", "Liu Jo", "On"],
+    "0.6": ["Armani Exchange", "EA7", "Liu Jo Man", "Karl Lagerfeld Jeans", "Bugatti"],
+    "0.45": ["Cacharel", "Lufian", "Cabani", "Kip", "Ramsey", "U.S. Polo Assn."],
+    "0.35": ["Pierre Cardin"]
   },
   "crawl": {
     "max_pages": 3
@@ -125,7 +158,7 @@
         2.0
       ],
       "listing_max_age_hours": 20,
-      "official_only": false
+      "official_only": true
     },
     "yoox": {
       "brand_slugs": {
@@ -159,6 +192,7 @@
     "yoox_import": {
       "folder": "",
       "max_age_days": 3,
+      "stale_hide_days": 7,
       "download_images": true,
       "max_images": 300,
       "max_pages_per_search": 200,
@@ -378,7 +412,7 @@
   },
   "site": {
     "title": "IPAK — брендовая одежда из Италии и Турции",
-    "contact_url": "https://t.me/your_username",
+    "contact_url": "",
     "contact_label": "Заказать в Telegram",
     "name": "IPAK"
   }

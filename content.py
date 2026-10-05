@@ -9,6 +9,7 @@ content.js нужен, чтобы тексты были видны и при о�
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -16,7 +17,9 @@ ROOT = Path(__file__).parent
 SRC = ROOT / "site" / "content.json"
 OUT = ROOT / "site" / "content.js"
 TEXT_FIELDS = ("name", "tagline", "announcement", "hero_title", "hero_text", "about", "authenticity",
-               "delivery", "payment", "returns")
+               "delivery", "payment")
+BOT_RE = re.compile(r"^[A-Za-z0-9_]{4,32}$")            # ник бота без @ (как BOT_USERNAME на сервере)
+PLACEHOLDER_RE = re.compile(r"your_username|example", re.I)   # заглушка из примера настроек — не контакт
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -51,13 +54,35 @@ def warnings(data: dict) -> list[str]:
         if not (isinstance(s, dict) and s.get("title")):
             out.append(f"order_steps[{i + 1}]: нужен title")
     c = data.get("contacts") if isinstance(data.get("contacts"), dict) else {}
-    if not any(str(c.get(k) or "").strip() for k in ("telegram", "instagram", "phone")):
-        out.append("контакты пустые: кнопка «Заказать» ведёт на site.contact_url из config.json")
     ep = str(data.get("order_endpoint") or "").strip()
+    tg = str(c.get("telegram") or "").strip()
+    if tg and PLACEHOLDER_RE.search(tg):
+        out.append(f"contacts.telegram — заглушка «{tg}»: сайт считает, что контакта нет. Впишите настоящий ник")
+    if not any(str(c.get(k) or "").strip() and not PLACEHOLDER_RE.search(str(c.get(k))) for k in ("telegram", "instagram", "phone")):
+        out.append("контакты пустые: если и в config.json site.contact_url пусто, кнопок «Заказать в Telegram» / «Написать» "
+                   "на сайте нет" + ("" if ep else ", а оформление заказа показывает «Приём заказов скоро откроется»"))
     if ep and not ep.startswith("https://"):
         out.append("order_endpoint должен начинаться с https:// (сайт на GitHub Pages открыт по HTTPS)")
     if "orders_telegram_username" in data and not isinstance(data["orders_telegram_username"], str):
         out.append("orders_telegram_username должен быть текстом в кавычках")
+    # три коротких факта под ценой: список из не больше чем 3 непустых строк ([] — не показывать)
+    if "trust_short" in data:
+        ts = data["trust_short"]
+        if not isinstance(ts, list):
+            out.append("trust_short должен быть списком строк в квадратных скобках: [\"…\", \"…\", \"…\"]")
+        else:
+            if len(ts) > 3:
+                out.append(f"trust_short: строк {len(ts)}, на сайте видны только первые 3")
+            for i, s in enumerate(ts):
+                if not isinstance(s, str) or not s.strip():
+                    out.append(f"trust_short[{i + 1}]: нужна непустая строка в кавычках")
+    # ник бота заказов: без @, 4–32 латинских буквы, цифры или _ (пусто — бота нет)
+    if "orders_bot_username" in data:
+        bot = data["orders_bot_username"]
+        if not isinstance(bot, str):
+            out.append("orders_bot_username должен быть текстом в кавычках (ник бота без @ или \"\")")
+        elif bot.strip() and not BOT_RE.match(bot.strip()):
+            out.append(f"orders_bot_username «{bot}»: нужен ник бота без @ — 4–32 символа: латинские буквы, цифры, _")
     if data.get("_draft"):
         out.append("\"_draft\": true — тексты помечены как черновик (напоминание видно в ?admin=1)")
     return out
