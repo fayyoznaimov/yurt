@@ -122,7 +122,7 @@ def og_texts(site: Path) -> tuple[str, str, str, str]:
     """(название, заголовок, описание, подзаголовок) из content.json; запасное — manifest site и общие слова."""
     c = _read_json(site / "content.json")
     s = (catalog_files.load_manifest(site) or {}).get("site") or {}
-    name = _clean(c.get("name")) or _clean(s.get("name")) or "IPAK"
+    name = _clean(c.get("name")) or _clean(s.get("name")) or "ipakly"
     tagline = _clean(c.get("tagline"))
     title = _clean(c.get("title"))
     if not title and tagline:
@@ -323,7 +323,7 @@ def compact_local(out: Path) -> None:
 
 # ---------- картинка превью ----------
 
-_THREADS = (   # нити знака из site/brand/ipak-logo.svg (viewBox 0 0 64 64); S-кривая развёрнута в C
+_THREADS = (   # нити знака из site/brand/ipakly-logo.svg (viewBox 0 0 64 64); S-кривая развёрнута в C
     (((9, 45), (16, 17), (33, 15), (32, 32)), ((32, 32), (31, 49), (47, 51), (55, 21))),
     (((12.5, 47.5), (19.5, 22), (35, 21), (35.5, 34)), ((35.5, 34), (36, 47), (48.5, 50.5), (56.5, 26))),
 )
@@ -349,7 +349,7 @@ def _font(names: list[str], size: int):
 
 
 def make_og_image(dst: Path | None = None, site: Path | None = None) -> Path:
-    """site/brand/og.png 1200×630: кобальтовый фон, знак-нить и IPAK как в ipak-logo.svg, подзаголовок."""
+    """site/brand/og.png 1200×630: кобальтовый фон, знак-нить и ipakly как в ipakly-logo.svg, подзаголовок."""
     try:
         from PIL import Image, ImageDraw
     except ImportError:
@@ -381,7 +381,7 @@ def make_og_image(dst: Path | None = None, site: Path | None = None) -> Path:
     big, bx, by = 11 * k, 700 * k, -190 * k
     layer(lambda d, f: thread(d, f, _THREADS[0], big, bx, by, 3 * k), 34)
     layer(lambda d, f: thread(d, f, _THREADS[1], big, bx, by, 2 * k), 20)
-    # знак и надпись: геометрия ipak-logo.svg (260×64) в масштабе s
+    # знак и надпись: геометрия ipakly-logo.svg (220×64) в масштабе s
     s, x0, y0 = 3.0 * k, 96 * k, 120 * k
     layer(lambda d, f: thread(d, f, _THREADS[1], s, x0, y0, 1.6 * s), 97)       # stroke-opacity .38
     def mark(d, f):
@@ -391,12 +391,13 @@ def make_og_image(dst: Path | None = None, site: Path | None = None) -> Path:
             d.ellipse((x0 + cx * s - r, y0 + cy * s - r, x0 + cx * s + r, y0 + cy * s + r), fill=f)
     layer(mark, 255)
     word = _font(["TenorSans-Regular.ttf", "BOD_R.TTF", "Didot.ttc", "Bodoni 72.ttc", "georgia.ttf",
-                  "DejaVuSerif.ttf"], round(30 * s))
+                  "DejaVuSerif.ttf"], round(36 * s))
     def wordmark(d, f):
-        x = x0 + 80 * s
-        for ch in name.upper():
-            d.text((x, y0 + 43 * s), ch, font=word, fill=f, anchor="ls")
-            x += word.getlength(ch) + 13 * s
+        # строчными, как в логотипе (ipakly): регистр — как в content.json name, разрядка как у шрифта
+        x = x0 + 78 * s
+        for ch in name:
+            d.text((x, y0 + 44 * s), ch, font=word, fill=f, anchor="ls")
+            x += word.getlength(ch) + 0.5 * s
     layer(wordmark, 255)
     ui = ["GolosText-Regular.ttf", "segoeui.ttf", "DejaVuSans.ttf"]
     ui_light = ["GolosText-Regular.ttf", "segoeuil.ttf", "segoeui.ttf", "DejaVuSans.ttf"]

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#1F3FBF">
-<title>Брендовая одежда из Италии и Турции</title>
+<title>ipakly — брендовая одежда из Италии и Турции</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%231F3FBF'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -114,9 +114,10 @@ img { display: block; max-width: 100%; }
 .mark-svg { display: block; width: 32px; height: 32px; }
 .mark-svg svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .logo { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; min-width: 0; }
-.wordmark { font: 400 22px/1 var(--font-display); letter-spacing: .34em; margin-right: -.34em; white-space: nowrap; }
+/* название строчными (ipakly): своя разрядка шрифта, чуть крупнее прописных — по высоте строчных */
+.wordmark { font: 400 26px/1 var(--font-display); letter-spacing: .02em; white-space: nowrap; padding-bottom: .08em; }
 .logo .tag { display: none; padding-left: 14px; margin-left: 4px; border-left: 1px solid var(--line); font-size: 12px; line-height: 1.25; color: var(--muted); max-width: 22ch; }
-@media (min-width: 900px) { .wordmark { font-size: 25px; } }
+@media (min-width: 900px) { .wordmark { font-size: 29px; } }
 @media (min-width: 1440px) { .site-header .logo .tag { display: block; } }
 
 /* ---------- полоса объявления и шапка ---------- */
@@ -370,6 +371,9 @@ img { display: block; max-width: 100%; }
 .how-wrap { position: relative; display: grid; gap: 36px; padding-top: 64px; padding-bottom: 64px; }
 .how-eyebrow { margin: 0 0 14px; font: 600 12px/1 var(--font-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--acc); }
 .how h2 { margin: 0; font: 400 clamp(28px, 5vw, 48px)/1.08 var(--font-display); letter-spacing: -0.01em; max-width: 13ch; text-wrap: balance; }
+/* «Как заказать» ставит фокус на заголовок (goSteps): рамка — только при управлении с клавиатуры */
+.how h2:focus { outline: none; }
+.how h2:focus-visible { outline: 2px solid var(--acc); outline-offset: 6px; border-radius: 2px; }
 .how-sub { margin: 18px 0 0; font-size: 15px; opacity: .72; max-width: 40ch; }
 .how-sub:empty { display: none; }
 .how-track { position: relative; padding-left: 40px; }
@@ -1065,7 +1069,7 @@ a.pv-brand:hover { color: var(--cobalt); text-decoration: underline; text-underl
   .hdr-contact svg { width: 19px; height: 19px; }
 }
 @media (max-width: 899.98px) { .hdr .logo { flex: none; } }
-@media (max-width: 359.98px) { .toolbar .select select { font-size: 13px; } .hdr { gap: 4px; } .hdr .wordmark { font-size: 19px; letter-spacing: .26em; margin-right: -.26em; } }
+@media (max-width: 359.98px) { .toolbar .select select { font-size: 13px; } .hdr { gap: 4px; } .hdr .wordmark { font-size: 23px; } }
 
 /* ---------- окно товара: выбор размера, количество, «В корзину» ---------- */
 .pv-sizes li.pick { padding: 0; border: 0; background: none; min-width: 0; }
@@ -1276,41 +1280,45 @@ body { background: radial-gradient(1100px 480px at 88% -160px, color-mix(in srgb
    html.mo — движение разрешено (ставит скрипт в <head>); без JS и при «уменьшить движение» всё статично.
    ==================================================================== */
 
-/* ---------- заставка: знак (content.logo_svg) рисуется линией, буквы съезжаются, тонкая полоса — настоящий прогресс ---------- */
+/* ---------- заставка (≈1,2 с): нить знака рисуется, уходит в линию под названием и «прошивает» буквы слева направо;
+   затем занавес поднимается. Тонкая полоса под ними — настоящий прогресс (видна, только если грузится дольше 0,7 с) ---------- */
 .pl, .pl-line { display: none; }
 .intro-full .pl {
   display: grid; place-items: center; position: fixed; inset: 0; z-index: 100;
   background: var(--paper); color: var(--ink);
   box-shadow: 0 40px 80px -40px rgba(20, 26, 46, .35);
 }
-.pl-in { display: grid; justify-items: center; gap: 22px; padding: 24px; text-align: center; }
-.pl-rot { display: block; width: 92px; height: 92px; color: var(--cobalt); }
+.pl-in { display: grid; justify-items: center; gap: 30px; padding: 24px; text-align: center; }
+.pl-lock { display: flex; align-items: center; gap: 14px; }
+.pl-rot { display: block; width: 64px; height: 64px; flex: none; color: var(--cobalt); }
 .pl-mark { display: block; width: 100%; height: 100%; overflow: visible; }
 .pl-mark .d { stroke-dasharray: 1 2; stroke-dashoffset: 0; }   /* пробел длиннее линии: в начале не видно даже точки скругления */
-.mo .pl-mark .d { stroke-dashoffset: 1.02; animation: pl-draw var(--dl, 900ms) var(--ease-in-out) var(--dd, 0ms) forwards; }
+.mo .pl-mark .d { stroke-dashoffset: 1.02; animation: pl-draw var(--dl, 440ms) var(--ease-in-out) var(--dd, 0ms) forwards; }
 .pl-mark .dot { transform-box: fill-box; transform-origin: center; }
-.mo .pl-mark .dot { transform: scale(0); animation: pl-dot 520ms var(--ease-spring) var(--dd, 900ms) forwards; }
+.mo .pl-mark .dot { transform: scale(0); animation: pl-dot 420ms var(--ease-spring) var(--dd, 440ms) forwards; }
 @keyframes pl-dot { to { transform: scale(1); } }
 @keyframes pl-draw { to { stroke-dashoffset: 0; } }
 .mark-img { width: auto; height: 30px; max-width: 160px; object-fit: contain; }
-.pl-word { display: flex; font: 400 32px/1 var(--font-display); letter-spacing: .42em; margin-right: -.42em; white-space: nowrap; }
+/* название и нить под ним открываются одной «шторкой» (clip-path) — кончик нити ведёт буквы; буквы чуть поднимаются */
+.pl-word { position: relative; display: flex; font: 400 46px/1 var(--font-display); letter-spacing: .02em; white-space: nowrap; padding: 0 4px .2em 0; }
+.pl-word::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.5px; border-radius: 2px; background: var(--cobalt); opacity: .55; }
 .pl-word span { display: inline-block; }
-.mo .pl-word span {
-  opacity: 0; transform: translateX(calc((var(--i) - var(--c)) * .45em));
-  animation: pl-letter 900ms var(--ease-out) calc(220ms + var(--i) * 45ms) forwards;
-}
+.mo .pl-word { clip-path: inset(-30% 100% -30% 0); animation: pl-wipe 440ms var(--ease-in-out) 170ms forwards; }
+@keyframes pl-wipe { to { clip-path: inset(-30% -2% -30% 0); } }
+.mo .pl-word span { opacity: 0; transform: translate3d(0, .3em, 0); animation: pl-letter 380ms var(--ease-out) calc(190ms + var(--i) * 34ms) forwards; }
 @keyframes pl-letter { to { opacity: 1; transform: none; } }
+@media (max-width: 359.98px) { .pl-word { font-size: 38px; } .pl-rot { width: 54px; height: 54px; } }
 .pl-foot { display: grid; justify-items: center; gap: 10px; }
-.mo .pl-foot { opacity: 0; animation: pl-fade var(--dur-3) var(--ease-out) 340ms forwards; }
+.mo .pl-foot { opacity: 0; animation: pl-fade var(--dur-3) var(--ease-out) 700ms forwards; }
 @keyframes pl-fade { to { opacity: 1; } }
 .pl-bar { width: min(220px, 60vw); height: 2px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .pl-bar i, .pl-line i { display: block; height: 100%; background: var(--cobalt); transform: scaleX(0); transform-origin: 0 50%; transition: transform 260ms linear; }
 .pl-status { margin: 0; display: flex; gap: 10px; font-size: 13px; color: var(--muted); }
 .pl-pct { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
-/* выход: занавес поднимается, знак и буквы уходят чуть быстрее (параллакс) */
+/* выход: занавес поднимается, знак и название уходят чуть быстрее (параллакс) */
 .pl.done .pl-foot { opacity: 0; transition: opacity var(--dur-2) var(--ease-out); animation: none; }
-.pl.out { transform: translate3d(0, -100%, 0); transition: transform 820ms var(--ease-in-out); pointer-events: none; }
-.pl.out .pl-in { transform: translate3d(0, -60px, 0); opacity: 0; transition: transform 700ms var(--ease-in), opacity 420ms var(--ease-in); }
+.pl.out { transform: translate3d(0, -100%, 0); transition: transform 560ms var(--ease-in-out); pointer-events: none; }
+.pl.out .pl-in { transform: translate3d(0, -48px, 0); opacity: 0; transition: transform 480ms var(--ease-in), opacity 300ms var(--ease-in); }
 .pl.quick { opacity: 0; transition: opacity 160ms linear; pointer-events: none; }
 /* повторный визит на устройстве, ссылка на товар (и быстрый кэш) — только линия сверху */
 .intro-line .pl-line, .intro-none .pl-line, .pl-line.on { display: block; position: fixed; left: 0; right: 0; top: 0; z-index: 101; height: 2px; pointer-events: none; }
@@ -1322,7 +1330,7 @@ body { background: radial-gradient(1100px 480px at 88% -160px, color-mix(in srgb
 .hero-title .w > span { display: inline-block; }
 .mo .hero.pre .hero-title .w > span { transform: translate3d(0, 108%, 0); }
 .mo .hero.pre .hero-text, .mo .hero.pre .hero-cta, .mo .hero.pre .hero-trust, .mo .hero.pre .hero-stats { opacity: 0; transform: translate3d(0, 14px, 0); }
-.mo .hero.pre .hero-art > * { opacity: 0; transform: scale(.96); }
+.mo .hero.pre .hero-art > * { clip-path: inset(100% 0 0 0); }
 .mo .hero.pre .hero-pattern { opacity: 0; }
 .mo .hero.pre .hero-pattern path { stroke-dashoffset: 1.02; }
 .mo .hero.play .hero-title .w > span { transition: transform var(--dur-5) var(--ease-out); transition-delay: calc(var(--ln, 0) * 60ms + 30ms); }
@@ -1330,11 +1338,25 @@ body { background: radial-gradient(1100px 480px at 88% -160px, color-mix(in srgb
 .mo .hero.play .hero-cta { transition: opacity var(--dur-4) var(--ease-out) 260ms, transform var(--dur-4) var(--ease-out) 260ms; }
 .mo .hero.play .hero-trust { transition: opacity var(--dur-4) var(--ease-out) 290ms, transform var(--dur-4) var(--ease-out) 290ms; }
 .mo .hero.play .hero-stats { transition: opacity var(--dur-4) var(--ease-out) 320ms, transform var(--dur-4) var(--ease-out) 320ms; }
-/* плитки героя: и при первом показе, и когда фото приходят позже (повторный визит) */
-.mo .hero.play .hero-art > * { animation: art-in 1.1s var(--ease-out) 100ms both; }
-.mo .hero.play .hero-art > :nth-child(2) { animation-delay: 165ms; }
-.mo .hero.play .hero-art > :nth-child(3) { animation-delay: 230ms; }
-@keyframes art-in { from { opacity: 0; transform: scale(.95); } }
+/* плитки героя: шторка снизу вверх (как фото карточек), и при первом показе, и когда фото приходят позже (повторный визит) */
+.mo .hero.play .hero-art > * { animation: art-in 1s var(--ease-out) 100ms both; }
+.mo .hero.play .hero-art > :nth-child(2) { animation-delay: 190ms; }
+.mo .hero.play .hero-art > :nth-child(3) { animation-delay: 280ms; }
+@keyframes art-in { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }
+/* параллакс при прокрутке (heroScrollFrame): фото внутри плиток отстают от страницы и чуть приближаются, нить фона —
+   медленнее всего. Свойства translate/scale ставятся прямо на 4 элемента (не переменной на героя — та пересчитывала
+   бы стиль всего героя каждый кадр) и отдельны от transform — не спорят с Ken Burns и откликом на касание */
+/* шёлковый отлив: широкая светлая полоса медленно проходит по кобальту раз в 14 с (только transform) */
+.hero::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 70%; pointer-events: none;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, .075) 45%, rgba(255, 255, 255, .11) 50%, rgba(255, 255, 255, .075) 55%, transparent 100%);
+  transform: translate3d(-110%, 0, 0);
+}
+.mo .hero.play::before { animation: silk 14s var(--ease-in-out) 1.2s infinite; }
+.mo .hero.paused::before { animation-play-state: paused; }
+@keyframes silk { 0% { transform: translate3d(-110%, 0, 0); } 42%, 100% { transform: translate3d(160%, 0, 0); } }
+/* цифры героя считаются от нуля (heroCount); ширина зафиксирована по итоговому числу — соседи не сдвигаются */
+.hero-stats b { display: inline-block; }
 .mo .hero.play .hero-pattern { transition: opacity 1s var(--ease-out); }
 .mo .hero.play .hero-pattern path { transition: stroke-dashoffset 2.6s var(--ease-in-out) .15s; }
 .hero-art .art .media img.b { opacity: 0; }
@@ -1343,18 +1365,47 @@ body { background: radial-gradient(1100px 480px at 88% -160px, color-mix(in srgb
 .mo .hero-art .art:nth-child(2) .media img { animation-delay: -6s, 5s; }
 .mo .hero-art .art:nth-child(3) .media img { animation-delay: -12s, 10s; }
 .mo .hero-art .art:nth-child(1) .media img.b { animation-delay: 0s, 1s; }
-.mo .hero.paused .hero-art img, .mo .hero.paused .hero-pattern { animation-play-state: paused; }
+.mo .hero.paused .hero-art img, .mo .hero.paused .hero-pattern, .mo .hero.paused .hero-pattern path { animation-play-state: paused; }
 @keyframes kb { from { transform: scale(1) translate3d(0, 0, 0); } to { transform: scale(1.08) translate3d(-1.6%, -1.2%, 0); } }
 @keyframes xf { 0%, 42% { opacity: 0; } 50%, 92% { opacity: 1; } 100% { opacity: 0; } }
 
 /* ---------- появление при прокрутке: секции главной, карточки, ленты ---------- */
 .mo .rv { opacity: 0; transform: translate3d(0, 22px, 0); }
 .mo .rv.in { opacity: 1; transform: none; transition: opacity var(--dur-4) var(--ease-out), transform var(--dur-4) var(--ease-out); transition-delay: var(--rv-d, 0ms); }
-.mo .card.rv { transform: translate3d(0, 16px, 0); }
-.mo .card.rv.in { transform: none; }
+/* фото вещей везде появляются одинаково — шторкой снизу вверх (clip-path) с лёгким «приближением» снимка, текст —
+   следом. Карточка каталога сама не двигается (сетка не «плывёт»); лесенка по рядам — --rv-d из armReveal */
+.mo .card.rv { opacity: 1; transform: none; }
+.mo .card.rv .media { clip-path: inset(100% 0 0 0); }
+.mo .card.rv .media img { scale: 1.12; }
+.mo .card.rv .info { opacity: 0; transform: translate3d(0, 10px, 0); }
+.mo .card.rv.in .media { clip-path: inset(0); transition: clip-path 820ms var(--ease-out) var(--rv-d, 0ms), transform var(--dur-3) var(--ease-out); }
+.mo .card.rv.in .media img { scale: 1; transition: scale 1.1s var(--ease-out) var(--rv-d, 0ms), opacity var(--dur-4) var(--ease-out), transform var(--dur-4) var(--ease-out); }
+.mo .card.rv.in .info { opacity: 1; transform: none; transition: opacity var(--dur-4) var(--ease-out) calc(var(--rv-d, 0ms) + 160ms), transform var(--dur-4) var(--ease-out) calc(var(--rv-d, 0ms) + 160ms); }
 /* сдвиг только по вертикали: горизонтальный сбил бы точки прилипания (scroll-snap) ленты */
 .mo .rv .rail > *, .mo .rv .tiles > * { opacity: 0; transform: translate3d(0, 18px, 0); }
 .mo .rv.in .rail > *, .mo .rv.in .tiles > * { opacity: 1; transform: none; transition: opacity var(--dur-4) var(--ease-out), transform var(--dur-4) var(--ease-out); transition-delay: calc(var(--k, 8) * 55ms + 100ms); }
+.mo .rv .rail > * .media, .mo .rv .tiles > * .media, .mo .gsec.rv .gt-media { clip-path: inset(100% 0 0 0); }
+.mo .rv.in .rail > * .media, .mo .rv.in .tiles > * .media, .mo .gsec.rv.in .gt-media { clip-path: inset(0); transition: clip-path 820ms var(--ease-out) calc(var(--k, 0) * 55ms + 100ms), transform var(--dur-2) var(--ease-out); }
+/* заголовки секций: короткая шёлковая нить над заголовком протягивается слева направо при появлении */
+.sec-head h2 { position: relative; }
+.sec-head h2::before { content: ""; position: absolute; left: 0; top: -14px; width: 36px; height: 1.5px; border-radius: 2px; background: var(--cobalt); opacity: .7; transform-origin: 0 50%; }
+.mo .rv .sec-head h2::before { transform: scaleX(0); }
+.mo .rv.in .sec-head h2::before { transform: scaleX(1); transition: transform 900ms var(--ease-in-out) calc(var(--rv-d, 0ms) + 180ms); }
+/* «Бренды» на главной: бесконечная лента знаков (при «уменьшить движение» — прежняя сетка). Пауза — наведение, фокус,
+   лента за экраном (.off — ставит IntersectionObserver) */
+.bmarq { position: relative; overflow: hidden; padding: 6px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent); }
+.bm-track { display: flex; width: max-content; animation: marq var(--marq, 70s) linear infinite; }
+.bmarq:hover .bm-track, .bmarq:focus-within .bm-track, .bmarq.off .bm-track { animation-play-state: paused; }
+@keyframes marq { to { transform: translate3d(-50%, 0, 0); } }
+.bm-track a { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; flex: none; min-width: 150px; height: 96px; padding: 0 30px; color: var(--ink); text-decoration: none; }
+.bm-track .bm-mark { height: 28px; max-width: 150px; }
+.bm-track .bm-mark img { opacity: .78; transition: opacity var(--dur-2) var(--ease-out); }
+.bm-track .bword { font-size: clamp(15px, 1.8vw, 18px); white-space: nowrap; }
+.bm-track .bm-n { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bm-track a:hover .bm-mark img, .bm-track a:focus-visible .bm-mark img { opacity: 1; }
+.bm-track a:hover .bword { color: var(--cobalt); }
+@media (min-width: 900px) { .bm-track a { height: 112px; padding: 0 40px; } .bm-track .bm-mark { height: 32px; } }
 .rail > :nth-child(1), .tiles > :nth-child(1) { --k: 0; } .rail > :nth-child(2), .tiles > :nth-child(2) { --k: 1; }
 .rail > :nth-child(3), .tiles > :nth-child(3) { --k: 2; } .rail > :nth-child(4), .tiles > :nth-child(4) { --k: 3; }
 .rail > :nth-child(5), .tiles > :nth-child(5) { --k: 4; } .rail > :nth-child(6), .tiles > :nth-child(6) { --k: 5; }
@@ -1386,10 +1437,11 @@ body { background: radial-gradient(1100px 480px at 88% -160px, color-mix(in srgb
   transform: translate3d(-100%, 0, 0);
 }
 .card .media.ld::after, .mcard .media.ld::after, .tile .media.ld::after { background: linear-gradient(100deg, transparent 25%, var(--shimmer-w) 50%, transparent 75%); }
-.mo .media.ld::after, .mo .sk .media::after { animation: shimmer 1.4s var(--ease-in-out) infinite; }
+/* блик проходит за 1,1 с и делает паузу — спокойнее, чем непрерывное мерцание */
+.mo .media.ld::after, .mo .sk .media::after { animation: shimmer 1.8s var(--ease-in-out) infinite; }
 .mo .rv:not(.in) .media.ld::after { animation: none; }       /* за экраном не мерцаем */
 .mo .media.ld > img:not(.alt):not(.b) { opacity: 0; }
-@keyframes shimmer { to { transform: translate3d(100%, 0, 0); } }
+@keyframes shimmer { 0% { transform: translate3d(-100%, 0, 0); } 62%, 100% { transform: translate3d(100%, 0, 0); } }
 /* тёмная тема: вещи сняты на белом — у мест под фото белая подложка (снимки — как карточки на тёмном, а не дыры).
    Пока фото грузится или его нет — тёмная заглушка, чтобы экран не мигал белыми прямоугольниками */
 @media (prefers-color-scheme: dark) {
@@ -1404,6 +1456,15 @@ body { background: radial-gradient(1100px 480px at 88% -160px, color-mix(in srgb
 /* ---------- мелочи: нажатия, чипы, код, ленты ---------- */
 .btn, .order, .hdr-contact, .filters-btn, .chip, .pill, .icon-btn, .rail-btn, .code, .pv-share, .linkbtn { transition: transform var(--dur-1) var(--ease-out); }
 .btn:active:not(:disabled), a.order:active, .hdr-contact:active, .filters-btn:active, .chip:active:not(:disabled), .pill:active, .icon-btn:active, .rail-btn:active:not(:disabled) { transform: scale(.96); }
+/* «магнитные» главные кнопки (только мышь): кнопка тянется к курсору на несколько пикселей — свойство translate
+   (не transform: нажатие scale(.96) остаётся своим), ставит bindMagnet */
+.btn.mag { transition: transform var(--dur-1) var(--ease-out), translate var(--dur-4) var(--ease-out), background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out); }
+.btn.mag.pull { transition: transform var(--dur-1) var(--ease-out), translate var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out); }
+/* «В корзину»: снимок вещи летит дугой к значку корзины (flyToCart: внешний слой — по горизонтали, внутренний — по
+   вертикали со своей кривой, вместе — дуга; только transform и opacity) */
+.fly { position: fixed; left: 0; top: 0; z-index: 95; pointer-events: none; }
+.fly-y { display: block; }
+.fly img { display: block; width: 64px; height: 64px; object-fit: cover; border-radius: 12px; background: #fff; box-shadow: 0 14px 30px -12px rgba(20, 26, 46, .55); }
 .mo .chip[aria-pressed="true"] { animation: chip-on var(--dur-3) var(--ease-spring); }
 @keyframes chip-on { from { transform: scale(.9); } }
 .mo .code.done svg { animation: pop var(--dur-3) var(--ease-spring); }
@@ -1780,8 +1841,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 <!-- заставка (первый визит с устройства) и линия загрузки (повторный, ссылка на товар) — режим выбирает скрипт в <head> -->
 <div class="pl" id="pl">
   <div class="pl-in">
-    <span class="pl-rot" id="plMark" aria-hidden="true"></span>
-    <div class="pl-word" id="plWord" aria-hidden="true"></div>
+    <div class="pl-lock">
+      <span class="pl-rot" id="plMark" aria-hidden="true"></span>
+      <div class="pl-word" id="plWord" aria-hidden="true"></div>
+    </div>
     <div class="pl-foot">
       <div class="pl-bar" aria-hidden="true"><i id="plBar"></i></div>
       <p class="pl-status"><span role="status" aria-live="polite" id="plStatus">Загружаем каталог…</span><span class="pl-pct" id="plPct" aria-hidden="true">0%</span></p>
@@ -1807,6 +1870,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       <a href="#/catalog?type=обувь" data-nav="type:обувь" class="opt">Обувь</a>
       <a href="#/catalog?type=аксессуары" data-nav="type:аксессуары" class="opt">Аксессуары</a>
       <a href="#/catalog?disc=50" data-nav="sale" class="sale">Скидки от 50%</a>
+      <a href="#/" data-goto="steps" aria-controls="steps">Как заказать</a>
     </nav>
     <form class="hsearch" id="hSearch" role="search">
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -1863,7 +1927,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
           <h1 class="hero-title" id="heroTitle"></h1>
           <p class="hero-text" id="heroText"></p>
           <div class="hero-cta">
-            <a class="btn lg" href="#/catalog">Смотреть каталог</a>
+            <a class="btn lg mag" href="#/catalog">Смотреть каталог</a>
           </div>
           <p class="hero-trust" id="heroTrust"></p>
           <ul class="hero-stats" id="heroStats" aria-label="Каталог в цифрах"></ul>
@@ -1926,7 +1990,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       <div class="wrap how-wrap">
         <div class="how-head">
           <p class="how-eyebrow">Как мы работаем</p>
-          <h2 id="stepsTitle">От корзины до&nbsp;Ташкента — четыре шага</h2>
+          <h2 id="stepsTitle" tabindex="-1">От корзины до&nbsp;Ташкента — четыре шага</h2>
           <p class="how-sub" id="stepsSub"></p>
         </div>
         <div class="how-track">
@@ -1941,7 +2005,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
             <h3>Остались вопросы?</h3>
             <p>Напишите нам в&nbsp;Telegram — ответим на&nbsp;всё.</p>
           </div>
-          <a class="btn lg how-tg" id="stepsCta" href="#/contacts" target="_blank" rel="noopener noreferrer"><span class="how-ping" aria-hidden="true"></span>Написать в Telegram</a>
+          <a class="btn lg how-tg mag" id="stepsCta" href="#/contacts" target="_blank" rel="noopener noreferrer"><span class="how-ping" aria-hidden="true"></span>Написать в Telegram</a>
         </div>
       </div>
     </section>
@@ -2497,7 +2561,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function logoHtml(withTag) {
     var tag = siteTagline();
     var name = siteName();
-    return markHtml() + (name ? '<span class="wordmark">' + esc(name.toUpperCase()) + "</span>" : "") +
+    return markHtml() + (name ? '<span class="wordmark">' + esc(name) + "</span>" : "") +
       (withTag && tag ? '<span class="tag">' + esc(tag) + "</span>" : "");
   }
 
@@ -2515,7 +2579,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     eb.textContent = ebt;
     eb.hidden = !ebt;
     heroPrep();
-    PL.setWord(name.toUpperCase());
+    PL.setWord(name);
     PL.setMark(logoSvg());
     applyFavicon();
     $("heroText").textContent = C("hero_text");
@@ -2694,14 +2758,14 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function renderDrawer() {
     var links = function (arr) {
       return "<ul>" + arr.map(function (x) {
-        return '<li><a href="' + esc(x[1]) + '"' + (x[3] ? ' target="_blank" rel="noopener noreferrer"' : "") + "><span>" + esc(x[0]) + "</span>" +
+        return '<li><a href="' + esc(x[1]) + '"' + (x[3] ? ' target="_blank" rel="noopener noreferrer"' : "") + (x[4] ? " " + x[4] : "") + "><span>" + esc(x[0]) + "</span>" +
           (x[2] != null ? '<span class="n">' + esc(x[2]) + "</span>" : "") + "</a></li>";
       }).join("") + "</ul>";
     };
     // поиск — первым (на телефоне он есть и значком в шапке)
     var html = '<form class="dsearch" role="search" data-dsearch><input type="search" name="q" placeholder="Например: Boss, кроссовки, белая рубашка" aria-label="Поиск по каталогу" autocomplete="off" spellcheck="false" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-expanded="false" data-sugg>' +
       '<button class="btn" type="submit">Найти</button></form>';
-    html += links([["Главная", "#/"], ["Корзина", "#/cart", cart.length ? cartPieces() + " шт." : null], ["Весь каталог", "#/catalog", READY ? fmt(availCount()) : null],
+    html += links([["Главная", "#/"], ["Как заказать", "#/", null, false, 'data-goto="steps"'], ["Корзина", "#/cart", cart.length ? cartPieces() + " шт." : null], ["Весь каталог", "#/catalog", READY ? fmt(availCount()) : null],
       ["Мужское", catHref({ gender: "men" })], ["Женское", catHref({ gender: "women" })], ["Новинки", "#/catalog?sort=new"],
       ["Скидки от 50%", "#/catalog?disc=50"], ["Бренды", "#/brands", READY ? brandCounts().length : null]]);
     if (READY) {
@@ -2771,9 +2835,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       root.classList.add("done");
       setTimeout(function () {
         root.classList.add("out");
-        setTimeout(runReveal, 140);          // герой начинает, пока занавес ещё поднимается
-        setTimeout(hideRoot, 900);
-      }, 180);
+        setTimeout(runReveal, 110);          // герой начинает, пока занавес ещё поднимается
+        setTimeout(hideRoot, 620);
+      }, 40);
     }
     function exitLine() {
       if (!line) return;
@@ -2844,7 +2908,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         if (keepLine) line.classList.add("on"); else exitLine();
         if (mode === "full" && !gone) {
           if (ms < 300) { exitFull(true); return; }                    // кэш и быстрый разбор — заставку не показываем
-          var wait = Math.max(0, L.t0 + 450 - performance.now());      // дать нити начать рисоваться, но не дольше
+          var wait = Math.max(0, L.t0 + 620 - performance.now());      // нить и название успевают прорисоваться: всё ≈ 1,2 с
           setTimeout(function () { exitFull(false); }, wait);
         } else runReveal();
       },
@@ -2862,13 +2926,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         Array.prototype.forEach.call(lines, function (n, k) {
           n.setAttribute("pathLength", "1");
           n.setAttribute("class", "d");
-          n.style.setProperty("--dd", k * 140 + "ms");
-          n.style.setProperty("--dl", "800ms");
-          t = k * 140 + 800;
+          n.style.setProperty("--dd", k * 90 + "ms");
+          n.style.setProperty("--dl", "440ms");
+          t = k * 90 + 440;
         });
         Array.prototype.forEach.call(el.querySelectorAll("circle"), function (n, k) {
           n.setAttribute("class", "dot");
-          n.style.setProperty("--dd", t - 120 + k * 110 + "ms");
+          n.style.setProperty("--dd", t - 140 + k * 80 + "ms");
         });
       },
       setWord: function (name) {
@@ -5032,6 +5096,80 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     });
     hero.classList.add("play");
     hero.classList.remove("pre");
+    heroCount(320);
+  }
+  // цифры героя («55 112 вещей», «24 бренда», «до 80%») считаются от нуля вместе с появлением строки.
+  // Ширина каждой цифры заранее — по итоговому значению (соседи не сдвигаются); итог ставится и таймером —
+  // в фоновой вкладке (кадры не идут) цифры не останутся на нуле
+  var heroCounted = false;
+  function heroCount(delay) {
+    var bs = $("heroStats").querySelectorAll("b[data-n]");
+    if (heroCounted || !bs.length || !MO || !heroPlayed) return;
+    heroCounted = true;
+    if (document.hidden) return;                      // вкладка в фоне — сразу итоговые цифры (они уже в разметке)
+    var dur = 1300, items = Array.prototype.map.call(bs, function (b) {
+      var o = { b: b, n: +b.getAttribute("data-n"), pre: b.getAttribute("data-pre") || "", suf: b.getAttribute("data-suf") || "" };
+      b.style.minWidth = b.getBoundingClientRect().width + "px";
+      b.textContent = o.pre + "0" + o.suf;
+      return o;
+    });
+    var put = function (k) { items.forEach(function (o) { o.b.textContent = o.pre + fmt(Math.round(o.n * k)) + o.suf; }); };
+    var t0 = 0, end = setTimeout(function () { put(1); t0 = -1; }, delay + dur + 400);
+    setTimeout(function () {
+      requestAnimationFrame(function tick(now) {
+        if (t0 < 0) return;
+        if (!t0) t0 = now;
+        var k = Math.min(1, (now - t0) / dur);
+        put(1 - Math.pow(1 - k, 4));                      // как --ease-out: быстро в начале, мягко в конце
+        if (k < 1) requestAnimationFrame(tick); else clearTimeout(end);
+      });
+    }, delay);
+  }
+  // параллакс фото героя: пока герой на экране — слушаем прокрутку, раз в кадр ставим --hp (0..1)
+  var heroRaf = 0;
+  function heroScrollFrame() {
+    heroRaf = 0;
+    var h = $("hero"), r = h.getBoundingClientRect(), k = Math.max(0, Math.min(1, -r.top / Math.max(1, r.height)));
+    if (k === heroK) return;
+    heroK = k;
+    h.querySelectorAll(".art .media").forEach(function (m) { m.style.translate = "0 " + (k * 9).toFixed(2) + "%"; m.style.scale = (1 + k * 0.05).toFixed(4); });
+    h.querySelector(".hero-pattern").style.translate = "0 " + (k * 70).toFixed(1) + "px";
+  }
+  var heroK = 0;
+  function heroScroll() { if (!heroRaf) heroRaf = requestAnimationFrame(heroScrollFrame); }
+  // «магнит» главных кнопок (.btn.mag) — только мышь: кнопка смещается к курсору (до 6×4 px), уходит курсор —
+  // мягко возвращается. Центр кнопки запоминается при входе (смещение не влияет на расчёт)
+  function bindMagnet() {
+    if (!MO || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    var cur = null, raf = 0, mx = 0, my = 0;
+    var release = function () {
+      if (!cur) return;
+      cur.classList.remove("pull");
+      cur.style.translate = "";
+      cur = null;
+    };
+    var frame = function () {
+      raf = 0;
+      if (!cur) return;
+      var r = cur._mr, dx = (mx - r.cx) / r.w, dy = (my - r.cy) / r.h;
+      cur.style.translate = (Math.max(-1, Math.min(1, dx * 2)) * 6).toFixed(1) + "px " + (Math.max(-1, Math.min(1, dy * 2)) * 4).toFixed(1) + "px";
+    };
+    document.addEventListener("pointermove", function (e) {
+      if (e.pointerType !== "mouse") return;
+      var b = e.target.closest ? e.target.closest(".btn.mag") : null;
+      if (b !== cur) {
+        release();
+        if (!b) return;
+        var r = b.getBoundingClientRect();
+        b._mr = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, h: r.height };
+        b.classList.add("pull");
+        cur = b;
+      }
+      mx = e.clientX; my = e.clientY;
+      if (!raf) raf = requestAnimationFrame(frame);
+    }, { passive: true });
+    window.addEventListener("scroll", release, { passive: true });
+    document.addEventListener("pointerleave", release);
   }
   // второе фото в плитках героя (медленная смена ракурса) — только после показа и в простое
   function heroSecond() {
@@ -5077,9 +5215,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var pool = withPhoto(products);
     var t = totals();
     var bc = brandCounts();
-    $("heroStats").innerHTML = (t ? "<li><b>" + fmt(t.count) + "</b><span>" + plural(t.count, ["вещь", "вещи", "вещей"]) + " в наличии</span></li>" : "") +
-      "<li><b>" + bc.length + "</b><span>" + plural(bc.length, ["бренд", "бренда", "брендов"]) + "</span></li>" +
-      (t && discShown(t.discount_max) > 0 ? "<li><b>до " + discShown(t.discount_max) + "%</b><span>скидки</span></li>" : "");
+    $("heroStats").innerHTML = (t ? '<li><b data-n="' + t.count + '">' + fmt(t.count) + "</b><span>" + plural(t.count, ["вещь", "вещи", "вещей"]) + " в наличии</span></li>" : "") +
+      '<li><b data-n="' + bc.length + '">' + bc.length + "</b><span>" + plural(bc.length, ["бренд", "бренда", "брендов"]) + "</span></li>" +
+      (t && discShown(t.discount_max) > 0 ? '<li><b data-n="' + discShown(t.discount_max) + '" data-pre="до " data-suf="%">до ' + discShown(t.discount_max) + "%</b><span>скидки</span></li>" : "");
+    if (heroPlayed && curView === "home" && inView($("heroStats"))) heroCount(0);     // цифры пришли после показа героя
 
     // герой: три вещи крупных брендов разных категорий, своё фото в приоритете; меняются раз в день
     var top = new Set(bc.slice(0, 15).map(function (b) { return b[0]; }));
@@ -5518,13 +5657,62 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var p = pv.cur;
     if (!p || p._out) return;
     if (sizeMissing(p)) { needSize(); return; }
-    if (!addToCart(p, pv.size, pv.qty)) return;
+    var from = MO ? flyFrom() : null;      // откуда полетит снимок — до перерисовки панели (кнопка исчезнет)
+    if (!addToCart(p, pv.size, pv.qty, !!from)) return;
     pv.added = true;
     pv.qty = 1;                            // следующая вещь — снова по одной
     renderPvActions(p);
+    if (from && !flyToCart(p, from, function () { updateCartBadge(true); })) updateCartBadge(true);
     var go = els.pvInfo.querySelector(".pv-go");
     if (go) go.focus({ preventScroll: true });
     toast("Добавлено в корзину: {code}", p._brand + (pv.size ? ", " + pv.size : ""));
+  }
+
+  // «В корзину»: снимок вещи (фото галереи, если оно на экране, иначе кнопка) летит дугой к значку корзины в шапке;
+  // если значок закрыт окном товара (телефон) — к кнопке «Оформить заказ» в окне. Долетел — значок подпрыгивает.
+  // Внешний слой едет по горизонтали, внутренний — по вертикали с «замахом» (своя кривая): вместе — дуга
+  function flyFrom() {
+    var slide = els.pvTrack.children[pv.idx], img = slide && slide.querySelector("img");
+    if (img && inView(img)) {
+      var r = img.getBoundingClientRect(), s = Math.min(r.width, r.height) * 0.5;
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, s: Math.max(1, Math.min(2.4, s / 64)) };
+    }
+    var b = els.pvInfo.querySelector("[data-add]");
+    if (!b || !inView(b)) return null;
+    var q = b.getBoundingClientRect();
+    return { x: q.left + q.width / 2, y: q.top + q.height / 2, s: 0.8 };
+  }
+  function flyToCart(p, from, done) {
+    var src = goodImgs(p)[0], cart = $("cartBtn"), to = null;
+    if (!src || !MO || document.hidden || typeof document.body.animate !== "function") return false;
+    var cr = cart.getBoundingClientRect();
+    if (cr.width && cr.bottom > 0) {
+      var hit = document.elementFromPoint(cr.left + cr.width / 2, cr.top + cr.height / 2);
+      if (!hit || !els.pvBox.contains(hit)) to = cr;
+    }
+    if (!to) { var go = els.pvInfo.querySelector(".pv-go"); if (go && inView(go)) to = go.getBoundingClientRect(); }
+    if (!to) return false;
+    var tx = to.left + to.width / 2, ty = to.top + to.height / 2, dur = 760, fin = false;
+    var outer = document.createElement("div");
+    outer.className = "fly";
+    outer.setAttribute("aria-hidden", "true");
+    outer.innerHTML = '<span class="fly-y"><img alt="" src="' + esc(cardSrc(src)) + '" decoding="async" referrerpolicy="no-referrer"></span>';
+    document.body.appendChild(outer);
+    var inner = outer.firstChild;
+    var end = function () {
+      if (fin) return;
+      fin = true;
+      outer.remove();
+      done();
+    };
+    outer.animate([{ transform: "translate3d(" + (from.x - 32) + "px,0,0)" }, { transform: "translate3d(" + (tx - 32) + "px,0,0)" }],
+      { duration: dur, easing: "cubic-bezier(.3, 0, .25, 1)", fill: "forwards" });
+    inner.animate([{ transform: "translate3d(0," + (from.y - 32) + "px,0) scale(" + from.s + ")" }, { transform: "translate3d(0," + (ty - 32) + "px,0) scale(.3)" }],
+      { duration: dur, easing: "cubic-bezier(.6, -0.3, .74, .05)", fill: "forwards" });
+    var fade = inner.firstChild.animate([{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0.2 }], { duration: dur, fill: "forwards" });
+    fade.onfinish = end;
+    setTimeout(end, dur + 400);            // кадры не идут (фоновая вкладка) — не оставлять снимок на экране
+    return true;
   }
 
   function pvSlidesHtml(p, imgs, from) {
@@ -6361,7 +6549,48 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     markNav(r);
     setTitleFor(name);
     if (changed) window.scrollTo(0, 0);
+    if (gotoSteps && name === "home") { gotoSteps = false; scrollToSteps(false); }   // «Как заказать» с другой страницы
+    else if (name !== "home") gotoSteps = false;
     tgSoon();                              // кнопки Telegram («Назад», главная) — под новую страницу
+  }
+
+  // «Как заказать» (шапка, меню): раздел «Как мы работаем» на главной. На главной — плавная прокрутка; с другой
+  // страницы — переход на главную, и новая страница сразу открывается на разделе (смена страниц — тот же мягкий
+  // переход View Transitions, без долгой прокрутки через всю главную). Фокус — на заголовок раздела.
+  var gotoSteps = false;
+  function goSteps() {
+    if (curView === "home" && !routeVT) {
+      if (pv.cur) requestClose();
+      scrollToSteps(true);
+      return;
+    }
+    gotoSteps = true;
+    location.hash = "#/";
+  }
+  function scrollToSteps(smooth) {
+    var sec = $("steps"), h = $("stepsTitle");
+    if (!sec || sec.hidden) return;
+    sec.scrollIntoView({ block: "start", behavior: smooth && MO ? "smooth" : "auto" });
+    if (h) h.focus({ preventScroll: true });
+    if (!smooth) holdSteps(sec);
+  }
+  // главная могла открыться впервые: ленты и плитки над разделом дорисовываются в простое и сдвигают его вниз —
+  // до первого действия покупателя (колесо, касание, клавиша) или 4 с раздел держится на месте
+  function holdSteps(sec) {
+    if (!window.ResizeObserver) return;
+    var t0 = performance.now(), ro = null;
+    var stop = function () {
+      if (ro) ro.disconnect();
+      ro = null;
+      ["wheel", "touchstart", "keydown", "pointerdown"].forEach(function (ev) { window.removeEventListener(ev, stop, true); });
+    };
+    ["wheel", "touchstart", "keydown", "pointerdown"].forEach(function (ev) { window.addEventListener(ev, stop, { capture: true, passive: true }); });
+    ro = new ResizeObserver(function () {
+      if (performance.now() - t0 > 4000 || curView !== "home") { stop(); return; }
+      var top = sec.getBoundingClientRect().top, want = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      if (Math.abs(top - want) > 2) window.scrollBy(0, top - want);
+    });
+    ro.observe(els.viewHome);
   }
 
   // адрес изменился (Назад/Вперёд, ссылка, ручная правка): страница, фильтры и открытый товар — по адресу.
@@ -6439,9 +6668,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       // ссылка внутри сайта: сначала убрать запись меню («назад»), потом перейти — в истории не остаётся лишнего шага
       if (href.charAt(0) === "#" && !a.target && !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button)) {
         e.preventDefault();
+        var go = a.getAttribute("data-goto");
         requestCloseDrawer(function () {
           closeDrawer(false);
-          if (href !== (location.hash || "#/")) location.hash = href;
+          // «Как заказать»: главная, раздел «Как мы работаем». Чуть позже — после «назад» браузер ещё возвращает
+          // прокрутку той записи и сбросил бы переход к разделу
+          if (go) setTimeout(goSteps, 60);
+          else if (href !== (location.hash || "#/")) location.hash = href;
         });
         return;
       }
@@ -6464,6 +6697,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     bindSuggest();
     // карточки в лентах, фото героя: открыть товар поверх страницы
     document.addEventListener("click", function (e) {
+      var g = !e.defaultPrevented && e.target.closest && e.target.closest("a[data-goto]");
+      if (g && !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button)) { e.preventDefault(); goSteps(); return; }
       var a = e.target.closest && e.target.closest("[data-open]");
       if (a && READY && !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button)) {
         var p = byId.get(a.getAttribute("data-open"));
@@ -6692,6 +6927,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (!w) return false;
     var name = w.getAttribute("data-brand") || "";
     badLogos.add(name);
+    var m = w.closest(".bm-track a");
+    if (m) {        // лента брендов: знак не пришёл — название буквами (и в копии ленты тоже)
+      m.closest(".bm-track").querySelectorAll('.blogo[data-brand="' + (window.CSS && CSS.escape ? CSS.escape(name) : name) + '"]').forEach(function (x) { x.outerHTML = '<span class="bword">' + esc(name) + "</span>"; });
+      return true;
+    }
     var a = w.closest(".bgrid a");
     if (a) { a.classList.remove("has-logo"); w.outerHTML = '<span class="bword">' + esc(name) + "</span>"; var nm = a.querySelector(".bg-name"); if (nm) nm.textContent = nm.textContent.replace(name + " · ", ""); }
     else w.remove();
@@ -6702,13 +6942,33 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var bc = brandCounts(), bg = $("brandGrid");
     bg.classList.remove("sk");
     bg.removeAttribute("aria-busy");
+    $("allBrandsLink").textContent = "Все бренды (" + bc.length + ")";
+    if (MO && bc.length >= 6) { renderBrandMarquee(bg, bc.slice(0, 24)); return; }
+    bg.className = "bgrid";
     bg.innerHTML = bc.slice(0, 24).map(function (b) {
       var logo = brandMark(b[0], "bg-mark");
       return '<a href="' + esc(catHref({ brand: b[0] })) + '"' + (logo ? ' class="has-logo"' : "") + ">" +
         (logo ? logo + '<span class="bg-name">' + esc(b[0]) + " · " + items(b[1]) + "</span>"
           : '<span class="bword">' + esc(b[0]) + "</span><span>" + items(b[1]) + "</span>") + "</a>";
     }).join("");
-    $("allBrandsLink").textContent = "Все бренды (" + bc.length + ")";
+  }
+  // лента брендов: список дважды подряд, дорожка едет на половину своей ширины — шов не виден. Вторая копия скрыта
+  // от экранного диктора и клавиатуры. Скорость — около 3 с на бренд; за экраном лента стоит (.off)
+  var marqIO = null;
+  function renderBrandMarquee(bg, list) {
+    var one = function (b, dup) {
+      var logo = brandMark(b[0], "bm-mark").replace(' loading="lazy"', "");
+      return '<a href="' + esc(catHref({ brand: b[0] })) + '"' + (dup ? ' aria-hidden="true" tabindex="-1"' : "") + ">" +
+        (logo ? logo + '<span class="sr">' + esc(b[0]) + "</span>" : '<span class="bword">' + esc(b[0]) + "</span>") +
+        '<span class="bm-n">' + items(b[1]) + "</span></a>";
+    };
+    bg.className = "bmarq";
+    bg.innerHTML = '<div class="bm-track" style="--marq:' + list.length * 3 + 's">' +
+      list.map(function (b) { return one(b, false); }).join("") + list.map(function (b) { return one(b, true); }).join("") + "</div>";
+    if (!marqIO && "IntersectionObserver" in window) {
+      marqIO = new IntersectionObserver(function (en) { en[0].target.classList.toggle("off", !en[0].isIntersecting); });
+      marqIO.observe(bg);
+    }
   }
   function pvBrandHtml(p) {
     return '<a class="pv-brand" href="' + esc(catHref({ brand: p._brand })) + '" title="Все вещи ' + esc(p._brand) + '">' +
@@ -6775,7 +7035,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return changed;
   }
   function cartWaiting() { return cart.some(function (l) { return lineState(l).st === "wait"; }); }
-  function addToCart(p, size, qty) {
+  // quiet — значок корзины «подпрыгнет» позже (когда долетит снимок вещи, flyToCart)
+  function addToCart(p, size, qty, quiet) {
     size = size || "";
     var line = cart.filter(function (l) { return l.id === p._code && l.size === size; })[0];
     if (line) line.qty = clampQty(line.qty + qty);
@@ -6785,7 +7046,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     }
     saveCart();
     track({ t: "cart", id: p._code, size: size });   // воронка: в корзину
-    updateCartBadge(true);
+    updateCartBadge(!quiet);
     if (curView === "cart") renderCartPage();
     tgHaptic("light");                     // внутри Telegram — лёгкий отклик вибрацией
     tgSoon();
@@ -7958,7 +8219,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   window.addEventListener("hashchange", syncFromUrl);
   // герой за экраном — медленные анимации фото на паузе
   if (MO && "IntersectionObserver" in window) {
-    new IntersectionObserver(function (en) { $("hero").classList.toggle("paused", !en[0].isIntersecting); }).observe($("hero"));
+    new IntersectionObserver(function (en) {
+      var on = en[0].isIntersecting;
+      $("hero").classList.toggle("paused", !on);
+      if (on) { window.addEventListener("scroll", heroScroll, { passive: true }); heroScroll(); }
+      else window.removeEventListener("scroll", heroScroll);
+    }).observe($("hero"));
+    bindMagnet();
   }
   armReveal(document.querySelectorAll(".rv:not(.in)"));
   showView(parseRoute());

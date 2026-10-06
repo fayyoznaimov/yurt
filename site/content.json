@@ -1,7 +1,7 @@
 {
   "_help": "Тексты сайта. Меняйте только то, что справа от двоеточия, в кавычках. Абзацы разделяйте пустой строкой (\\n\\n), строка, которая начинается с «- », становится пунктом списка. Пустое поле \"\" на сайте не показывается. Первый абзац текстов delivery / payment / authenticity виден на главной в блоке «Почему нам доверяют», весь текст — на отдельной странице. После правки: python content.py (или python run.py). Когда тексты готовы, поставьте \"_draft\": false.",
   "_draft": true,
-  "name": "IPAK",
+  "name": "ipakly",
   "tagline": "Брендовая одежда из Италии и Турции",
   "announcement": "Оригинальные вещи из Италии и Турции · Доставка в Ташкент",
   "hero_title": "Итальянские бренды по ценам распродаж",
@@ -75,5 +75,5 @@
     }
   ],
   "logo_svg": "<svg viewBox=\"0 0 64 64\" fill=\"none\" aria-hidden=\"true\"><path d=\"M9 45 C 16 17, 33 15, 32 32 S 47 51, 55 21\" stroke=\"currentColor\" stroke-width=\"3.2\" stroke-linecap=\"round\"/><path d=\"M12.5 47.5 C 19.5 22, 35 21, 35.5 34 S 48.5 50.5, 56.5 26\" stroke=\"currentColor\" stroke-opacity=\".38\" stroke-width=\"1.6\" stroke-linecap=\"round\"/><circle cx=\"9\" cy=\"45\" r=\"3.6\" fill=\"currentColor\"/><circle cx=\"55\" cy=\"21\" r=\"3.6\" fill=\"currentColor\"/></svg>",
-  "logo_file": "brand/ipak-mark.svg"
+  "logo_file": "brand/ipakly-mark.svg"
 }

@@ -714,7 +714,7 @@ class Channel:
         title = title_without_brand(row.get("title"), brand)
         price = int(row.get("price_uzs") or 0)
         # Только наша цена и процент скидки — как на сайте. «Старую цену» не показываем: она была бы вычислена
-        # из процента (цена / (1 − скидка)), а по такой цене IPAK никогда не продавал.
+        # из процента (цена / (1 − скидка)), а по такой цене ipakly никогда не продавал.
         price_line = f"<b>{money(price)} сум</b>"
         try:
             disc = disc_label(row.get("discount_pct") or 0) if 0 < float(row.get("discount_pct") or 0) < 100 else 0
