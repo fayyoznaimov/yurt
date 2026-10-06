@@ -1,7 +1,7 @@
 {
   "_help": "Канал Telegram (channel.py). Пробный план: python channel.py --plan. Отправка — только если в окружении CHANNEL_ENABLED=1, TELEGRAM_BOT_TOKEN и CHANNEL_ID (@ник канала или -100…); личка продавца для предложений — CHANNEL_REVIEW_CHAT_ID (иначе первый id из TELEGRAM_ADMIN_IDS). Пустые ссылки: site_url — из SHOP_URL / PUBLIC_URL (иначе https://fayyoznaimov.github.io/yurt/); mini_app_url — если задан (например https://t.me/<бот>), кнопка «Заказать» открывает товар в Mini App: <mini_app_url>?startapp=p_<КОД>; contact_url — кнопка «Написать нам» (пусто — ник из SELLER_TELEGRAM или site/content.json; нет ника — кнопки нет).",
   "site_url": "",
-  "mini_app_url": "",
+  "mini_app_url": "https://t.me/ipakly_bot",
   "contact_url": "",
   "gates": {
     "_help": "Какие товары годятся в канал: скидка от min_discount %, цена в сумах от price_min_uzs до price_max_uzs, размеров в наличии не меньше min_sizes и среди них ходовой (ranking.py), фото в каталоге не меньше min_photos, из них можно отправить (свой файл site/img/p или фото с разрешённого CDN магазина) не меньше min_sendable_photos.",
