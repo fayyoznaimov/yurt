@@ -31,7 +31,7 @@ yurt-orders): модуль подключается сам (TG_BOT_PLUGINS, по
 yoox, trendyol, akinon, dsmcdn, €, ₺, TL, EUR, TRY, себестоимость, маржа и т. п. — такое не отправляется
 (запись в data/logs/channel_leaks.log).
 
-Состояние — data/channel_state.json (запись атомарная), замок — data/channel.lock (свой, не data/server.lock).
+Состояние — data/channel_state.json (запись атомарная), замок — data/channel.lock (свой; замки заданий каталога не берутся).
 """
 from __future__ import annotations
 
@@ -55,6 +55,7 @@ from urllib.parse import urlsplit
 import requests
 
 import catalog_files as cf
+import img_map
 import ranking
 import sync_state
 import tg_bot
@@ -393,6 +394,7 @@ class Site:
         self.rows: dict[str, dict] = {}
         self._det: dict[int, dict] = {}
         self._admin = None
+        self._imgmap: dict | None = None
         self.legacy = False
         if self.manifest:
             m = self.manifest
@@ -419,7 +421,13 @@ class Site:
 
     def images(self, pid: str) -> list[str]:
         imgs = self.detail(pid).get("images") or (self.rows.get(pid) or {}).get("images") or []
-        return [u for u in imgs if isinstance(u, str) and u]
+        imgs = [u for u in imgs if isinstance(u, str) and u]
+        if any(img_map.is_token(u) for u in imgs):
+            # свой хост фото: в данных сайта токены — исходник (свой файл или CDN магазина) по закрытой карте
+            if self._imgmap is None:
+                self._imgmap = img_map.load_items(img_map.map_path(self.dir.parent / "data"))
+            imgs = img_map.detokenize(imgs, self._imgmap)
+        return imgs
 
     def original_title(self, pid: str) -> str | None:
         """Только исходное название (для ключа дедупликации); остальное из закрытых файлов не берётся."""

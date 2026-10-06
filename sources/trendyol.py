@@ -39,16 +39,33 @@
 Настройки (config.json → source_opts.trendyol):
   brand_slugs          {"Pierre Cardin": "pierre-cardin-x-b122", ...} — обязательно
   max_pages            потолок страниц на один листинг (сайт всё равно не даёт больше 138)
-  pdp_per_run          сколько страниц товаров проверить за запуск (2500)
-  pdp_max_age_hours    через сколько часов перепроверять размеры (72)
+  pdp_per_run          сколько страниц товаров проверить за запуск, не больше (2500)
+  pdp_budget_minutes   и не дольше стольких минут (0 — без ограничения по времени)
+  pdp_hot_hours        «горячие» товары (в заказах и корзинах за 30 дней + первые pdp_hot_top Trendyol-товаров
+                       витрины в порядке «Рекомендуем»; список даёт run.py) перепроверять раз в N часов (3)
+  pdp_warm_hours       остальные товары, которые сейчас на сайте, — раз в N часов (24)
+  pdp_cold_hours       в выдаче, но не на сайте (без размеров, распроданы) — раз в N часов (168 = неделя);
+                       без этой настройки — pdp_max_age_hours (по умолчанию 72, как раньше)
+  pdp_hot_top          сколько первых Trendyol-товаров «Рекомендуем» считать горячими (1000; читает run.py)
   pdp_delay            пауза между страницами товаров у одного потока, с (1.2)
-  pdp_concurrency      сколько потоков проверки (1–2; по умолчанию 2)
+  pdp_concurrency      сколько потоков проверки (1–2; по умолчанию 2; пока идёт ночной обход выдачи — 1)
   listing_delay        [от, до] пауза между страницами листинга, с ([1.0, 2.0])
-  listing_max_age_hours  > 0 — не обходить листинги заново, если полный обход свежее (по умолчанию 0)
+  listing_window       [с, до] — местные часы (TZ), когда обычный запуск может обойти выдачу заново, например [1, 6];
+                       вне окна выдача берётся из data/trendyol_listing.json, даже если ей больше суток
+  listing_min_age_hours  в окне — обходить, только если прошлый обход старше (12)
+  listing_force_hours  вне окна — всё равно обойти, если выдаче больше стольких часов (48; компьютер ночью спал)
+  listing_max_age_hours  без listing_window: > 0 — не обходить листинги заново, если полный обход свежее (0)
   official_only        брать только карточки с бейджем официального продавца (false)
   merchant_ids         белый список id продавцов (необязательно)
   image_size           "1200/1800" — размер картинок CDN; "" — оригинал
   pdp_cache_file / listing_file — другие пути к кэшам (для тестов)
+
+Режим запуска (run.py --trendyol-mode, на сервере — отдельные задания):
+  auto     как раньше: выдача (если пора, см. listing_window) + проверка размеров;
+  listing  только обход выдачи (ночное задание trendyol-listing): data/trendyol_listing.json, размеры не трогает,
+           товаров для сайта не отдаёт (их отдаст следующий запуск pdp);
+  pdp      только проверка размеров по уже сохранённой выдаче (ежечасное задание trendyol-pdp), ярусами
+           hot → warm → cold: сначала устаревшие горячие, потом товары сайта, потом новые и остальные.
 """
 from __future__ import annotations
 
@@ -832,6 +849,68 @@ def _cache_entry(d: dict, official: bool | None, image_size: str) -> dict:
     return e
 
 
+TIER_DEFAULTS = {"hot": 3.0, "warm": 24.0}
+
+
+def tier_hours(so: dict) -> dict[str, float]:
+    """Сроки перепроверки ярусов из source_opts: hot / warm / cold (часы)."""
+    def num(key: str, default: float) -> float:
+        try:
+            v = float(so.get(key, default))
+        except (TypeError, ValueError):
+            v = default
+        return v if v > 0 else default
+    cold_default = num("pdp_max_age_hours", 72.0)
+    return {"hot": num("pdp_hot_hours", TIER_DEFAULTS["hot"]), "warm": num("pdp_warm_hours", TIER_DEFAULTS["warm"]),
+            "cold": num("pdp_cold_hours", cold_default)}
+
+
+def _pdp_plan(items: dict[str, dict], cache: dict, brands: list[str], limit: int, tiers: dict[str, float],
+              hot: set[str] | None = None, warm: set[str] | None = None) -> tuple[list[str], dict]:
+    """Очередь проверки по ярусам. hot — горячие id (заказы, корзины, верх витрины), warm — на сайте сейчас,
+    cold — остальная выдача. Порядок: устаревшие hot (сначала никогда не проверенные, потом самые старые) →
+    устаревшие warm (самые старые первыми) → cold, ни разу не проверенные (бренды × пол по очереди, со скидкой
+    раньше) → устаревшие cold. Возвращает (id по порядку, счётчики по ярусам)."""
+    hot, warm = set(hot or ()), set(warm or ())
+    order = {b: i for i, b in enumerate(brands)}
+    never_disc: dict[tuple, list] = {}
+    never_rest: dict[tuple, list] = {}
+    stale: dict[str, list] = {"hot": [], "warm": [], "cold": []}
+    st = {t: {"total": 0, "fresh": 0, "due": 0} for t in ("hot", "warm", "cold")}
+    st["never"] = 0
+    for cid, rec in items.items():
+        tier = "hot" if cid in hot else "warm" if cid in warm else "cold"
+        st[tier]["total"] += 1
+        e = cache.get(cid)
+        if not e or not e.get("checked_at"):
+            if tier == "cold":
+                bucket = never_disc if rec.get("discount_pct") else never_rest
+                bucket.setdefault((rec["brand"], rec.get("gender") or "?"), []).append(rec)   # бренд × пол по очереди
+                st["never"] += 1
+            else:
+                stale[tier].append(("", cid))           # «никогда» — раньше всех в своём ярусе
+            st[tier]["due"] += 1
+        elif _age_hours(e.get("checked_at")) > tiers[tier]:
+            stale[tier].append((e.get("checked_at") or "", cid))
+            st[tier]["due"] += 1
+        else:
+            st[tier]["fresh"] += 1
+
+    def round_robin(groups: dict[tuple, list]) -> list[str]:
+        for lst in groups.values():   # внутри группы: официальный продавец, потом большая скидка
+            lst.sort(key=lambda r: (not r.get("_official"), -(r.get("discount_pct") or 0)))
+        seqs = [groups[k] for k in sorted(groups, key=lambda k: (order.get(k[0], 99), k[1]))]
+        out, i = [], 0
+        while any(i < len(s) for s in seqs):
+            out += [s[i]["source_item_id"] for s in seqs if i < len(s)]
+            i += 1
+        return out
+
+    queue = ([cid for _, cid in sorted(stale["hot"])] + [cid for _, cid in sorted(stale["warm"])]
+             + round_robin(never_disc) + round_robin(never_rest) + [cid for _, cid in sorted(stale["cold"])])
+    return queue[:max(0, limit)], st
+
+
 def _pdp_queue(items: dict[str, dict], cache: dict, brands: list[str], limit: int, max_age_h: float) -> tuple[list[str], int, int]:
     """Очередь проверки: (id по порядку, сколько никогда не проверялись, сколько устарели)."""
     order = {b: i for i, b in enumerate(brands)}
@@ -862,9 +941,11 @@ def _pdp_queue(items: dict[str, dict], cache: dict, brands: list[str], limit: in
 
 
 def _run_pdp(todo: list[str], items: dict[str, dict], cache: dict, cache_path: Path, delay: float,
-             concurrency: int, image_size: str) -> dict:
-    """Проверяет страницы товаров (1–2 потока), пишет кэш каждые 100 товаров. Останавливается на 403/429."""
-    res = {"done": 0, "in_stock": 0, "zero": 0, "gone": 0, "errors": 0, "blocked": None, "gone_ids": []}
+             concurrency: int, image_size: str, budget_s: float = 0) -> dict:
+    """Проверяет страницы товаров (1–2 потока), пишет кэш каждые 100 товаров. Останавливается на 403/429.
+    budget_s > 0 — новые товары не берутся после стольких секунд (запуск укладывается в своё окно)."""
+    res = {"done": 0, "in_stock": 0, "zero": 0, "gone": 0, "errors": 0, "blocked": None, "gone_ids": [],
+           "budget_hit": False}
     if not todo:
         return res
     lock = threading.Lock()
@@ -879,6 +960,12 @@ def _run_pdp(todo: list[str], items: dict[str, dict], cache: dict, cache_path: P
         while not stop.is_set():
             with lock:
                 if not queue:
+                    return
+                if budget_s and time.time() - t0 >= budget_s:
+                    if not res["budget_hit"]:
+                        res["budget_hit"] = True
+                        print(f"[trendyol] PDP: время запуска ({budget_s / 60:.0f} мин) вышло — "
+                              f"остальные {len(queue)} в следующий раз", flush=True)
                     return
                 cid = queue.pop(0)
             rec = items[cid]
@@ -955,20 +1042,66 @@ def _to_product(rec: dict, e: dict) -> Product:
     return p
 
 
+MODES = ("auto", "listing", "pdp")
+
+
+def _in_window(hour: int, window) -> bool:
+    """Час в окне [с, до) местного времени; окно через полночь ([22, 4]) тоже понимается."""
+    try:
+        a, b = int(window[0]) % 24, int(window[-1]) % 24
+    except (TypeError, ValueError, IndexError):
+        return False
+    return a <= hour < b if a < b else (hour >= a or hour < b) if a != b else True
+
+
+def listing_due(prev: dict, brands: list[str], mode: str, so: dict, hour: int | None = None) -> tuple[bool, str]:
+    """Обходить ли выдачу заново в этом запуске: (да/нет, почему). hour — местный час (для тестов)."""
+    if mode == "listing":
+        return True, "задание обхода выдачи"
+    have = bool(prev.get("items")) and set(brands) <= set(prev.get("brands") or [])
+    if mode == "pdp":
+        return False, "режим pdp — только проверка размеров по сохранённой выдаче"
+    age = _age_hours(prev.get("crawled_at"))
+    if not (have and prev.get("complete")):
+        return True, "полного обхода выдачи ещё нет"
+    window = so.get("listing_window")
+    if window:
+        hour = time.localtime().tm_hour if hour is None else hour
+        min_age = float(so.get("listing_min_age_hours", 12) or 12)
+        force = float(so.get("listing_force_hours", 48) or 48)
+        if _in_window(hour, window) and age >= min_age:
+            return True, f"ночное окно {window[0]}–{window[-1]} ч, прошлый обход {age:.0f} ч назад"
+        if age >= force:
+            return True, f"выдаче {age:.0f} ч — больше {force:g} ч"
+        return False, f"выдача {age:.0f} ч назад; заново — в окне {window[0]}–{window[-1]} ч"
+    max_age = float(so.get("listing_max_age_hours", 0) or 0)
+    if max_age > 0 and age <= max_age:
+        return False, f"полный обход {prev.get('crawled_at')} свежее {max_age:g} ч"
+    return True, "выдача устарела"
+
+
 def fetch(query: Query, **opts) -> list[Product]:
     LAST_RUN.clear()
     so = query.source_opts or {}
+    mode = str(so.get("_mode") or "auto")
+    if mode not in MODES:
+        raise ValueError(f"trendyol: неизвестный режим {mode!r} (auto | listing | pdp)")
     slugs: dict = so.get("brand_slugs") or {}
     official_only = bool(so.get("official_only", False))
     merchant_ids = {str(x) for x in (so.get("merchant_ids") or [])}
     image_size = str(so.get("image_size", "1200/1800") or "")
     pdp_per_run = int(so.get("pdp_per_run", so.get("pdp_limit", 2500)) or 0)
-    pdp_max_age = float(so.get("pdp_max_age_hours", 72) or 72)
+    tiers = tier_hours(so)              # без pdp_*_hours: cold = pdp_max_age_hours (72), warm 24, hot 3
+    budget_s = max(0.0, float(so.get("pdp_budget_minutes", 0) or 0)) * 60
+    hot_ids = {str(x) for x in (so.get("_hot") or ())}
+    warm_ids = {str(x) for x in (so.get("_warm") or ())}
     pdp_delay = max(0.5, float(so.get("pdp_delay", 1.2) or 1.2))
     pdp_conc = int(so.get("pdp_concurrency", 2) or 1)
+    if so.get("_listing_running") and pdp_conc > 1:
+        print("[trendyol] сейчас идёт ночной обход выдачи — проверяю размеры в 1 поток")
+        pdp_conc = 1
     ld = so.get("listing_delay") or [1.0, 2.0]
     listing_delay = (max(1.0, float(ld[0])), max(1.0, float(ld[-1])))
-    listing_max_age = float(so.get("listing_max_age_hours", 0) or 0)
     cache_path = Path(so.get("pdp_cache_file") or PDP_CACHE_FILE)
     listing_path = Path(so.get("listing_file") or LISTING_FILE)
 
@@ -986,19 +1119,20 @@ def fetch(query: Query, **opts) -> list[Product]:
     prev = _load_json(listing_path, {}) or {}
     prev_items: dict = prev.get("items") or {}
     t0 = time.time()
-    reuse = (listing_max_age > 0 and prev.get("complete") and _age_hours(prev.get("crawled_at")) <= listing_max_age
-             and set(brands) <= set(prev.get("brands") or []))
+    crawl_now, why = listing_due(prev, brands, mode, so)
+    if mode == "pdp" and not prev_items:
+        raise RuntimeError("нет сохранённой выдачи Trendyol (data/trendyol_listing.json) — проверять нечего; "
+                           "дождитесь ночного обхода (задание trendyol-listing) или запустите его вручную")
     complete, reason, blocked = True, "", False
-    if reuse:
+    if not crawl_now:
         items = {k: v for k, v in prev_items.items() if v.get("brand") in brands}
-        print(f"[trendyol] листинги не обхожу: полный обход {prev.get('crawled_at')} свежее "
-              f"{listing_max_age:g} ч — {len(items)} товаров")
-        brand_stats = prev.get("brand_stats") or {}
+        print(f"[trendyol] выдачу не обхожу ({why}): беру сохранённую от {prev.get('crawled_at')} — {len(items)} товаров")
     else:
+        print(f"[trendyol] обхожу выдачу: {why}")
         client = _Client(listing_delay)
         crawl = _Crawl(client, query, image_size, official_only, merchant_ids)
         crawl.cat_map = dict(prev.get("cat_map") or {})
-        brand_stats = {}
+        brand_stats: dict = {}
         try:
             for brand in brands:
                 m = _SLUG_RE.match(str(slugs[brand]).strip())
@@ -1054,12 +1188,24 @@ def fetch(query: Query, **opts) -> list[Product]:
                                   "brand_stats": brand_stats, "capped": crawl.capped, "cat_map": crawl.cat_map,
                                   "items": {**keep_other, **items}})
 
-    # ---- 2. размеры со страниц товаров ----
+    if mode == "listing":
+        # только выдача: товары для сайта отдаст следующий запуск проверки размеров (pdp) — по новой выдаче
+        LAST_RUN.update(no_new_data=True, listing={"items": len(items), "complete": complete, "reason": reason,
+                                                    "seconds": round(time.time() - t0)})
+        if not complete:
+            print(f"[trendyol] выдача собрана не полностью ({reason}); прошлые записи сохранены")
+        return []
+
+    # ---- 2. размеры со страниц товаров (ярусы hot → warm → cold) ----
     cache: dict = _load_json(cache_path, {}) or {}
-    todo, n_never, n_stale = _pdp_queue(items, cache, brands, 0 if blocked else pdp_per_run, pdp_max_age)
-    print(f"[trendyol] проверка размеров: никогда не проверялись {n_never}, устарели (> {pdp_max_age:g} ч) {n_stale}; "
-          f"в этот запуск {len(todo)} (потоков {pdp_conc}, пауза {pdp_delay:g} с)", flush=True)
-    res = _run_pdp(todo, items, cache, cache_path, pdp_delay, pdp_conc, image_size)
+    todo, plan = _pdp_plan(items, cache, brands, 0 if blocked else pdp_per_run, tiers, hot_ids, warm_ids)
+    print(f"[trendyol] проверка размеров: горячих {plan['hot']['total']} (пора {plan['hot']['due']}, раз в "
+          f"{tiers['hot']:g} ч), на сайте {plan['warm']['total']} (пора {plan['warm']['due']}, раз в {tiers['warm']:g} ч), "
+          f"остальных {plan['cold']['total']} (ни разу не проверены {plan['never']}, пора {plan['cold']['due']}, раз в "
+          f"{tiers['cold']:g} ч); в этот запуск до {len(todo)}"
+          + (f" и не дольше {budget_s / 60:.0f} мин" if budget_s else "")
+          + f" (потоков {pdp_conc}, пауза {pdp_delay:g} с)", flush=True)
+    res = _run_pdp(todo, items, cache, cache_path, pdp_delay, pdp_conc, image_size, budget_s)
     if res["blocked"]:
         print(f"[trendyol] {res['blocked']} — проверка размеров остановлена")
         LAST_RUN.setdefault("reason", f"проверка размеров остановлена: {res['blocked']}")
@@ -1094,6 +1240,11 @@ def fetch(query: Query, **opts) -> list[Product]:
         s["verified"] += 1
         out.append(p)
     gone = set(res["gone_ids"]) | {cid for cid, r in items.items() if r.get("in_stock") is False}
+    # товары сайта, у которых последняя проверка (в любой запуск) — «размеров нет» или страница удалена
+    for cid in (hot_ids | warm_ids) & set(items):
+        e = cache.get(cid) or {}
+        if e.get("checked_at") and (e.get("gone") or not e.get("sizes")):
+            gone.add(cid)
     LAST_RUN["gone_ids"] = sorted(gone)
     if not complete:
         LAST_RUN.update(partial=True, reason=reason)
@@ -1102,8 +1253,13 @@ def fetch(query: Query, **opts) -> list[Product]:
     print("[trendyol] по брендам (в каталоге / с размерами / распродано / ещё не проверено):")
     for (b, g), s in sorted(per.items()):
         print(f"[trendyol]   {b[:18]:<18} {g:<6} {s['listed']:>6} / {s['verified']:>6} / {s['zero']:>5} / {s['unchecked']:>6}")
+    _, fresh = _pdp_plan(items, cache, brands, 0, tiers, hot_ids, warm_ids)
+    print("[trendyol] свежесть размеров: " + ", ".join(
+        f"{name} {fresh[t]['fresh']}/{fresh[t]['total']} свежее {tiers[t]:g} ч"
+        for t, name in (("hot", "горячие"), ("warm", "на сайте"), ("cold", "остальные"))))
     LAST_RUN["stats"] = {"listed": len(items), "returned": len(out), "unchecked": total_unchecked,
-                         "pdp": {k: v for k, v in res.items() if k != "gone_ids"}, "runs_left": runs_left}
+                         "pdp": {k: v for k, v in res.items() if k != "gone_ids"}, "runs_left": runs_left,
+                         "tiers": {t: fresh[t] for t in ("hot", "warm", "cold")}}
     print(f"[trendyol] итого: в каталоге {len(items)}, отдаю с проверенными размерами {len(out)}, "
           f"ещё не проверено {total_unchecked}"
           + (f" — при {pdp_per_run} за запуск это ещё ~{runs_left} запусков" if runs_left else ""))

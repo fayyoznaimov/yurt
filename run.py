@@ -5,6 +5,15 @@
     python run.py --offline                # не ходить на сайты, пересчитать из data/raw_*.json
     python run.py --only pcardin_tr --accept-drop   # принять резкое падение числа товаров (распродажа кончилась)
 
+Сервер (server/yurt-run.sh) разносит сбор и сборку сайта по отдельным заданиям:
+    python run.py --collect-only --only pcardin_tr,cacharel_tr          # только собрать в data/raw_*.json
+    python run.py --collect-only --only trendyol --trendyol-mode pdp    # проверка размеров Trendyol по ярусам
+    python run.py --collect-only --only trendyol --trendyol-mode listing  # ночной обход выдачи Trendyol
+    python run.py --offline --if-changed     # собрать сайт, только если данные источников / config.json изменились
+--collect-only не берёт общий замок data/run.lock (сбор идёт часами и не должен держать сборку сайта): у каждого
+источника свой замок data/collect_<источник>.lock, сайт и data/state.json он не трогает. Сборку делает
+run.py --offline — она видит новые data/raw_*.json и их итог (распроданные) по data/raw_*.meta.json.
+
 Каждый запуск сравнивается с прошлым (sync_state.py, data/state.json): распроданные товары ещё
 sync.keep_sold_out_days дней видны на сайте с пометкой «Нет в наличии», закончившиеся размеры
 показываются зачёркнутыми (sizes_out), что изменилось — в data/changes/. Если источник упал или его
@@ -23,11 +32,12 @@ import shutil
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import catalog_files
 import describe
+import img_map
 import ranking
 import sizes_norm
 import sync_state
@@ -60,8 +70,10 @@ ADMIN_FIELDS = ("source", "source_item_id", "url", "title_original", "category_o
 SYNC_DEFAULTS = {"keep_sold_out_days": 3, "auto_deploy": False, "every_hours": 6,
                  "max_drop_pct": 50, "verify_limit": 120, "carry_days": 7}
 STATUS_RU = {"ok": "обновлён", "partial": "собран не полностью", "stale": "НЕ ОБНОВИЛСЯ — прошлые данные",
-             "nodata": "новых данных нет — прошлые",
+             "nodata": "новых данных нет — прошлые", "busy": "занят другим заданием — прошлые данные",
              "failed": "ошибка, данных нет", "raw": "из data/raw (не собирался)"}
+HOT_DAYS = 30            # «горячие» товары Trendyol: из заказов и корзин за столько дней (+ верх «Рекомендуем»)
+VOLATILE_KEYS = ("fetched_at",)   # поля строки источника, которые меняются каждый сбор и сайт не меняют
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -108,7 +120,7 @@ def meta_path(source: str) -> Path:
 
 
 def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: set[str] | None = None,
-            accept_drop: bool = False) -> tuple[list[dict], dict]:
+            accept_drop: bool = False, extra: dict | None = None) -> tuple[list[dict], dict]:
     """Запускает один адаптер. Ошибка одного источника не роняет остальные и не стирает его товары.
 
     Возвращает (строки, info). info["status"]: ok — собрано; partial — собрано не всё (блокировка посреди
@@ -122,6 +134,8 @@ def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: 
     module_name, opts, _country = ADAPTERS[source]
     f = filters_for(product_source(source), cfg)
     so = dict(cfg.get("source_opts", {}).get(source, {}))
+    so.update(extra or {})               # служебное от вызывающего: режим Trendyol, горячие id, свой хост фото…
+    hot = {str(x) for x in (so.get("_hot") or ())}
     by_prev = {str(r["source_item_id"]): r for r in prev_rows}
     if source == "yoox_import" and watch:   # чтобы адаптер мог сказать, пропал ли товар из новых файлов YOOX
         so["_watch"] = {i: {k: by_prev[i].get(k) for k in ("brand", "gender", "price_now", "fetched_at")}
@@ -174,10 +188,14 @@ def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: 
     verify = getattr(module, "verify", None)
     if callable(verify):
         info["absence_means_gone"] = False          # распроданы только подтверждённые
-        missing = [by_prev[i] for i in sorted(watch) if i not in by_new and i in by_prev]
-        unsized = [by_new[i] for i in sorted(watch)
+        order = sorted(watch, key=lambda i: (i not in hot, i))      # горячие (заказы, корзины, верх витрины) — первыми
+        missing = [by_prev[i] for i in order if i not in by_new and i in by_prev]
+        unsized = [by_new[i] for i in order
                    if i in by_new and not by_new[i].get("sizes") and (by_prev.get(i) or {}).get("sizes")]
-        limit = int(sc["verify_limit"] or 0)
+        try:
+            limit = int(so.get("verify_limit", sc["verify_limit"]) or 0)    # source_opts.<источник>.verify_limit
+        except (TypeError, ValueError):
+            limit = int(sc["verify_limit"] or 0)
         todo = (missing + unsized)[:limit]
         if todo:
             print(f"[{source}] перепроверяю по ссылкам {len(todo)} товаров с сайта "
@@ -223,8 +241,12 @@ def collect(source: str, cfg: dict, prev_rows: list[dict] | None = None, watch: 
     if not info["absence_means_gone"]:
         # товары с сайта, которых нет в выдаче и распродажа которых не подтверждена, — оставляем как были,
         # но не дольше sync.carry_days с последнего раза, когда их видели
+        try:
+            carry = float(so.get("carry_days", sc["carry_days"]))           # source_opts.<источник>.carry_days
+        except (TypeError, ValueError):
+            carry = float(sc["carry_days"])
         for i in watch:
-            if i not in by_new and i not in gone_ids and i in by_prev                     and _age_days(by_prev[i].get("fetched_at")) <= float(sc["carry_days"]):
+            if i not in by_new and i not in gone_ids and i in by_prev and _age_days(by_prev[i].get("fetched_at")) <= carry:
                 by_new[i] = by_prev[i]
                 info["carried"] += 1
     if partial:
@@ -268,6 +290,31 @@ def load_raw(source: str) -> list[dict]:
     except ValueError as e:
         print(f"[{source}] data/raw_{source}.json не читается ({e}) — считаю пустым")
         return []
+
+
+def load_raw_consistent(source: str) -> tuple[list[dict], str | None, dict]:
+    """(строки, sha1 файла, meta) для сборки — из одного и того же содержимого файла. Сбор идёт отдельным заданием и
+    может как раз переписывать raw и meta: если meta не про этот файл, читаем ещё раз (до 3 попыток)."""
+    p = raw_path(source)
+    data, sha, meta = b"", None, {}
+    for attempt in range(3):
+        meta = sync_state.read_json(meta_path(source), {})
+        meta = meta if isinstance(meta, dict) else {}
+        try:
+            data = p.read_bytes()
+        except OSError:
+            return [], None, meta
+        sha = hashlib.sha1(data).hexdigest()
+        if not meta or meta.get("raw_sha1") in (None, sha):
+            break
+        if attempt < 2:
+            time.sleep(0.5)
+    try:
+        rows = json.loads(data.decode("utf-8")) if data else []
+    except ValueError as e:
+        print(f"[{source}] data/raw_{source}.json не читается ({e}) — считаю пустым")
+        rows = []
+    return (rows if isinstance(rows, list) else []), sha, meta
 
 
 def write_raw(source: str, rows: list[dict]) -> None:
@@ -534,6 +581,17 @@ def publish_images(code: str, images: list[str], used: set[str]) -> list[str]:
     return out
 
 
+_TOKMAP: dict | None = None
+
+
+def _token_map() -> dict:
+    """Карта своего хоста фото (data/img_map.json) — один раз за запуск."""
+    global _TOKMAP
+    if _TOKMAP is None:
+        _TOKMAP = img_map.load_items(img_map.map_path(DATA))
+    return _TOKMAP
+
+
 def keep_published_images(images: list[str], used: set[str]) -> list[str]:
     """Фото карточки распроданного товара (уже лежат в site/img/p): не удалять и не ссылаться на пропавшие.
     Ссылки прошлой сборки на прежние имена (<код>-<n>.jpg) переводятся на новые."""
@@ -541,6 +599,13 @@ def keep_published_images(images: list[str], used: set[str]) -> list[str]:
     folder = SITE / PUB_IMG
     for img in images or []:
         if img.startswith(("http://", "https://", "//")):
+            out.append(img)
+            continue
+        if img_map.is_token(img):         # снимок со своего хоста фото: токен; его файл в img/p (если есть) — нужен
+            rec = _token_map().get(img)
+            src = rec[0] if rec else ""
+            if src.startswith(PUB_IMG + "/") and (folder / src.split("/")[-1]).is_file():
+                used.add(src.split("/")[-1])
             out.append(img)
             continue
         if not img.startswith(PUB_IMG + "/"):
@@ -623,6 +688,184 @@ def previous_site():
     return pub, adm
 
 
+# ---------- отдельные задания сервера: сбор без сборки, сборка только при изменениях ----------
+
+def content_fp(rows: list[dict]) -> str:
+    """Отпечаток данных источника без полей, которые меняются каждый сбор (fetched_at): если он тот же —
+    сайт из-за этого источника пересобирать незачем."""
+    clean = sorted((json.dumps({k: v for k, v in r.items() if k not in VOLATILE_KEYS}, ensure_ascii=False,
+                               sort_keys=True) for r in rows))
+    h = hashlib.sha1()
+    for line in clean:
+        h.update(line.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def config_sha(path: Path) -> str | None:
+    return sync_state.file_sha1(path)
+
+
+def sources_changed(cfg: dict, state: dict, config_path: Path) -> list[str]:
+    """Что изменилось с прошлой сборки сайта: источники (data/raw_*.json — по содержимому, без fetched_at) и
+    config.json. Пусто — пересобирать сайт незачем."""
+    out = []
+    if (state.get("build") or {}).get("config_sha1") != config_sha(config_path):
+        out.append("config.json")
+    for s in cfg["sources"]:
+        rec = state["sources"].get(product_source(s)) or {}
+        sha = sync_state.file_sha1(raw_path(s))
+        if not sha or sha == rec.get("raw_sha1"):
+            continue
+        if rec.get("content_fp") and rec["content_fp"] == content_fp(load_raw(s)):
+            continue                                       # поменялось только время сбора
+        out.append(s)
+    return out
+
+
+def orders_db_path() -> Path:
+    p = os.environ.get("ORDERS_DB_PATH")
+    return Path(p) if p else DATA / "orders" / "orders.sqlite"
+
+
+def demand_ids(state: dict, source: str, days: float = HOT_DAYS, db: Path | None = None) -> set[str]:
+    """id товаров источника (в магазине) из заказов и корзин Mini App за days дней (data/orders/orders.sqlite,
+    только чтение). Базы нет (компьютер продавца, GitHub Actions) — пусто."""
+    import sqlite3
+    db = db or orders_db_path()
+    if not db.is_file():
+        return set()
+    by_pid = {pid: e for pid, e in state["items"].items() if isinstance(e, dict)}
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+    out: set[str] = set()
+
+    def take(items) -> None:
+        for it in items if isinstance(items, list) else []:
+            if not isinstance(it, dict):
+                continue
+            if it.get("source") == source and it.get("source_item_id"):
+                out.add(str(it["source_item_id"]))
+                continue
+            e = by_pid.get(str(it.get("id") or ""))
+            if e and e.get("source") == source and e.get("item_id"):
+                out.add(str(e["item_id"]))
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error as e:
+        print(f"[{source}] база заказов не открылась ({e}) — горячие только по витрине")
+        return out
+    try:
+        for sql in ("SELECT items_json FROM orders WHERE created_at >= ?", "SELECT items_json FROM carts WHERE updated_at >= ?"):
+            try:
+                for (raw,) in con.execute(sql, (cutoff,)):
+                    try:
+                        take(json.loads(raw or "[]"))
+                    except ValueError:
+                        continue
+            except sqlite3.Error:
+                continue                                   # старая база без таблицы carts
+    finally:
+        con.close()
+    return out
+
+
+def hot_ids(cfg: dict, state: dict, source: str = "trendyol") -> set[str]:
+    """«Горячие» товары источника: в заказах и корзинах за HOT_DAYS дней + первые pdp_hot_top товаров этого источника
+    в порядке «Рекомендуем» (столбец r каталога сайта). Перепроверяются чаще всех (source_opts.trendyol.pdp_hot_hours)."""
+    so = (cfg.get("source_opts") or {}).get(source) or {}
+    out = demand_ids(state, source)
+    n_demand = len(out)
+    try:
+        top = int(so.get("pdp_hot_top", 1000) or 0)
+    except (TypeError, ValueError):
+        top = 1000
+    ranked = 0
+    if top > 0:
+        try:
+            ranks = catalog_files.PublicCatalog(SITE).ranks()
+        except (OSError, ValueError, KeyError, TypeError, IndexError):
+            ranks = {}
+        items = state["items"]
+        for pid in sorted(ranks, key=lambda p: -ranks[p]):
+            e = items.get(pid) or {}
+            if e.get("source") == source and e.get("on_site") and e.get("in_stock", True) and e.get("item_id"):
+                out.add(str(e["item_id"]))
+                ranked += 1
+                if ranked >= top:
+                    break
+    print(f"[{source}] горячие товары: {len(out)} (из заказов и корзин {n_demand}, верх «Рекомендуем» {ranked})")
+    return out
+
+
+def collect_lock_name(source: str, extra: dict) -> str:
+    return "trendyol-listing" if source == "trendyol" and extra.get("_mode") == "listing" else source
+
+
+def lock_busy(name: str) -> bool:
+    lk = sync_state.Lock(DATA / f"collect_{name}.lock", "проверка", max_age_s=12 * 3600)
+    try:
+        if lk.try_acquire():
+            lk.release()
+            return False
+    except sync_state.LockStuck:
+        pass
+    return True
+
+
+def source_extras(source: str, cfg: dict, state: dict, trendyol_mode: str = "auto") -> dict:
+    """Служебные настройки адаптеру от run.py (ключи на «_»): режим Trendyol, горячие и «на сайте» id, свой хост фото."""
+    extra: dict = {}
+    if source == "trendyol":
+        extra["_mode"] = trendyol_mode
+        if trendyol_mode != "listing":
+            extra["_warm"] = sync_state.watched(state, "trendyol")
+            extra["_hot"] = hot_ids(cfg, state, "trendyol")
+            if lock_busy("trendyol-listing"):
+                extra["_listing_running"] = True
+                if trendyol_mode == "auto":
+                    extra["_mode"] = "pdp"                 # выдачу сейчас обходит ночное задание — берём сохранённую
+    if source == "yoox_import" and img_map.settings(cfg)["base"]:
+        extra["_own_img_host"] = True                      # фото YOOX отдаёт свой хост по просмотрам — не скачиваем
+    return extra
+
+
+def collect_locked(source: str, cfg: dict, prev_rows: list[dict], watch: set[str], accept_drop: bool,
+                   extra: dict) -> tuple[list[dict], dict]:
+    """collect() под замком источника data/collect_<источник>.lock: одно и то же не собирают два задания сразу.
+    Занят — прошлые данные (status busy), сбор пропускается."""
+    name = collect_lock_name(source, extra)
+    lk = sync_state.Lock(DATA / f"collect_{name}.lock", f"run.py сбор {name}", max_age_s=12 * 3600)
+    try:
+        got = lk.try_acquire()
+    except sync_state.LockStuck as e:
+        print(f"[{source}] {e}")
+        got = False
+    if not got:
+        o = lk.info()
+        print(f"[{source}] сбор {name} уже идёт (pid {o.get('pid')}, с {o.get('started')}) — пропускаю, данные прошлые")
+        return prev_rows, {"status": "busy", "note": f"идёт другое задание ({o.get('what') or '?'})", "gone_ids": [],
+                           "absence_means_gone": False, "verified": 0, "carried": 0}
+    try:
+        return collect(source, cfg, prev_rows, watch, accept_drop, extra)
+    finally:
+        lk.release()
+
+
+def collect_only(cfg: dict, sources: set[str], args) -> int:
+    """Только сбор (без сборки сайта и без run.lock): data/raw_<источник>.json + .meta.json. Память сайта
+    (data/state.json) читается, но не пишется — её обновит сборка run.py --offline."""
+    state = sync_state.load(DATA)
+    order = [s for s in cfg["sources"] if s in sources] + sorted(s for s in sources if s not in cfg["sources"])
+    for s in order:
+        t0 = time.time()
+        extra = source_extras(s, cfg, state, args.trendyol_mode)
+        _, info = collect_locked(s, cfg, load_raw(s), sync_state.watched(state, product_source(s)),
+                                 args.accept_drop, extra)
+        print(f"[{s}] сбор: {STATUS_RU.get(info['status'], info['status'])}"
+              + (f" ({info.get('note')})" if info.get("note") else "") + f", {time.time() - t0:.0f} с", flush=True)
+    return 0
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="код источника из sources/__init__.py; несколько — через запятую")
@@ -630,6 +873,12 @@ def main() -> None:
     ap.add_argument("--accept-drop", action="store_true",
                     help="принять резкое падение числа товаров у источника (распродажа правда закончилась)")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--collect-only", action="store_true",
+                    help="только собрать источники (--only) в data/raw_*.json, сайт не собирать (сервер: отдельные задания)")
+    ap.add_argument("--trendyol-mode", choices=("auto", "listing", "pdp"), default="auto",
+                    help="Trendyol: auto — как раньше; listing — только обход выдачи; pdp — только проверка размеров")
+    ap.add_argument("--if-changed", action="store_true",
+                    help="с --offline: собирать сайт, только если данные источников или config.json изменились")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
@@ -639,6 +888,10 @@ def main() -> None:
     unknown = sources - set(ADAPTERS)
     if unknown:
         raise SystemExit(f"Неизвестные источники: {', '.join(sorted(unknown))}. Есть: {', '.join(ADAPTERS)}")
+    if args.collect_only:
+        if args.offline:
+            raise SystemExit("--collect-only и --offline вместе не имеют смысла")
+        raise SystemExit(collect_only(cfg, sources, args))
 
     # два run.py одновременно испортили бы state.json и файлы сайта — второй ждёт первого
     lock = sync_state.Lock(DATA / "run.lock", "run.py " + " ".join(sys.argv[1:]), max_age_s=4 * 3600)
@@ -655,6 +908,13 @@ def main() -> None:
 
 def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
     state = sync_state.load(DATA)
+    config_path = Path(getattr(args, "config", None) or ROOT / "config.json")
+    if args.offline and getattr(args, "if_changed", False):
+        what = sources_changed(cfg, state, config_path)
+        if not what:
+            print("Данные источников и config.json не менялись с прошлой сборки — сайт не пересобираю.")
+            return
+        print("Изменилось с прошлой сборки: " + ", ".join(what))
     rows: list[dict] = []
     src_info: dict[str, dict] = {}       # по коду источника в товаре (yoox, trendyol, …)
     for s in cfg["sources"]:
@@ -663,19 +923,20 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
             saved = compact_raw(s, state)
             if saved > 0:
                 print(f"[{s}] data/raw_{s}.json переписан без отступов: меньше на {saved / 1e6:.1f} МБ")
-        prev = load_raw(s)
+        prev, sha, meta = load_raw_consistent(s)
         if s in sources and not args.offline:
-            got, info = collect(s, cfg, prev, sync_state.watched(state, psrc), args.accept_drop)
+            got, info = collect_locked(s, cfg, prev, sync_state.watched(state, psrc), args.accept_drop,
+                                       source_extras(s, cfg, state, getattr(args, "trendyol_mode", "auto")))
             info["changed"] = info["status"] in ("ok", "partial")
+            # ok/partial — collect() только что записал raw; иначе строки — прошлые (из того, что прочитали выше)
+            info["raw_sha1"] = sync_state.file_sha1(raw_path(s)) if info["changed"] else sha
         else:
             got = prev
-            info = {"status": "raw", "note": "", "gone_ids": [], "absence_means_gone": False}
-            sha = sync_state.file_sha1(raw_path(s))
+            info = {"status": "raw", "note": "", "gone_ids": [], "absence_means_gone": False, "raw_sha1": sha}
             last = (state["sources"].get(psrc) or {}).get("raw_sha1")
             # данные источника поменялись с прошлой сборки (собраны другим запуском или правлены руками)?
             info["changed"] = bool(sha and last and sha != last)
             if info["changed"]:
-                meta = sync_state.read_json(meta_path(s), {})
                 if meta.get("raw_sha1") == sha:          # файл записан run.py — верим его выводам
                     info["absence_means_gone"] = bool(meta.get("absence_means_gone"))
                     info["gone_ids"] = list(meta.get("gone_ids") or [])
@@ -684,6 +945,7 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
         info["gone_ids"] = set(info.get("gone_ids") or [])
         info["present"] = {str(r["source_item_id"]): r for r in got}
         info["adapter"] = s
+        info["content_fp"] = content_fp(got)
         src_info[psrc] = info
         rows += got
 
@@ -798,15 +1060,23 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
     # Каталог частями: site/data/ (манифест, индекс, подробности; см. catalog_files.py), закрытое — site/admin/.
     # При ≤ catalog_files.LEGACY_MAX товаров дополнительно products.js / products.json / products-admin.js
     # целиком (index.html двойным щелчком); больше — products.js только с оглавлением частей.
+    # Свой хост фото (IMG_BASE в окружении или config.json → images.base): в публичных данных вместо адресов фото —
+    # непрозрачные токены (img_map.py), карта токен → исходный адрес — только в data/img_map.json (не публикуется).
     SITE.mkdir(exist_ok=True)
-    layout = catalog_files.write_site(SITE, public_summary, cfg.get("site", {}), public, admin)
+    img = img_map.Tokenizer.from_settings(img_map.settings(cfg), DATA)
+    if img:
+        print(f"Фото: свой хост {img.base} — в данных сайта токены вместо адресов магазинов")
+    layout = catalog_files.write_site(SITE, public_summary, cfg.get("site", {}), public, admin, img=img)
 
     # память о запуске: после файлов сайта, чтобы при сбое состояние не убежало вперёд сайта
     for s, i in src_info.items():
         rec = state["sources"].setdefault(s, {})
-        rec.update(raw_sha1=sync_state.file_sha1(raw_path(i["adapter"])), status=i["status"], note=i.get("note") or "")
+        # отпечаток именно того файла, из которого собран сайт (сбор другим заданием мог уже записать новый)
+        rec.update(raw_sha1=i.get("raw_sha1") or sync_state.file_sha1(raw_path(i["adapter"])), status=i["status"],
+                   note=i.get("note") or "", content_fp=i.get("content_fp"))
         if i["status"] in ("ok", "partial"):
             rec["collected_at"] = i.get("collected_at")
+    state["build"] = {"config_sha1": config_sha(config_path), "at": sync_state.iso(sync_state.now_utc())}
     sync_state.save(DATA, state)
     changes_file = None
     if not changes["baseline"] and (sync_state.any_changes(changes)

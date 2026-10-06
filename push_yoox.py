@@ -191,7 +191,8 @@ def cmd_migrate(s: dict, args) -> int:
     for cmd in filter(None, steps):
         if subprocess.run(cmd).returncode != 0:
             raise SystemExit("Перенос не удался (python push_yoox.py --check).")
-    print("Перенесено. Первый сбор на сервере: sudo systemctl start yurt-job@update.service")
+    print("Перенесено. Первый сбор на сервере (не дожидаясь таймеров): "
+          "sudo systemctl start --no-block yurt-turkey-akinon.service yurt-trendyol-listing.service")
     return 0
 
 

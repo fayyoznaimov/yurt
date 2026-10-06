@@ -1,4 +1,6 @@
-# Одно задание каталога: yurt-job@update / @yoox / @fx / @cleanup (server/yurt-run.sh <задание>).
+# Одно задание каталога: yurt-job@yoox / @fx / @cleanup / @update (server/yurt-run.sh <задание>).
+# Турция — свои службы с другими сроками: yurt-turkey-akinon, yurt-trendyol-pdp, yurt-trendyol-listing.
+# yurt-job@update (всё одним run.py) — только вручную при выключенных таймерах Турции; таймера у него нет.
 # @USER@ и @APP@ подставляет server/setup.sh.
 [Unit]
 Description=yurt: задание %i

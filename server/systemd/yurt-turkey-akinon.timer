@@ -1,0 +1,12 @@
+# Pierre Cardin + Cacharel: каждый час в :05 (распроданное и закончившиеся размеры — на сайте через ~1 ч).
+[Unit]
+Description=yurt: Pierre Cardin и Cacharel каждый час
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+RandomizedDelaySec=3min
+Persistent=false
+Unit=yurt-turkey-akinon.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+# Trendyol: обход выдачи каждую ночь в 01:10 по Ташкенту (окно source_opts.trendyol.listing_window [1, 6]).
+[Unit]
+Description=yurt: Trendyol — обход выдачи в 01:10 (Ташкент)
+
+[Timer]
+OnCalendar=*-*-* 01:10:00 Asia/Tashkent
+RandomizedDelaySec=5min
+Persistent=true
+Unit=yurt-trendyol-listing.service
+
+[Install]
+WantedBy=timers.target

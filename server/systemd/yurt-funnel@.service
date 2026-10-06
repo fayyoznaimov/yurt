@@ -8,7 +8,7 @@
 # Сначала посмотрите пробно (ничего не шлёт и не пишет):
 #   sudo -u yurt bash -c 'set -a; . /etc/yurt/yurt.env; cd /opt/yurt/app && $YURT_PYTHON funnel.py --digest --dry'
 # Кнопки ответов (анкета, «Всё отлично») обрабатывает бот внутри yurt-orders — опроса Telegram здесь нет.
-# Замки — свои (data/funnel-<задание>.lock), общий data/server.lock не берётся.
+# Замки — свои (data/funnel-<задание>.lock), замки заданий каталога не берутся.
 # @USER@ и @APP@ подставляет server/setup.sh.
 [Unit]
 Description=yurt: воронка — %i

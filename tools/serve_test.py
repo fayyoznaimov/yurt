@@ -37,6 +37,10 @@
     /__events, /__carts — что пришло (у событий — пометка pii, если в пачке есть имя/телефон/cid/данные Telegram),
     ?clear=1 — очистить; /__mode их тоже очищает;
   * /__log — какие фото запрашивались (хост и путь), /__log?clear=1 — очистить.
+  * --imgtok — как будто включён свой хост фото (IMG_BASE, img_map.py): в частях каталога и products.* адреса фото
+    заменяются токенами (16 знаков, из хэша адреса), в манифест добавляется "img": {"base": "/__imgh", …}; сайт сам
+    строит адреса /__imgh/p/<токен>.<160|480|960>.webp, а этот сервер отвечает на них своим фото из site/img/p или
+    заглушкой (как img_api.py, но без скачивания). В /__log у таких запросов host = "imgh" и ширина w.
 
 Слушает только 127.0.0.1. Файлы site/ не меняет. Нужен только Python 3.10+ (без пакетов).
 """
@@ -74,7 +78,9 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
 PLACEHOLDER = (b'<svg xmlns="http://www.w3.org/2000/svg" width="464" height="591" viewBox="0 0 464 591">'
                b'<rect width="464" height="591" fill="#d9dbe0"/><path d="M182 250h100v90H182z" fill="#b9bcc4"/></svg>')
 
-OPT = {"port": 8800, "img": "path", "placeholder": False, "dead": [], "delay_data": 0, "delay_img": 0}
+OPT = {"port": 8800, "img": "path", "placeholder": False, "dead": [], "delay_data": 0, "delay_img": 0, "imgtok": False}
+IMGH = "/__imgh"                                  # база «своего хоста фото» в режиме --imgtok
+IMGH_RE = re.compile(r"^/__imgh/p/([a-z2-7]{16})\.(\d{2,4})\.webp$")
 STATE = {"endpoint": False, "bot": "", "tg": "", "fail": False, "orders": [], "attempts": 0, "events": [], "carts": []}
 # в событиях воронки не должно быть персональных данных: такие ключи (на любой глубине) — пометка pii в /__events
 PII_KEYS = {"name", "phone", "telegram", "cid", "customer", "tg_init_data", "initdata", "user", "username", "email"}
@@ -138,6 +144,88 @@ def unwrap(text: str) -> tuple[str, str, str]:
     return "", text, ""
 
 
+# ---------------------------------------------------------------- режим --imgtok (свой хост фото)
+
+def fake_token(url: str) -> str:
+    """Токен как у img_map (16 знаков [a-z2-7]), но из хэша адреса: секрета здесь нет и не нужно."""
+    import base64
+    return base64.b32encode(hashlib.md5(url.encode("utf-8")).digest()[:10]).decode("ascii").lower()
+
+
+def img_info() -> dict:
+    return {"base": IMGH, "w": [160, 480, 960], "full": 960, "fmt": "webp"}
+
+
+def tok_list(urls) -> list:
+    return [fake_token(u) for u in urls or [] if isinstance(u, str) and u]
+
+
+def tok_manifest(m: dict) -> dict:
+    m["img"] = img_info()
+    return m
+
+
+def tok_index(sh: dict, man: dict) -> dict:
+    """Часть индекса: первое фото (ipd/ip + im + imgsuf/is) → токен в im, префиксы пустые."""
+    pre = sh.get("ipd") or (man.get("dict") or {}).get("imgpre") or [None]
+    suf = (man.get("dict") or {}).get("imgsuf") or [None]
+    n = sh.get("n", 0)
+    im = []
+    for i in range(n):
+        if sh["ni"][i]:
+            im.append(fake_token((pre[sh["ip"][i]] or "") + sh["im"][i] + (suf[sh["is"][i]] or "")))
+        else:
+            im.append("")
+    sh["ipd"], sh["ip"], sh["im"], sh["is"] = [None], [0] * n, im, [0] * n
+    return sh
+
+
+def tok_detail(obj: dict) -> dict:
+    pre, suf = obj.get("pre") or [""], obj.get("suf") or [""]
+    for pid, rec in (obj.get("items") or {}).items():
+        flat = rec[3] or []
+        urls = [(pre[flat[j]] or "") + flat[j + 1] + (suf[flat[j + 2]] or "") for j in range(0, len(flat), 3)]
+        rec[3] = [x for t in tok_list(urls) for x in (0, t, 0)]
+    obj["pre"], obj["suf"] = [""], [""]
+    return obj
+
+
+def tok_whole(data: dict) -> dict:
+    """products.json / window.DEALS: фото товаров → токены, + img."""
+    for p in data.get("products") or []:
+        if isinstance(p, dict):
+            p["images"] = tok_list(p.get("images"))
+    data["img"] = img_info()
+    return data
+
+
+def manifest_now() -> dict:
+    return json.loads((SITE / "data" / "manifest.json").read_text(encoding="utf-8"))
+
+
+def tokenize_file(text: str, rel: str) -> str:
+    dumps = lambda o: json.dumps(o, ensure_ascii=False, separators=(",", ":"))  # noqa: E731
+    if rel == "data/manifest.json":
+        return dumps(tok_manifest(json.loads(text)))
+    if rel.startswith("data/i/"):
+        head, body, tail = unwrap(text)
+        return head + dumps(tok_index(json.loads(body), manifest_now())) + tail
+    if rel.startswith("data/d/"):
+        head, body, tail = unwrap(text)
+        return head + dumps(tok_detail(json.loads(body))) + tail
+    if rel == "products.json":
+        return dumps(tok_whole(json.loads(text)))
+    if rel == "products.js":
+        for key in ("window.DEALS_MANIFEST = ", "window.DEALS = "):
+            i = text.find(key)
+            if i >= 0:
+                j = text.rindex(";")
+                obj = json.loads(text[i + len(key):j])
+                obj = tok_manifest(obj) if "MANIFEST" in key else tok_whole(obj)
+                return text[:i + len(key)] + dumps(obj) + text[j:]
+    return text
+
+
 def strip_index(text: str) -> str:
     head, body, tail = unwrap(text)
     sh = json.loads(body)
@@ -157,7 +245,7 @@ def strip_manifest(text: str) -> str:
 
 def legacy_products(with_new: bool) -> bytes:
     """Весь каталог одним products.json (как у сборок до частей), собранный из частей индекса."""
-    key = ("legacy", with_new, OPT["img"], (SITE / "data" / "manifest.json").stat().st_mtime_ns)
+    key = ("legacy", with_new, OPT["img"], OPT["imgtok"], (SITE / "data" / "manifest.json").stat().st_mtime_ns)
     if key in CACHE:
         return CACHE[key]
     man = json.loads((SITE / "data" / "manifest.json").read_text(encoding="utf-8"))
@@ -191,6 +279,8 @@ def legacy_products(with_new: bool) -> bytes:
         if len(out) >= LEGACY_MAX:
             break
     data = {"summary": man.get("summary"), "site": man.get("site"), "products": out}
+    if OPT["imgtok"]:
+        data = tok_whole(data)
     body = rewrite(json.dumps(data, ensure_ascii=False)).encode("utf-8")
     CACHE[key] = body
     return body
@@ -198,7 +288,7 @@ def legacy_products(with_new: bool) -> bytes:
 
 def file_body(fp: Path, rel: str, mode: str) -> bytes:
     """Текстовый файл site/ с заменой адресов (и урезанием столбцов в режиме /old/); кэш по времени изменения."""
-    key = (str(fp), fp.stat().st_mtime_ns, mode, OPT["img"], OPT["port"])
+    key = (str(fp), fp.stat().st_mtime_ns, mode, OPT["img"], OPT["port"], OPT["imgtok"])
     hit = CACHE.get(key)
     if hit is not None:
         return hit
@@ -208,6 +298,8 @@ def file_body(fp: Path, rel: str, mode: str) -> bytes:
             text = strip_index(text)
         elif rel == "data/manifest.json":
             text = strip_manifest(text)
+    if OPT["imgtok"]:
+        text = tokenize_file(text, rel)
     body = rewrite(text).encode("utf-8")
     with LOCK:
         if len(CACHE) > 400:
@@ -325,6 +417,19 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/__img/"):                                        # режим --img path
             img_host, _, img_path = path[len("/__img/"):].partition("/")
             return self.image(img_host, "/" + img_path + ("?" + u.query if u.query else ""))
+        if path.startswith(IMGH + "/"):                                       # режим --imgtok: «свой хост фото»
+            m = IMGH_RE.match(path)
+            if not m or int(m.group(2)) not in (160, 480, 960):
+                return self.send(404, "not found")
+            with LOCK:
+                if len(LOG) < 5000:
+                    LOG.append({"host": "imgh", "path": path[len(IMGH):], "token": m.group(1), "w": int(m.group(2))})
+            if OPT["delay_img"]:
+                time.sleep(OPT["delay_img"] / 1000)
+            if is_dead("imgh"):
+                return self.send(404, "dead host (--dead)")
+            body, ctype = photo_for(m.group(1))
+            return self.send(200, body, ctype)
         if path == "/__log":
             with LOCK:
                 data = list(LOG)
@@ -471,15 +576,18 @@ def main(argv: list[str] | None = None) -> None:
                     help="фото с хостов, в имени которых есть эта подстрока, отвечают 404 (можно несколько раз)")
     ap.add_argument("--delay-data", type=int, default=0, metavar="МС", help="задержка файлов data/")
     ap.add_argument("--delay-img", type=int, default=0, metavar="МС", help="задержка фото")
+    ap.add_argument("--imgtok", action="store_true",
+                    help="как со своим хостом фото: токены вместо адресов, фото по /__imgh/p/<токен>.<ширина>.webp")
     a = ap.parse_args(argv)
     OPT.update(port=a.port_pos or a.port, img=a.img, placeholder=a.placeholder, dead=a.dead,
-               delay_data=a.delay_data, delay_img=a.delay_img)
+               delay_data=a.delay_data, delay_img=a.delay_img, imgtok=a.imgtok)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     srv = ThreadingHTTPServer(("127.0.0.1", OPT["port"]), Handler)
     n = len(list((SITE / "img" / "p").glob("*"))) if (SITE / "img" / "p").is_dir() else 0
     print(f"http://127.0.0.1:{OPT['port']}/?reducedmotion=1   (site: {SITE})", flush=True)
     print(f"фото: {'заглушки' if OPT['placeholder'] or not n else f'свои из site/img/p ({n})'}, режим --img {OPT['img']}"
+          + (", токены своего хоста фото (/__imgh/p/…)" if OPT["imgtok"] else "")
           + (f", мёртвые хосты: {', '.join(OPT['dead'])}" if OPT["dead"] else "")
           + (f", задержка data {OPT['delay_data']} мс / фото {OPT['delay_img']} мс"
              if OPT["delay_data"] or OPT["delay_img"] else ""), flush=True)

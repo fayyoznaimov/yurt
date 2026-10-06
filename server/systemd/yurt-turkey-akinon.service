@@ -1,0 +1,22 @@
+# Pierre Cardin + Cacharel: наличие каждый час (server/yurt-run.sh turkey-akinon).
+# Сбор ~25–30 мин (только разделы; категории из карты сайта — раз в сутки, ~50 мин), затем сборка сайта и публикация,
+# если каталог изменился. Таймер — yurt-turkey-akinon.timer; ход, пока прошлый ещё идёт, systemd просто пропускает.
+# @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: Pierre Cardin и Cacharel — наличие (каждый час)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+ExecStart=/usr/bin/env bash @APP@/server/yurt-run.sh turkey-akinon
+TimeoutStartSec=100min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

@@ -89,6 +89,7 @@ def bundle_files(root: Path = ROOT) -> list[Path]:
         if (data / name).is_file():
             out.append(data / name)
     out += sorted(p for p in data.glob("raw_*.json") if p.is_file())        # и raw_*.meta.json
+    out += sorted(p for p in data.glob("akinon_*.json") if p.is_file())     # когда был полный проход по карте сайта
     changes = sorted((data / "changes").glob("*.json")) if (data / "changes").is_dir() else []
     out += changes[-CHANGES_KEEP:]
     admin = root / "site" / "products-admin.js"     # закупочные данные распроданных карточек (?admin=1)

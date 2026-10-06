@@ -21,14 +21,22 @@ attributes_filterable_* — их не используем. Разрешены p
 Дополнительно в config.json → source_opts.<источник> можно задать:
     "sections": ["/erkek-1/", ...]  # свои широкие разделы (пути) вместо стандартных — обходятся целиком
     "discover": true                # добавить категории из sitemap.xml (по умолчанию да)
+    "discover_every_hours": 24      # категории из карты сайта — не чаще раза в N часов (0 — каждый запуск)
     "max_pages": 200                # потолок страниц на один раздел
+
+Поиск по карте сайта дорогой (~10 мин и ~240 запросов на сайт), а новых товаров почти не даёт: категории — подмножества
+широких разделов. Поэтому при discover_every_hours > 0 он идёт раз в N часов; в остальные (ежечасные) запуски
+обходятся только разделы и те категории, которые в последнем полном проходе дали новые товары («полезные» —
+их товаров нет в разделах). Когда был полный проход и какие категории полезны — data/akinon_<источник>.json.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 import requests
@@ -109,6 +117,44 @@ TIMEOUT = 60
 # Итог последнего fetch() для run.py: partial — собрано не всё (блокировка / пропущенные страницы),
 # тогда отсутствие товара в выдаче не значит, что он распродан; skipped — источник сознательно пропущен.
 LAST_RUN: dict = {}
+DATA = Path(__file__).resolve().parent.parent / "data"
+
+
+def discover_state_path(site: str, so: dict) -> Path:
+    return Path(so.get("discover_state_file") or DATA / f"akinon_{site}.json")
+
+
+def _hours_since(ts) -> float:
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return 1e9
+    if not dt.tzinfo:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+
+
+def _load_state(path: Path) -> dict:
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def discovery_due(state: dict, every_hours: float) -> bool:
+    """Пора ли искать категории по карте сайта: every_hours <= 0 — каждый запуск; иначе — если полного прохода
+    ещё не было или он старше every_hours часов."""
+    if every_hours <= 0:
+        return True
+    return _hours_since(state.get("discovered_at")) >= every_hours
 
 
 class SiteBlocked(RuntimeError):
@@ -409,6 +455,14 @@ def fetch(query: Query, **opts) -> list[Product]:
     if so.get("sections"):
         cfg["sections"] = list(so["sections"])
     discover = bool(so.get("discover", True))
+    try:
+        every = float(so.get("discover_every_hours", 0) or 0)
+    except (TypeError, ValueError):
+        every = 0.0
+    state_path = discover_state_path(site, so)
+    dstate = _load_state(state_path) if discover else {}
+    full_pass = discover and discovery_due(dstate, every)
+    productive = [p for p in (dstate.get("productive") or []) if isinstance(p, str) and p.startswith("/")]
 
     if not query.wants_brand(cfg["brand"]):
         print(f"[{site}] бренд {cfg['brand']} не в фильтре — пропускаю")
@@ -432,10 +486,12 @@ def fetch(query: Query, **opts) -> list[Product]:
     max_pages = max(1, int(query.max_pages or 1))
     t0 = time.time()
 
-    def crawl(path: str, params: dict, facet_gender: str | None, seed: bool) -> None:
+    def crawl(path: str, params: dict, facet_gender: str | None, seed: bool) -> int:
+        """Обходит раздел/категорию; возвращает, сколько товаров (pk) встретилось впервые за этот запуск."""
         nonlocal pages_ok
         gender_fallback = facet_gender or cfg["only_gender"] or _path_gender(path)
         page, num_pages, idle = 1, None, 0
+        found_new = 0
         while page <= max_pages and (num_pages is None or page <= num_pages):
             q = dict(params)
             if page > 1:
@@ -452,16 +508,16 @@ def fetch(query: Query, **opts) -> list[Product]:
                 raise
             except requests.HTTPError as e:
                 if not seed and page == 1 and e.response is not None and e.response.status_code in (404, 410):
-                    return                       # категория из карты сайта больше не существует
+                    return found_new             # категория из карты сайта больше не существует
                 errors.append(f"{label}: {e}")
                 print(f"[{site}] {label}: ошибка, раздел прерван: {e}")
-                return
+                return found_new
             except Exception as e:  # одна плохая страница не роняет весь источник
                 if not seed and page == 1:
-                    return                       # не листинг (посадочная страница вроде /erkek/)
+                    return found_new             # не листинг (посадочная страница вроде /erkek/)
                 errors.append(f"{label}: {e}")
                 print(f"[{site}] {label}: ошибка, раздел прерван: {e}")
-                return
+                return found_new
             cur = int(pagination.get("current_page") or page)
             num_pages = int(pagination.get("num_pages") or 1)
             if cur != page:  # сайт вернул другую страницу — дальше выдачи нет
@@ -500,29 +556,44 @@ def fetch(query: Query, **opts) -> list[Product]:
                     continue
                 found.setdefault(prod.source_item_id, prod)
             idle = 0 if new else idle + 1
+            found_new += new
             if seed or page == 1 or new:
                 print(f"[{site}] {label} стр. {page}/{num_pages} (всего {pagination.get('total_count')}): "
                       f"товаров {len(items)}, новых {new}; в каталоге {len(found)}", flush=True)
             if not seed and idle >= 2:            # категория — подмножество уже обойдённого
                 break
             page += 1
+        return found_new
 
+    useful: list[str] = []                        # категории полного прохода, давшие товары вне разделов
+    full_done = False
     try:
         for path in cfg["sections"]:
             for params, facet_gender in _section_params(cfg, query):
                 crawl(path, params, facet_gender, True)
-        extra = _category_paths(client, cfg["sections"]) if discover else []
-        if extra:
-            print(f"[{site}] категорий из карты сайта: {len(extra)} — проверяю, нет ли в них новых товаров")
-        for path in extra:
-            crawl(path, {}, None, False)
-        if discover:
+        if full_pass:
+            extra = _category_paths(client, cfg["sections"])
+            if extra:
+                print(f"[{site}] категорий из карты сайта: {len(extra)} — проверяю, нет ли в них новых товаров")
+            for path in extra:
+                if crawl(path, {}, None, False):
+                    useful.append(path)
             urls = {urlsplit(u).path.strip("/") for u in _sitemap_locs(client, "products")}
             if urls:
                 hit = len(urls & seen_url)
                 print(f"[{site}] сверка с картой товаров: {len(urls)} в sitemap, из них в листингах {hit} "
                       f"({hit * 100 // max(1, len(urls))}%; в карте сайта в основном старые/распроданные товары); "
                       f"всего в листингах {len(seen_pk)} товаров")
+            full_done = bool(extra)
+        elif discover and productive:
+            print(f"[{site}] карта сайта — раз в {every:g} ч (последний полный проход {dstate.get('discovered_at')}); "
+                  f"обхожу разделы и {len(productive)} полезных категорий из него")
+            for path in productive:
+                if path not in cfg["sections"]:
+                    crawl(path, {}, None, False)
+        elif discover:
+            print(f"[{site}] карта сайта — раз в {every:g} ч (последний полный проход {dstate.get('discovered_at')}); "
+                  f"сейчас только разделы")
     except SiteBlocked as e:
         if not pages_ok:
             raise RuntimeError(f"[{site}] источник недоступен: {e}") from e
@@ -533,6 +604,13 @@ def fetch(query: Query, **opts) -> list[Product]:
         raise RuntimeError(f"[{site}] не удалось разобрать ни одной страницы: " + "; ".join(errors or ["нет данных"]))
     if errors and not LAST_RUN.get("partial"):
         LAST_RUN.update(partial=True, reason=f"пропущено страниц с ошибкой: {len(errors)}")
+    LAST_RUN["discovered"] = full_pass
+    if full_pass and full_done and not LAST_RUN.get("partial"):
+        # полный проход удался — запоминаем время и полезные категории (их обходим в ежечасных запусках)
+        _save_state(state_path, {"discovered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                 "productive": useful, "sections": list(cfg["sections"])})
+        print(f"[{site}] полный проход по карте сайта: полезных категорий {len(useful)}"
+              + (f" (следующий — через {every:g} ч)" if every > 0 else ""))
     n_disc = sum(1 for p in found.values() if p.discount_pct)
     n_stock = sum(1 for p in found.values() if p.in_stock)
     print(f"[{site}] итого: {len(found)} товаров (в наличии {n_stock}, со скидкой {n_disc}), "

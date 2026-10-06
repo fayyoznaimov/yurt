@@ -149,7 +149,13 @@
         "U.S. Polo Assn.": "u-s-polo-assn-x-b101990"
       },
       "max_pages": 138,
-      "pdp_per_run": 3200,
+      "_help_schedule": "Сервер: выдача — раз в сутки в окне listing_window (местные часы), размеры — каждый час не дольше pdp_budget_minutes: горячие (заказы, корзины, первые pdp_hot_top «Рекомендуем») раз в pdp_hot_hours, товары сайта раз в pdp_warm_hours, остальная выдача раз в pdp_cold_hours.",
+      "pdp_per_run": 2500,
+      "pdp_budget_minutes": 45,
+      "pdp_hot_hours": 3,
+      "pdp_warm_hours": 24,
+      "pdp_cold_hours": 168,
+      "pdp_hot_top": 1000,
       "pdp_max_age_hours": 72,
       "pdp_delay": 1.2,
       "pdp_concurrency": 2,
@@ -157,6 +163,12 @@
         1.0,
         2.0
       ],
+      "listing_window": [
+        1,
+        6
+      ],
+      "listing_min_age_hours": 12,
+      "listing_force_hours": 48,
       "listing_max_age_hours": 20,
       "official_only": true
     },
@@ -176,6 +188,7 @@
         "/garage-sale/"
       ],
       "discover": true,
+      "discover_every_hours": 24,
       "max_pages": 200
     },
     "cacharel_tr": {
@@ -187,13 +200,14 @@
         "/erkek-ayakkabi/"
       ],
       "discover": true,
+      "discover_every_hours": 24,
       "max_pages": 200
     },
     "yoox_import": {
       "folder": "",
       "max_age_days": 3,
       "stale_hide_days": 7,
-      "download_images": true,
+      "download_images": false,
       "max_images": 300,
       "max_pages_per_search": 200,
       "known_brands": [
@@ -409,6 +423,10 @@
     "every_hours": 3,
     "max_drop_pct": 50,
     "verify_limit": 120
+  },
+  "images": {
+    "_help": "Свой хост фото (README «Фото со своего адреса»): адрес без / на конце, например https://img.example.uz. Пусто — фото по старым адресам. На сервере обычно задаётся переменной IMG_BASE в /etc/yurt/yurt.env (она важнее); секрет токенов IMG_SECRET — только там.",
+    "base": ""
   },
   "site": {
     "title": "ipakly — брендовая одежда из Италии и Турции",

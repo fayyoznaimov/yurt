@@ -1,0 +1,12 @@
+# Свой хост фото: прогрев первых фото турецких магазинов каждую ночь в 03:40 по Ташкенту (YOOX — никогда).
+[Unit]
+Description=yurt: прогрев первых фото турецких магазинов в 03:40 (Ташкент)
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 Asia/Tashkent
+RandomizedDelaySec=10min
+Persistent=false
+Unit=yurt-img-prewarm.service
+
+[Install]
+WantedBy=timers.target

@@ -7,7 +7,7 @@
 #   sudo systemctl enable --now yurt-channel@propose.timer yurt-channel@sync.timer
 # В /etc/yurt/yurt.env нужны CHANNEL_ENABLED=1, CHANNEL_ID (@ник канала или -100…), TELEGRAM_BOT_TOKEN (бот —
 # администратор канала с правом публикации) и, по желанию, CHANNEL_REVIEW_CHAT_ID; без них — пробный прогон.
-# Замок — свой (data/channel.lock), общий data/server.lock не берётся: задание не ждёт сборку каталога.
+# Замок — свой (data/channel.lock), замки заданий каталога не берутся: задание не ждёт сборку каталога.
 # @USER@ и @APP@ подставляет server/setup.sh.
 [Unit]
 Description=yurt: канал Telegram — %i

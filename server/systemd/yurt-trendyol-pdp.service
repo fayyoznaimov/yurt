@@ -1,0 +1,22 @@
+# Trendyol: проверка размеров каждый час (server/yurt-run.sh trendyol-pdp) по уже сохранённой выдаче.
+# Ярусы: горячие (заказы, корзины, верх «Рекомендуем») — раз в 3 ч, остальные товары сайта — раз в сутки, прочая
+# выдача — раз в неделю; за ход не дольше source_opts.trendyol.pdp_budget_minutes (45 мин). Затем сборка и публикация,
+# если каталог изменился. Таймер — yurt-trendyol-pdp.timer. @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: Trendyol — проверка размеров (каждый час)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+ExecStart=/usr/bin/env bash @APP@/server/yurt-run.sh trendyol-pdp
+TimeoutStartSec=100min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

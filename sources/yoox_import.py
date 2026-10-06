@@ -149,7 +149,7 @@ def _download_images(products: list[Product], limit: int) -> None:
                 local.append(url)          # не скачалось — оставляем ссылку на YOOX
                 if fails_in_row >= MAX_FAILS:
                     stop = stop or f"{MAX_FAILS} ошибок подряд ({e})"
-            time.sleep(0.3)
+            time.sleep(1.0)                # не чаще 1 запроса в секунду к YOOX
         p.images = local
     remote = sum(1 for p in products if p.images and p.images[0].startswith("http"))
     print(f"[yoox_import] фото: скачано {got}, уже были {cached}, не скачалось {failed}"
@@ -307,5 +307,10 @@ def fetch(query: Query, **opts) -> list[Product]:
     parts = [f"{GENDER_LABEL.get(g, g)} {n}" for g, n in totals.items()] + ([f"без скидки {no_disc}"] if no_disc else [])
     print(f"[yoox_import] итого без повторов: {len(products)}" + (f" ({', '.join(parts)})" if parts else ""))
     if products and so.get("download_images", True):
-        _download_images(products, int(so.get("max_images", 200)))
+        # свой хост фото (IMG_BASE): фото YOOX берёт img_api.py только по просмотрам покупателей — здесь ничего не
+        # качаем (лимит 0), уже скачанные раньше файлы используются как были
+        own = bool(so.get("_own_img_host"))
+        if own:
+            print("[yoox_import] свой хост фото включён — фото с YOOX не скачиваю (их возьмёт img_api.py по просмотрам)")
+        _download_images(products, 0 if own else int(so.get("max_images", 200)))
     return products

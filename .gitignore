@@ -5,6 +5,9 @@ data/
 data/orders/
 data/channel_state.json
 data/analysis/
+# свой хост фото: карта токен → адрес магазина и кэш готовых фото (img_map.py, img_api.py)
+data/img_map.json
+data/img_cache/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

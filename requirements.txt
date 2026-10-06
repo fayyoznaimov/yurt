@@ -6,3 +6,5 @@
 #   .venv\Scripts\python run.py
 requests>=2.31
 playwright>=1.47
+# свой хост фото (img_api.py) и картинка превью (deploy.py --make-og); сборка сайта без них работает
+pillow>=10.0

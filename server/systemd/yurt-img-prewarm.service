@@ -1,0 +1,30 @@
+# Свой хост фото: заранее подготовить ПЕРВЫЕ фото товаров Pierre Cardin / Cacharel / Trendyol, которых ещё нет в кэше
+# (img_api.py --prewarm, не больше IMG_PREWARM_LIMIT за ход, 2 запроса в секунду на хост, на 403/429 — хост
+# пропускается). Фото YOOX заранее НЕ качаются никогда — только по просмотрам покупателей.
+# Таймер — yurt-img-prewarm.timer (ночью). @USER@, @APP@ и @IMGCACHE@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: свой хост фото — прогрев первых фото турецких магазинов
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+Environment=PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/env bash -c 'exec "$${YURT_PYTHON:-python3}" @APP@/img_api.py --prewarm --limit "$${IMG_PREWARM_LIMIT:-3000}"'
+TimeoutStartSec=3h
+Nice=15
+IOSchedulingClass=idle
+MemoryMax=768M
+UMask=0022
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@IMGCACHE@
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes

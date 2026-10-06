@@ -1,0 +1,41 @@
+# Свой хост фото (img_api.py): /p/<токен>.<160|480|960>.webp, слушает только 127.0.0.1:8788 (IMG_API_PORT).
+# Наружу — Caddy (img.<домен> или путь /img/ на домене заказов; готовые фото Caddy отдаёт из кэша сам) или
+# Cloudflare Tunnel — см. server/Caddyfile.example, server/cloudflared.example.yml и README «Фото со своего адреса».
+# Фото скачиваются только по просмотрам покупателей (YOOX — не чаще 1 в секунду, остальные — 2), на 403/429 —
+# заглушка без повторов. Кэш — IMG_CACHE (@IMGCACHE@), карта токенов — @APP@/data/img_map.json (только чтение).
+# @USER@, @APP@ и @IMGCACHE@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: свой хост фото (img_api.py)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+Environment=PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
+# $$ — так systemd пропускает $ в bash: YURT_PYTHON из yurt.env, иначе системный python3
+ExecStart=/usr/bin/env bash -c 'exec "$${YURT_PYTHON:-python3}" @APP@/img_api.py'
+Restart=always
+RestartSec=3
+RuntimeMaxSec=1d
+MemoryMax=768M
+# кэш читает Caddy (другой пользователь) — файлы 644, папки 755
+UMask=0022
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@IMGCACHE@
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

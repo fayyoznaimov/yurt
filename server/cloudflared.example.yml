@@ -1,19 +1,25 @@
-# Cloudflare Tunnel — HTTPS для приёма заказов, если у сервера нет белого IP / открытых портов / своего домена
-# под Caddy. Сервер сам подключается к Cloudflare, входящие порты открывать не нужно.
+# Cloudflare Tunnel — HTTPS для приёма заказов и своего хоста фото, если у сервера нет белого IP / открытых портов /
+# своего домена под Caddy. Сервер сам подключается к Cloudflare, входящие порты открывать не нужно.
 # Нужен домен, добавленный в Cloudflare (бесплатный тариф подходит).
 #
 #   # установка cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
 #   cloudflared tunnel login                              # откроет ссылку: выбрать домен
 #   cloudflared tunnel create yurt-orders                 # создаст ~/.cloudflared/<UUID>.json
 #   cloudflared tunnel route dns yurt-orders orders.example.uz
+#   cloudflared tunnel route dns yurt-orders img.example.uz          # свой хост фото
 #   sudo mkdir -p /etc/cloudflared && sudo cp ~/.cloudflared/<UUID>.json /etc/cloudflared/
-#   sudo cp /opt/yurt/app/server/cloudflared.example.yml /etc/cloudflared/config.yml   # и поправить UUID и домен
+#   sudo cp /opt/yurt/app/server/cloudflared.example.yml /etc/cloudflared/config.yml   # и поправить UUID и домены
 #   sudo cloudflared service install && sudo systemctl enable --now cloudflared
 #   curl -s https://orders.example.uz/api/health
+#   curl -s https://img.example.uz/health
 #
 # Проще (без файла): Cloudflare Zero Trust → Networks → Tunnels → Create tunnel → команда
-# «cloudflared service install <токен>»; Public hostname: orders.example.uz → http://127.0.0.1:8787.
+# «cloudflared service install <токен>»; Public hostnames: orders.example.uz → http://127.0.0.1:8787,
+# img.example.uz → http://127.0.0.1:8788.
 # order_api.py берёт IP покупателя из заголовка CF-Connecting-IP (нужно для ограничения частоты).
+#
+# Фото: через туннель и промахи, и готовые фото отдаёт img_api.py (готовые — прямо из кэша, это быстро), а Cloudflare
+# кэширует их у себя на год (заголовок Cache-Control: immutable). Затем в /etc/yurt/yurt.env: IMG_BASE=https://img.example.uz
 
 tunnel: <UUID>
 credentials-file: /etc/cloudflared/<UUID>.json
@@ -22,4 +28,7 @@ ingress:
   - hostname: orders.example.uz
     path: ^/api/(order|event|cart|health)$
     service: http://127.0.0.1:8787
+  - hostname: img.example.uz
+    path: ^/(p/[a-z2-7]{16}\.(160|480|960)\.webp|health)$
+    service: http://127.0.0.1:8788
   - service: http_status:404

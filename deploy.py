@@ -16,6 +16,9 @@ products.js — маленькое оглавление (window.DEALS_MANIFEST, 
 content.js / content.json (content.js пересобирается из content.json), логотипы brand/ (в т.ч. og.png),
 логотипы брендов brands.json / brands.js / img/brands/ (brands.js пересобирается из brands.json) и фото img/p/.
 Старый products.json (весь каталог одним файлом, для открытия с диска) не публикуется — сайту он не нужен.
+Свой хост фото (IMG_BASE в окружении или manifest.img — сборка с токенами, см. img_map.py): img/p/ не публикуется,
+а если в публичных данных (products.*, data/**) остался адрес CDN магазина (yoox / akinon / dsmcdn) — публикация
+останавливается («Стоп: …»).
 Если раскладки data/ ещё нет (run.py старой версии), публикуются products.js / products.json как раньше.
 
 Закрытое НЕ публикуется никогда: products-admin.js и site/admin/** (закупочные цены, маржа, ссылки на
@@ -65,6 +68,8 @@ OG_FALLBACK_DESC = "Оригинальная брендовая одежда и�
 OG_FOOTER = "Оригиналы · предоплата 50% · доставка до 10 дней"
 # тексты превью видят все, кто получил ссылку: ни источников, ни закупочных валют
 UNSAFE_TEXT = re.compile(r"yoox|trendyol|akinon|dsmcdn|€|₺|\bTL\b|\bEUR\b|\bTRY\b|возврат", re.I)
+# свой хост фото (IMG_BASE): в публичных данных не должно остаться ни одного адреса CDN магазинов
+SHOP_HOST_RE = re.compile(rb"[a-z0-9.-]*(?:yoox|ynap|akinon|dsmcdn)[a-z0-9.-]*\.[a-z]{2,}", re.I)
 META_RE = re.compile(r'[ \t]*<meta\s+(?:property|name)\s*=\s*["\'](?:og:|twitter:)[^>]*>[ \t]*\r?\n?', re.I)
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -235,10 +240,29 @@ def private_leaks(out: Path) -> list[str]:
     return sorted(set(leaked))
 
 
+def own_img_host(site: Path) -> bool:
+    """Включён свой хост фото: IMG_BASE в окружении или сборка уже с токенами (manifest.img)."""
+    return bool(os.environ.get("IMG_BASE") or (catalog_files.load_manifest(site) or {}).get("img"))
+
+
+def shop_host_leaks(out: Path) -> list[str]:
+    """Публичные файлы данных, где остались адреса CDN магазинов (yoox / akinon / dsmcdn): «файл: хост»."""
+    found = []
+    files = [out / "products.js", out / "products.json", *(out / catalog_files.DATA_DIR).rglob("*.js*")]
+    for p in files:
+        if not p.is_file():
+            continue
+        m = SHOP_HOST_RE.search(p.read_bytes())
+        if m:
+            found.append(f"{p.relative_to(out).as_posix()}: {m.group(0).decode('ascii', 'replace')}")
+    return found
+
+
 # ---------- сборка папки и публикация ----------
 
-def build_output(out: Path, data_files: list[str]) -> None:
-    """Чистит всё, кроме .git, и копирует публичные файлы заново."""
+def build_output(out: Path, data_files: list[str], own_img: bool = False) -> None:
+    """Чистит всё, кроме .git, и копирует публичные файлы заново. own_img — фото отдаёт свой хост (IMG_BASE):
+    свои фото img/p/ в gh-pages не нужны (их отдаёт img_api по токенам) и не публикуются."""
     out.mkdir(parents=True, exist_ok=True)
     for item in out.iterdir():
         if item.name == ".git":
@@ -261,6 +285,8 @@ def build_output(out: Path, data_files: list[str]) -> None:
         if (SITE / f).exists():
             shutil.copy2(SITE / f, out / f)
     for d in PUBLIC_DIRS:
+        if own_img and d == "img/p":
+            continue
         if (SITE / d).exists():
             shutil.copytree(SITE / d, out / d)
     (out / ".nojekyll").write_text("", encoding="utf-8")
@@ -451,10 +477,16 @@ def main(argv: list[str] | None = None) -> None:
             raise
         remote = None
 
-    build_output(OUT, data_files)
+    own_img = own_img_host(SITE)
+    build_output(OUT, data_files, own_img)
     leaked = private_leaks(OUT)
     if leaked:
         raise SystemExit(f"Стоп: в публикацию попали закрытые данные {leaked[:10]}")
+    if own_img:
+        hosts = shop_host_leaks(OUT)
+        if hosts:
+            raise SystemExit("Стоп: включён свой хост фото (IMG_BASE), а в публичных данных остались адреса магазинов "
+                             f"{hosts[:5]} — пересоберите сайт с IMG_BASE и IMG_SECRET (python run.py --offline)")
     problems = contact_problems(SITE, ROOT)
     if problems:
         loud_warning(problems)

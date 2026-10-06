@@ -371,15 +371,37 @@ def _remove_stale(folder: Path, keep: set[str]) -> int:
     return n
 
 
+def _apply_images(site: Path, products: list[dict], img) -> dict | None:
+    """Фото карточек для публичных файлов. img (img_map.Tokenizer) — свой хост фото: адреса магазинов и пути
+    site/ заменяются токенами, карта токенов пишется ДО файлов сайта; возвращает manifest.img. Без img — адреса как
+    есть, а токены из прошлых сборок (снимки распроданных) переводятся обратно по карте data/img_map.json."""
+    import img_map
+    if img is not None:
+        order = sorted(range(len(products)), key=lambda i: _default_key(i, products[i]))   # карта — в порядке витрины
+        for i in order:
+            products[i]["images"] = img.tokenize(products[i]["id"], products[i].get("images") or [])
+        img.save()
+        return img.info()
+    if any(img_map.is_token(u) for p in products for u in (p.get("images") or [])):
+        items = img_map.load_items(img_map.map_path(Path(site).parent / "data"))
+        for p in products:
+            p["images"] = img_map.detokenize(p.get("images"), items)
+    return None
+
+
 def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], admin: dict, *,
-               legacy_max: int = LEGACY_MAX, admin_combined_max: int = ADMIN_COMBINED_MAX) -> dict:
+               legacy_max: int = LEGACY_MAX, admin_combined_max: int = ADMIN_COMBINED_MAX, img=None) -> dict:
     """Пишет каталог в site/: data/ (части + манифест), admin/ (закрытое), products.js и при малом каталоге —
     products.json / products-admin.js. products — публичные карточки (PUBLIC_FIELDS) и, по желанию, "r"
     (место в «Рекомендуем», ranking.py; без него r — по порядку списка), admin — {id: закупка, "_meta": {...}}.
-    Возвращает сводку (размеры, число файлов)."""
+    img — img_map.Tokenizer (свой хост фото, IMG_BASE): в публичных файлах вместо адресов фото токены, в манифесте
+    "img": {"base", "w", "full", "fmt"}; ни одного адреса магазина в данных сайта. Возвращает сводку."""
     site = Path(site)
     data_dir = site / DATA_DIR
     products = [dict({k: p.get(k) for k in PUBLIC_FIELDS}, r=rk, **_extras(p)) for p, rk in zip(products, _ranks(products))]
+    for p in products:
+        p["images"] = list(p.get("images") or [])
+    img_info = _apply_images(site, products, img)
     n = len(products)
 
     # словари (общие для всех частей индекса)
@@ -506,6 +528,8 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
         "detail": {"shards": nd, "prefix_len": hexw, "files": dfiles, "bytes": dbytes, "gz": dgz},
         "legacy": n <= legacy_max,
     }
+    if img_info:
+        manifest["img"] = img_info
     mtext = _dumps(manifest)
     _write_atomic(data_dir / "manifest.json", mtext.encode("utf-8"))
     stale = _remove_stale(data_dir / "i", keep_i) + _remove_stale(data_dir / "d", keep_d)
@@ -513,7 +537,10 @@ def write_site(site: Path, summary: dict, site_cfg: dict, products: list[dict], 
     # старый формат целиком (file:// и старые инструменты) — только для небольшого каталога
     if n <= legacy_max:
         legacy = [{k: v for k, v in p.items() if not k.startswith("_")} for p in products]   # + r, zk, kw, cg
-        payload = _dumps({"summary": full_summary, "site": site_cfg, "products": legacy})
+        whole = {"summary": full_summary, "site": site_cfg, "products": legacy}
+        if img_info:
+            whole["img"] = img_info
+        payload = _dumps(whole)
         _write_atomic(site / "products.json", payload.encode("utf-8"))
         _write_atomic(site / "products.js", ("window.DEALS = " + payload + ";").encode("utf-8"))
     else:

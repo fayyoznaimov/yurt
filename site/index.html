@@ -1797,7 +1797,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         var tParse = performance.now() - tDl;
         if (!data || typeof data !== "object" || !Array.isArray(data.products)) throw new Error("в products.json нет products");
         var list = data.products, N = list.length;
-        postMessage({ t: "meta", summary: data.summary || {}, site: data.site || {}, n: N, bytes: n, dlMs: tDl - t0, parseMs: tParse });
+        self.__IMG = data.img && data.img.base ? data.img : null;     // свой хост фото: normalize строит адреса по токенам
+        postMessage({ t: "meta", summary: data.summary || {}, site: data.site || {}, img: self.__IMG, n: N, bytes: n, dlMs: tDl - t0, parseMs: tParse });
         var send = function () {
           waiting = null;
           var norm = null;
@@ -2331,6 +2332,16 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
   function digits(s) { var d = String(s || "").replace(/\D/g, ""); return d ? parseInt(d, 10) : null; }
   function str(v) { return typeof v === "string" ? v.trim() : ""; }
+  // свой хост фото (manifest.img / products.json → img, см. img_map.py): в данных вместо адреса фото — токен
+  // из 16 знаков [a-z2-7]; адрес строится здесь: <base>/p/<токен>.960.webp (окно товара), карточкам — 480,
+  // миниатюрам — 160 (cardSrc / thumbSrc). Старые сборки (адреса как есть) — без изменений.
+  // self.__IMG ставят setManifest / start / Worker (normalize работает и в Worker — там свой self)
+  var IMG_TOK = /^[a-z2-7]{16}$/;
+  function imgTok(u) {
+    var I = typeof self !== "undefined" ? self.__IMG : null;
+    if (!I || !I.base || typeof u !== "string" || !IMG_TOK.test(u)) return u;
+    return String(I.base).replace(/\/+$/, "") + "/p/" + u + "." + (I.full || 960) + ".webp";
+  }
   function safeUrl(u, isImg) {
     if (typeof u !== "string") return "";
     u = u.trim();
@@ -3014,6 +3025,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     loadStats.indexBytes = FEED.bytesTotal;
     // хосты фото — соединение заранее (из словаря; в частях индекса — ещё и по их префиксам, см. decodeRows)
     if (m.dict && m.dict.imgpre) preconnect(m.dict.imgpre);
+    self.__IMG = m.img && m.img.base ? m.img : null;            // свой хост фото: токены → адреса (imgTok)
+    if (self.__IMG) preconnect([self.__IMG.base + "/"]);
     // товар из прямой ссылки: его подробности — сразу, параллельно с частями индекса
     var pm = /[?&]p=([A-Za-z0-9]{4,16})(&|$)/.exec(location.hash);
     if (pm) FEED.prefetchId = pm[1].toUpperCase();
@@ -3203,6 +3216,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         else if (t === "p") PL.bytes(m.n, m.done);
         else if (t === "meta") {
           meta = m;
+          if (m.img && m.img.base) self.__IMG = m.img;
           PL.parsed(m.parseMs, m.bytes);
           Object.assign(loadStats, { via: "worker", bytes: m.bytes, dlMs: Math.round(m.dlMs), parseMs: Math.round(m.parseMs) });
         } else if (t === "chunk") {
@@ -3565,7 +3579,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // подробности карточки (описание, состав, пункты, все фото) — из products.js/json сразу, из частей — по открытию
   function normDetail(p) {
     var src = Array.isArray(p.images) ? p.images : EMPTY, imgs = [];
-    for (var i = 0; i < src.length; i++) { var u = safeUrl(src[i], true); if (u && imgs.indexOf(u) < 0) imgs.push(u); }
+    for (var i = 0; i < src.length; i++) { var u = safeUrl(imgTok(src[i]), true); if (u && imgs.indexOf(u) < 0) imgs.push(u); }
     p._imgs = imgs;
     p._compo = typeof p.composition === "string" ? p.composition.trim() : "";
     p._details = Array.isArray(p.details) && p.details.length ? strList(p.details) : EMPTY;
@@ -3618,8 +3632,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // normalize и всё, что ему нужно, — текстом для Worker (там нет доступа к этому скрипту)
   function normalizeSource() {
     return "var GENDERS = " + JSON.stringify(GENDERS) + ", ORIGIN = " + JSON.stringify(ORIGIN) + ", OTHER = " + JSON.stringify(OTHER) +
-      ", DAY = " + JSON.stringify(DAY) + ", LETTER_SIZES = " + JSON.stringify(LETTER_SIZES) + ", EMPTY = [], SIZE_KEYS = new Map(), SIZE_SETS = new Map();\n" +
-      [sizeKey, cmpSize, strList, safeUrl, hash32, fallbackId, sizeSet, normDetail, normalize].map(String).join("\n") + "\nreturn normalize;";
+      ", DAY = " + JSON.stringify(DAY) + ", LETTER_SIZES = " + JSON.stringify(LETTER_SIZES) + ", EMPTY = [], SIZE_KEYS = new Map(), SIZE_SETS = new Map()" +
+      ", IMG_TOK = /^[a-z2-7]{16}$/;\n" +
+      [sizeKey, cmpSize, strList, imgTok, safeUrl, hash32, fallbackId, sizeSet, normDetail, normalize].map(String).join("\n") + "\nreturn normalize;";
   }
   /* ---------- поиск: основы слов, синонимы, бренды по-русски, пол, цвет, размер, опечатки ----------
      У товара — номера «основ» (p._tk): основы слов названия, слова бренда (tod's -> tods), основы свойств (kw, P2)
@@ -4803,7 +4818,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var media = '<div class="media' + (main ? " ld" : " noimg") + '" data-mono="' + esc(monogram(p._brand)) + '">' +
       (main ? '<img class="ph" ' + imgAttrs(main, cardSrc(main)) + ' alt="' + alt + '"' +
         (first ? ' loading="eager" fetchpriority="high"' : ' loading="lazy" fetchpriority="low"') + ' decoding="async" referrerpolicy="no-referrer">' : "") +
-      (second ? '<img class="alt" data-src="' + esc(second) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">' : "") +
+      (second ? '<img class="alt" data-src="' + esc(cardSrc(second)) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">' : "") +
       (n > 1 ? '<span class="pcount" aria-hidden="true">' + ICON_PHOTO + n + "</span>" : "") +
       (p._out ? '<span class="badge soldout">Нет в наличии</span>'
         : d > 0 ? '<span class="badge"><span class="sr">Скидка </span>−' + d + "%</span>" : "") +
@@ -4915,13 +4930,19 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   }
 
   /* ---- фото: уменьшенные варианты, приоритет, соединение заранее, «мёртвый» хост ---- */
-  // варианты по шаблону адреса (имён хостов в коде нет): миниатюра окна товара 165×210 / 160×240, карточка 480×720
+  // варианты по шаблону адреса (имён хостов в коде нет): миниатюра окна товара 165×210 / 160×240, карточка 480×720;
+  // свой хост фото: <base>/p/<токен>.960.webp → .160.webp (миниатюра) / .480.webp (карточка)
+  var IMG_W = /\/p\/([a-z2-7]{16})\.960\.webp$/;
   function thumbSrc(u) {
+    if (IMG_W.test(u)) return u.replace(IMG_W, "/p/$1.160.webp");
     if (u.indexOf("width=464&height=591") >= 0) return u.replace("width=464&height=591", "width=165&height=210");
     if (u.indexOf("/mnresize/1200/1800/") >= 0) return u.replace("/mnresize/1200/1800/", "/mnresize/160/240/");
     return u;
   }
-  function cardSrc(u) { return u.indexOf("/mnresize/1200/1800/") >= 0 ? u.replace("/mnresize/1200/1800/", "/mnresize/480/720/") : u; }
+  function cardSrc(u) {
+    if (IMG_W.test(u)) return u.replace(IMG_W, "/p/$1.480.webp");
+    return u.indexOf("/mnresize/1200/1800/") >= 0 ? u.replace("/mnresize/1200/1800/", "/mnresize/480/720/") : u;
+  }
   // src (возможно, уменьшенный) + data-o — исходный адрес: он в p._imgs, на него откатываемся при ошибке варианта
   function imgAttrs(orig, src) { return 'src="' + esc(src) + '"' + (src !== orig ? ' data-o="' + esc(orig) + '"' : ""); }
   function origSrc(img) { return img.getAttribute("data-o") || img.getAttribute("src"); }
@@ -5034,7 +5055,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         if (!canHover || !card.isConnected || card.querySelector(".alt")) return;
         var media = card.querySelector(".media"), imgs = goodImgs(p);
         if (!media || !imgs[1] || !media.querySelector(".ph")) return;
-        media.insertAdjacentHTML("beforeend", '<img class="alt" src="' + esc(imgs[1]) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">');
+        media.insertAdjacentHTML("beforeend", '<img class="alt" src="' + esc(cardSrc(imgs[1])) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">');
       }, function () { /* без второго фото */ });
       return;
     }
@@ -5207,7 +5228,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function byDisc(a, b) { return b._disc - a._disc || a._rnd - b._rnd; }
   // «Рекомендуем» (r из сборки), при равных — по скидке; без r (старая сборка) — просто по скидке
   function byRec(a, b) { return b._r - a._r || byDisc(a, b); }
-  function ownPhoto(p) { return p._imgs.length && /^img\//.test(p._imgs[0]); }   // фото с нашего сайта грузятся быстрее
+  // фото с нашего сайта (img/…) или своего хоста фото (IMG_W) грузятся быстрее
+  function ownPhoto(p) { return p._imgs.length && (/^img\//.test(p._imgs[0]) || IMG_W.test(p._imgs[0])); }
 
   function renderHome() {
     if (!READY || homeDone) return;
@@ -5297,7 +5319,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       a.hidden = READY && options.genders.length > 0 && options.genders.indexOf(g) < 0;
       var art = (GENDER_ART[g] || []).map(function (t) { return best.get(g + "|" + t); }).filter(Boolean);
       a.querySelector(".gt-media").innerHTML = art.length ? art.map(function (p) {
-        return '<span class="media ld" data-pid="' + esc(p._code) + '" data-mono="' + esc(monogram(p._brand)) + '"><img src="' + esc(goodImgs(p)[0]) +
+        return '<span class="media ld" data-pid="' + esc(p._code) + '" data-mono="' + esc(monogram(p._brand)) + '"><img src="' + esc(cardSrc(goodImgs(p)[0])) +
           '" alt="" decoding="async" referrerpolicy="no-referrer"></span>';
       }).join("") : '<span class="media noimg" data-mono="' + esc(GENDERS[g].charAt(0)) + '"></span>';
     });
@@ -7094,7 +7116,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var href = p ? "#/cart?p=" + encodeURIComponent(p._code) : "";
     var img = l.img;
     var media = '<div class="media' + (img ? " ld" : " noimg") + '" data-mono="' + esc(monogram(l.brand)) + '">' +
-      (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") + "</div>";
+      (img ? '<img src="' + esc(IMG_W.test(img) ? thumbSrc(img) : img) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") + "</div>";
     var note = "";
     if (s.st === "gone") note = "Этой вещи больше нет в каталоге — уберите её из корзины.";
     else if (s.st === "out") note = "Нет в наличии — вещь уже распродана.";
@@ -8095,6 +8117,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     isDemo = !!res.demo;
     SITE = data.site || {};
     SUMMARY = data.summary || {};
+    if (data.img && data.img.base) self.__IMG = data.img;               // products.js / products.json со своим хостом фото
     if (!res.sharded) { ALL = true; COMPLETE = true; FACETS = null; }    // весь каталог пришёл одним файлом
     if (!loadStats.via) loadStats.via = "script";
     var L = window.__YL || {}, steps = L.steps = [];

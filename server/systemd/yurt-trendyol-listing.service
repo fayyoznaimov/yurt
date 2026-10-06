@@ -1,0 +1,22 @@
+# Trendyol: обход всей выдачи брендов раз в сутки ночью (server/yurt-run.sh trendyol-listing), ~2 ч.
+# Пишет только data/trendyol_listing.json; новые товары и цены попадут на сайт со следующей ежечасной проверкой
+# размеров (yurt-trendyol-pdp, она в это время идёт в 1 поток). Таймер — yurt-trendyol-listing.timer (01:10).
+# @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: Trendyol — обход выдачи (ночью)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+ExecStart=/usr/bin/env bash @APP@/server/yurt-run.sh trendyol-listing
+TimeoutStartSec=5h
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

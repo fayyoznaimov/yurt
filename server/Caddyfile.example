@@ -1,14 +1,43 @@
-# Caddy — HTTPS для приёма заказов (order_api.py) с автоматическим сертификатом Let's Encrypt.
-# Сайт на GitHub Pages открыт по https://, поэтому браузер пустит запрос заказа только на https://-адрес.
+# Caddy — HTTPS для приёма заказов (order_api.py) и своего хоста фото (img_api.py) с автоматическим
+# сертификатом Let's Encrypt. Сайт на GitHub Pages открыт по https://, поэтому браузер пустит запрос заказа только на
+# https://-адрес.
 #
-# Что нужно: домен или поддомен (например orders.example.uz), A-запись которого указывает на IP сервера,
-# и открытые порты 80 и 443 (80 — для выдачи сертификата).
+# Что нужно: домен или поддомены (например orders.example.uz и img.example.uz), A-записи которых указывают на IP
+# сервера, и открытые порты 80 и 443 (80 — для выдачи сертификата).
 #   sudo apt install -y caddy                       # Ubuntu 24.04+/Debian 12+; иначе — https://caddyserver.com/docs/install
 #   sudo cp /opt/yurt/app/server/Caddyfile.example /etc/caddy/Caddyfile
-#   sudo nano /etc/caddy/Caddyfile                  # заменить orders.example.uz на свой поддомен
+#   sudo nano /etc/caddy/Caddyfile                  # заменить orders.example.uz / img.example.uz на свои
 #   sudo systemctl reload caddy
 #   curl -s https://orders.example.uz/api/health    # {"ok": true, ...}
+#   curl -s https://img.example.uz/health           # {"ok": true, "map": ..., ...}
 # Затем в site/content.json:  "order_endpoint": "https://orders.example.uz/api/order"
+# и в /etc/yurt/yurt.env:     IMG_BASE=https://img.example.uz   (см. README «Фото со своего адреса»)
+#
+# Фото: адрес /p/<токен>.<160|480|960>.webp. Готовое фото Caddy отдаёт сам из кэша /opt/yurt/img-cache (IMG_CACHE),
+# с кэшем браузера и CDN на год; нет в кэше — спрашивает img_api.py (127.0.0.1:8788), тот один раз берёт оригинал,
+# делает WebP и кладёт в кэш. Перед Caddy можно включить Cloudflare (оранжевое облако) — у него узел в Ташкенте.
+
+# общий кусок для обоих вариантов фото (поддомен img.… или путь /img/); определён до первого import
+(yurt_img) {
+	@photo path_regexp ^/p/[a-z2-7]{16}\.(160|480|960)\.webp$
+	handle @photo {
+		root * /opt/yurt/img-cache
+		@cached file
+		handle @cached {
+			header Cache-Control "public, max-age=31536000, immutable"
+			file_server
+		}
+		handle {
+			reverse_proxy 127.0.0.1:8788
+		}
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:8788
+	}
+	handle {
+		respond 404
+	}
+}
 
 orders.example.uz {
 	# наружу — только API заказов и воронки (события, корзина Mini App); всё остальное 404
@@ -19,6 +48,11 @@ orders.example.uz {
 		}
 		reverse_proxy 127.0.0.1:8787
 	}
+	# Нет отдельного поддомена для фото? Тогда фото — по пути /img/ этого же адреса (IMG_BASE=https://orders.example.uz/img):
+	# раскомментируйте блок ниже (и уберите блок img.example.uz).
+	# handle_path /img/* {
+	# 	import yurt_img
+	# }
 	handle {
 		respond 404
 	}
@@ -28,4 +62,15 @@ orders.example.uz {
 		X-Content-Type-Options nosniff
 	}
 	# журнал доступа не включаем: order_api.py сам пишет короткую строку на заказ (телефон — только ***1234)
+}
+
+# Свой хост фото: поддомен img.example.uz (IMG_BASE=https://img.example.uz)
+img.example.uz {
+	import yurt_img
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+	}
+	# журнал доступа не включаем: по нему не нужно знать, кто что смотрел
 }

@@ -12,6 +12,8 @@
     yoox_*.json старше 14 дней — run.py их уже не берёт (source_opts.yoox_import.max_age_days);
   * site/img/yoox/* — скачанные фото товаров, которых больше нет в data/raw_yoox_import.json, старше 30 дней.
     (Фото сайта site/img/p run.py убирает сам при каждой сборке.)
+  * кэш своего хоста фото (IMG_CACHE/p/*.webp, img_api.py): фото, токена которых больше нет в карте
+    data/img_map.json, старше 30 дней. Карты нет — кэш не трогаем.
 """
 from __future__ import annotations
 
@@ -38,6 +40,20 @@ def old(p: Path, days: float) -> bool:
         return False
 
 
+def img_cache_victims(days: float = 30) -> list[Path]:
+    """Фото кэша своего хоста (IMG_CACHE/p/<токен>.<ширина>.webp), токена которых нет в карте, старше days дней."""
+    sys.path.insert(0, str(ROOT))
+    import img_map
+    cache = Path(os.environ.get("IMG_CACHE") or DATA / "img_cache") / "p"
+    mp = img_map.map_path(DATA)
+    if not cache.is_dir() or not mp.is_file():
+        return []
+    items = img_map.load_items(mp)
+    if not items:
+        return []                     # пустая/битая карта — ничего не удаляем
+    return [p for p in cache.glob("*.webp") if p.name.split(".")[0] not in items and old(p, days)]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -61,6 +77,7 @@ def main() -> int:
             victims += [p for p in img_dir.iterdir() if p.is_file() and p.name not in keep and old(p, 30)]
         except (OSError, ValueError) as e:
             print(f"data/raw_yoox_import.json не читается ({e}) — фото YOOX не трогаю")
+    victims += img_cache_victims()
 
     size = 0
     for p in victims:

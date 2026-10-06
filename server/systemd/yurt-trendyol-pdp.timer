@@ -1,0 +1,12 @@
+# Trendyol: проверка размеров каждый час в :20.
+[Unit]
+Description=yurt: Trendyol — размеры каждый час
+
+[Timer]
+OnCalendar=*-*-* *:20:00
+RandomizedDelaySec=3min
+Persistent=false
+Unit=yurt-trendyol-pdp.service
+
+[Install]
+WantedBy=timers.target
