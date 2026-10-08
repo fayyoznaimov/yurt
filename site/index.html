@@ -872,13 +872,30 @@ body.loading .sheet-body, body.loading .toolbar > *, body.loading .pills, body.l
 
 .pv-gallery { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--media); }
 .pv-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+/* лента фото — на transform (galPos / жесты galBind): свайп, инерция и «резинка» на краях, щипок до 3×, двойной тап 2×.
+   touch-action: pan-y — вертикальная прокрутка окна остаётся у браузера; во весь экран и при увеличении — none */
 .pv-track {
-  position: absolute; inset: 0; display: flex; overflow-x: auto; overflow-y: hidden;
-  scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; outline: none;
+  position: absolute; inset: 0; display: flex; overflow: visible; outline: none; touch-action: pan-y;
+  transform: translate3d(0, 0, 0); user-select: none; -webkit-user-select: none;
 }
-.pv-track::-webkit-scrollbar { display: none; }
-.pv-slide { position: relative; flex: 0 0 100%; height: 100%; scroll-snap-align: center; scroll-snap-stop: always; cursor: zoom-in; }
-.pv-slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* overflow: visible — слайды выходят за ленту вправо и въезжают в кадр сдвигом ленты; режет их сцена (.pv-stage) */
+.pv-track.zoomed, .pv-stage.full .pv-track { touch-action: none; }
+.pv-track.drag { will-change: transform; }
+.pv-track.snap { transition: transform var(--gal-d, 380ms) var(--ease-out); }
+.pv-slide { position: relative; flex: 0 0 100%; height: 100%; overflow: hidden; cursor: zoom-in; }
+.pv-slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: 0 0; pointer-events: none; -webkit-user-drag: none; }
+.pv-slide img.zm { will-change: transform; }
+.pv-slide img.snap { transition: transform 320ms var(--ease-out); }
+.pv-track.zoomed .pv-slide { cursor: grab; }
+.pv-expand {
+  position: absolute; right: 12px; bottom: 12px; z-index: 3; width: 38px; height: 38px; border-radius: 999px;
+  background: rgba(20, 26, 46, .62); color: #fff;
+}
+.pv-expand:hover { background: rgba(20, 26, 46, .8); }
+.pv-stage.noimg .pv-expand { display: none; }
+.pv-dots { position: absolute; left: 50%; bottom: 16px; z-index: 3; display: none; gap: 6px; transform: translateX(-50%); pointer-events: none; }
+.pv-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .38); }
+.pv-dots i.on { background: #fff; }
 .pv-nav {
   position: absolute; top: 50%; z-index: 3; width: 44px; height: 44px; margin-top: -22px;
   display: grid; place-items: center; border: 0; border-radius: 999px; cursor: pointer;
@@ -903,13 +920,20 @@ body.loading .sheet-body, body.loading .toolbar > *, body.loading .pills, body.l
 .pv-thumb:hover { opacity: 1; }
 .pv-thumb[aria-current="true"] { border-color: var(--ink); opacity: 1; }
 
-/* полноэкранный просмотр фото */
-.pv-stage.full { position: fixed; inset: 0; z-index: 70; background: #0B0D12; }
-.pv-stage.full .pv-slide { cursor: zoom-out; }
-.pv-stage.full .badge { display: none; }
-.pv-unfull { display: none; position: absolute; top: 12px; right: 12px; z-index: 4; color: #fff; background: rgba(255, 255, 255, .14); border-radius: 999px; }
+/* полноэкранный просмотр фото (enterFull / requestUnfull): чёрный экран, те же жесты, свайп вниз закрывает,
+   своя запись в истории (state.fs) — «Назад» браузера и Telegram закрывают сначала его */
+.pv-stage.full { position: fixed; inset: 0; z-index: 70; background: #000; max-height: none; aspect-ratio: auto; }
+.pv-stage.full .pv-slide { cursor: default; }
+.pv-stage.full .badge, .pv-stage.full .pv-expand { display: none; }
+.pv-stage.full .pv-nav { background: rgba(255, 255, 255, .12); color: #fff; box-shadow: none; }
+.pv-stage.full .pv-nav:hover { background: rgba(255, 255, 255, .24); color: #fff; }
+.pv-stage.full .pv-counter { bottom: max(16px, env(safe-area-inset-bottom)); background: rgba(255, 255, 255, .12); }
+.pv-stage.full .pv-dots { display: flex; bottom: max(18px, env(safe-area-inset-bottom)); }
+.pv-stage.full .pv-dots:empty { display: none; }
+.pv-unfull { display: none; position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; z-index: 4; color: #fff; background: rgba(255, 255, 255, .14); border-radius: 999px; }
 .pv-unfull:hover { background: rgba(255, 255, 255, .26); }
 .pv-stage.full .pv-unfull { display: grid; }
+.pv-stage.full.leave { transition: opacity 220ms var(--ease-in); }
 
 .pv-info { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 34px 36px 30px; }
 .pv-brand { align-self: flex-start; margin: 0; padding-right: 44px; font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--muted); overflow-wrap: anywhere; text-decoration: none; }
@@ -1907,6 +1931,64 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 .coll-all .btn { min-height: 56px; padding: 14px 34px; font-size: 17px; }
 .coll-all p { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
 .coll-empty { padding: 48px 0; color: var(--muted); }
+
+/* ---------- «Новинки»: полоса во всю ширину сразу после входа (главная) и после переключателя пола (коллекции) ----------
+   newHtml: крупное слово с шёлковой нитью, строка «за неделю — N», главная карточка (самая новая вещь, фото меняется раз
+   в ~8 с с перекрёстным растворением — newArm, пауза за экраном / при reduced motion статично), лента 8–12 карточек,
+   бегущая строка брендов недели (та же .ent-mq). Появление: фото главной карточки — шторкой снизу и scale 1.08 → 1,
+   карточки ленты — лесенкой (общие правила .rv.in .rail > *). Только transform / opacity / clip-path */
+.nw { padding: 52px 0 0; background: var(--soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
+#viewHome .nw { margin-top: 8px; }
+.nw .sec-head { align-items: flex-end; margin-bottom: 26px; }
+.nw .sec-head h2 { line-height: .9; }
+.nw .sec-head h2::before { top: -18px; }
+.lux #viewHome .nw .sec-head h2, .lux #viewColl .nw .sec-head h2 { font-size: clamp(50px, 9.5vw, 118px); line-height: .9; letter-spacing: -.02em; }
+.nw .sec-head p { max-width: 34ch; font-size: 15px; line-height: 1.4; }
+.nw-n { white-space: nowrap; }
+.lux #viewHome .nw .sec-head p, .lux #viewColl .nw .sec-head p { margin-top: 12px; font-size: 16px; }
+.nw-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
+.nw-hero { position: relative; }
+.nw-hero .mcard-link { display: grid; grid-template-rows: auto; gap: 14px; }
+.nw-hero .media { aspect-ratio: 4 / 5; border-radius: 6px; }
+.nw-hero .media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 900ms var(--ease-in-out); }
+.nw-hero .media img:not(.on) { opacity: 0; }
+.nw-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand brand" "title title" "price btn"; align-items: center; column-gap: 16px; row-gap: 2px; transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out); }
+.nw-copy.sw { opacity: 0; transform: translate3d(0, 6px, 0); transition: opacity 220ms var(--ease-in), transform 220ms var(--ease-in); }
+.nw-copy .m-brand { grid-area: brand; margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
+.nw-copy .m-title { grid-area: title; margin: 0; font: 500 clamp(19px, 2.2vw, 26px)/1.2 var(--font-lux); color: var(--ink); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nw-copy .m-price { grid-area: price; margin-top: 6px; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nw-copy .m-price .cur { font-size: 13px; font-weight: 500; color: var(--muted); }
+.nw-copy .btn { grid-area: btn; margin-top: 6px; min-height: 46px; padding: 11px 24px; font-size: 15px; }
+.nw-hero .mcard-link:hover .btn { background: var(--silk); border-color: var(--silk); color: var(--silk-ink); }
+.nw-hero .mcard-link:focus-visible .media { outline: 2px solid var(--silk); outline-offset: 3px; }
+.nw-rail { min-width: 0; }
+.nw-rail .rail { padding-bottom: 4px; }
+.nw-mq { position: relative; margin: 34px calc(-1 * var(--gutter)) 0; padding: 14px var(--gutter) 16px; border-top: 1px solid var(--line); font-size: 16px; }
+.nw-mq .ent-mq { margin: 0; padding: 0; border: 0; font-size: inherit; }
+.nw-lead { display: block; margin: 0 0 6px; font: 500 12px/1.3 var(--font-ui); letter-spacing: .02em; color: var(--muted); }
+.lux .coll-tr .nw { background: var(--soft); }
+@media (min-width: 900px) {
+  .nw { padding-top: 64px; }
+  .nw .sec-head { margin-bottom: 34px; }
+  .nw-body { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 36px; align-items: start; }
+  .nw-hero .media { aspect-ratio: 4 / 5; }
+  .nw-hero .media img { object-fit: cover; }
+  .nw-copy .m-price { font-size: 20px; }
+  .nw-rail .rail { margin-left: 0; padding-left: 0; scroll-padding-left: 0; }
+  .nw-rail .mcard { flex-basis: clamp(220px, calc((100% - 28px) / 2.6), 300px); }   /* 2–3 крупные карточки в кадре, вровень с главной */
+  .nw-mq { margin-top: 44px; font-size: 19px; }
+}
+/* появление: фото главной карточки — снизу и из лёгкого приближения, медленно; текст — после; лента — лесенкой (общие правила) */
+.mo .nw .nw-hero .media { clip-path: inset(100% 0 0 0); }
+.mo .nw .nw-hero .media img.on { scale: 1.08; }
+.mo .nw .nw-copy { opacity: 0; transform: translate3d(0, 10px, 0); }
+.mo .nw.in .nw-hero .media { clip-path: inset(0); transition: clip-path calc(1300ms * var(--tempo, 1)) var(--ease-in-out) 160ms; }
+.mo .nw.in .nw-hero .media img.on { scale: 1; transition: scale calc(1900ms * var(--tempo, 1)) var(--ease-out) 160ms, opacity 900ms var(--ease-in-out); }
+.mo .nw.in .nw-copy { opacity: 1; transform: none; transition: opacity 520ms var(--ease-out) 900ms, transform 520ms var(--ease-out) 900ms; }
+.mo .nw.in .nw-copy.sw { opacity: 0; transform: translate3d(0, 6px, 0); transition: opacity 220ms var(--ease-in), transform 220ms var(--ease-in); }
+.mo .nw .nw-mq { opacity: 0; }
+.mo .nw.in .nw-mq { opacity: 1; transition: opacity 700ms var(--ease-out) 1100ms; }
+.mo .nw.off .ent-mq .mq { animation-play-state: paused; }
 </style>
 <script>
 /* Telegram Mini App — раньше всех скриптов (до заставки и роутера). Telegram дописывает к адресу свои параметры:
@@ -2332,9 +2414,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       </div>
     </section>
 
-    <!-- сезон (вкладки Осень / Зима / Весна / Лето) — renderSeason -->
-    <div id="seasonHome"></div>
-
+    <!-- «Новинки» — полоса сразу после входа (newHtml); до загрузки каталога — заглушка ленты -->
     <div id="railsTop">
       <section class="sec rv"><div class="wrap"><div class="sec-head"><h2>Новинки</h2></div>
         <div class="rail" aria-hidden="true">
@@ -2343,6 +2423,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
           <div class="mcard sk"><div class="media"></div><i></i><i></i></div><div class="mcard sk"><div class="media"></div><i></i><i></i></div>
         </div></div></section>
     </div>
+
+    <!-- сезон (вкладки Осень / Зима / Весна / Лето) — renderSeason -->
+    <div id="seasonHome"></div>
 
     <section class="sec rv" aria-labelledby="brandsTitle">
       <div class="wrap">
@@ -2536,7 +2619,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         <button type="button" class="icon-btn pv-unfull" id="pvUnfull" aria-label="Выйти из полноэкранного просмотра">
           <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
+        <button type="button" class="icon-btn pv-expand" id="pvExpand" aria-label="Во весь экран">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 7V3h4M15 7V3h-4M3 11v4h4M15 11v4h-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <span class="pv-counter" id="pvCounter" aria-live="polite"></span>
+        <span class="pv-dots" id="pvDots" aria-hidden="true"></span>
         <span id="pvBadge"></span>
       </div>
       <div class="pv-thumbs" id="pvThumbs"></div>
@@ -2664,7 +2751,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     grid: $("grid"), empty: $("empty"), more: $("more"), progress: $("progress"), moreBtn: $("moreBtn"),
     toast: $("toast"),
     pv: $("pv"), pvBox: $("pvBox"), pvClose: $("pvClose"), pvStage: $("pvStage"), pvTrack: $("pvTrack"),
-    pvPrev: $("pvPrev"), pvNext: $("pvNext"), pvUnfull: $("pvUnfull"), pvCounter: $("pvCounter"), pvBadge: $("pvBadge"),
+    pvPrev: $("pvPrev"), pvNext: $("pvNext"), pvUnfull: $("pvUnfull"), pvExpand: $("pvExpand"), pvDots: $("pvDots"), pvCounter: $("pvCounter"), pvBadge: $("pvBadge"),
     pvThumbs: $("pvThumbs"), pvInfo: $("pvInfo"),
     viewHome: $("viewHome"), viewCatalog: $("viewCatalog"), viewPage: $("viewPage"), viewColl: $("viewColl"),
     drawer: $("drawer"), drawerPanel: $("drawerPanel"), drawerBody: $("drawerBody"), menuBtn: $("menuBtn"),
@@ -5669,24 +5756,145 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     // по r и самые новые вещи, после полной загрузки ленты тихо уточняются (homeRails)
     sortedProducts("new");      // сейчас (пока товаров — «голова»), дальше части вливаются слиянием
     runIdle([
+      function () { var top = $("railsTop"); top.innerHTML = newHtml("", ""); initRails(top); newArm(top); },
       function () { renderSeason($("seasonHome"), "", ""); },
-      function () { $("railsTop").innerHTML = freshRail(); initRails($("railsTop")); },
       function () { var m = $("railsMore"); m.innerHTML = HOME_RUBRICS.map(function (r) { return rubricSection(r, "", ""); }).join(""); initRails(m); }
     ]);
     if (ALL) homeRails(); else homePending = true;
   }
   var homePending = false;
-  // «Новинки» — из уже отсортированного (и дополняемого слиянием) списка каталога, без своей сортировки
-  function freshRail() {
-    var list = sortedProducts("new"), fresh = [], cnt = new Map();
-    for (var i = 0; i < list.length && fresh.length < 16; i++) {
-      var p = list[i], c = cnt.get(p._brand) || 0;
-      if (p._out || !p._imgs.length || c >= 2) continue;
-      cnt.set(p._brand, c + 1);
-      fresh.push(p);
+  /* ---------- «Новинки»: полоса сразу после входа (главная) и после переключателя пола (коллекции) ----------
+     newPick: вещи по дате появления (first_seen → _seen, список «new» по убыванию) за последние NEW_DAYS дней —
+     в наличии, с фото, по стране/полу, ≤ 2 одного бренда; week — сколько таких всего (подпись «за неделю»).
+     Меньше 8 за неделю — 12 самых новых независимо от даты (week = 0, подпись без числа). Нет first_seen ни у одной
+     вещи — null (блок не показывается). Главная карточка — самая новая; по кругу (data-cycle) — первые NEW_CYCLE вещей,
+     лента — следующие NEW_RAIL. Бренды недели — по числу вещей, для бегущей строки */
+  var NEW_DAYS = 7, NEW_RAIL = 12, NEW_CYCLE = 5, NEW_EVERY = 8000;
+  function newPick(origin, gender) {
+    var list = sortedProducts("new"), since = Date.now() - NEW_DAYS * 864e5;
+    if (!list.length || !list[0]._seen) return null;
+    var ok = function (p) { return !p._out && p._imgs.length && p._seen > 0 && (!origin || p._origin === origin) && (!gender || !p._gender || p._gender === gender); };
+    var pool = [], cnt = new Map(), brands = new Map(), week = 0, i, p, c;
+    for (i = 0; i < list.length; i++) {
+      p = list[i];
+      if (p._out || p._seen < since) break;               // по убыванию даты, распроданные — в конце
+      if (!ok(p)) continue;
+      week++;
+      brands.set(p._brand, (brands.get(p._brand) || 0) + 1);
+      c = cnt.get(p._brand) || 0;
+      if (pool.length < 1 + NEW_RAIL && c < 2) { cnt.set(p._brand, c + 1); pool.push(p); }
     }
-    return railHtml({ title: "Новинки", sub: "Только что появились в каталоге", link: catHref({ sort: "new" }), items: fresh });
+    if (week < 8) {
+      pool = []; cnt = new Map(); brands = new Map(); week = 0;
+      for (i = 0; i < list.length && pool.length < 12; i++) {
+        p = list[i];
+        if (p._out || !p._seen) break;
+        if (!ok(p)) continue;
+        c = cnt.get(p._brand) || 0;
+        if (c >= 2) continue;
+        cnt.set(p._brand, c + 1); pool.push(p);
+        brands.set(p._brand, (brands.get(p._brand) || 0) + 1);
+      }
+    }
+    if (pool.length < 2) return null;
+    var bl = Array.from(brands.entries()).sort(function (a, b) { return b[1] - a[1] || (a[0] < b[0] ? -1 : 1); });
+    return { pool: pool, week: week, brands: bl };
   }
+  function newCopyHtml(p) {
+    return '<span class="m-brand">' + esc(p._brand) + '</span><span class="m-title">' + esc(p._title) + "</span>" +
+      '<span class="m-price">' + fmt(p._price) + ' <span class="cur">сум</span></span><span class="btn">Смотреть</span>';
+  }
+  // главная карточка: два слоя фото (второй — для перекрёстного растворения при смене, newSwap), текст, кнопка
+  function newHeroHtml(p, cycle) {
+    var src = goodImgs(p)[0];
+    return '<article class="nw-hero" data-pid="' + esc(p._code) + '" data-cycle="' + esc(cycle.join(",")) + '">' +
+      '<a class="mcard-link" href="#/?p=' + encodeURIComponent(p._code) + '" data-open="' + esc(p._code) + '">' +
+      '<div class="media ld" data-mono="' + esc(monogram(p._brand)) + '">' +
+      '<img class="on" src="' + esc(src) + '" alt="" loading="eager" decoding="async" referrerpolicy="no-referrer">' +
+      '<img alt="" decoding="async" referrerpolicy="no-referrer"></div>' +
+      '<span class="nw-copy">' + newCopyHtml(p) + "</span></a></article>";
+  }
+  function newHtml(origin, gender) {
+    var d = newPick(origin, gender);
+    if (!d) return "";
+    var hero = d.pool[0], rail = d.pool.slice(1, 1 + NEW_RAIL), cycle = d.pool.slice(0, NEW_CYCLE).map(function (p) { return p._code; });
+    var where = origin ? ORIGIN[origin] + (gender ? " · " + GENDERS[gender].toLowerCase() : "") : "";
+    // число за неделю показываем, только если это не весь каталог (после первичной сборки все вещи «новые»)
+    var sub = d.week && d.week < products.length * 0.3
+      ? "За неделю в каталоге " + (d.week % 10 === 1 && d.week % 100 !== 11 ? "появилась " : "появилось ") + '<span class="nw-n">' + fmt(d.week) + "</span>" + NBSP + esc(plural(d.week, ["новая вещь", "новые вещи", "новых вещей"])) + (where ? " — " + esc(where) : "")
+      : "Самое свежее в каталоге" + (where ? " — " + esc(where) : "");
+    var link = catHref({ sort: "new", origin: origin, gender: gender }), id = "nw" + hash32("new" + origin + gender).toString(36);
+    return '<section class="sec nw rv" data-rk="new" aria-labelledby="' + id + '"><div class="wrap">' +
+      '<div class="sec-head"><div><h2 id="' + id + '">Новинки</h2><p>' + sub + "</p></div>" +
+      '<div class="sec-tools"><a href="' + esc(link) + '">Смотреть все</a>' +
+      '<button type="button" class="rail-btn" data-rail="-1" aria-label="Прокрутить назад">' + ICON_PREV + '</button><button type="button" class="rail-btn" data-rail="1" aria-label="Прокрутить вперёд">' + ICON_NEXT + "</button></div></div>" +
+      '<div class="nw-body">' + newHeroHtml(hero, cycle) + '<div class="nw-rail"><div class="rail" role="list">' + rail.map(miniHtml).join("") + "</div></div></div>" +
+      '<div class="nw-mq" aria-hidden="true"><span class="nw-lead">' + (d.week ? "Бренды этой недели" : "Бренды новинок") + '</span><div class="ent-mq">' + marqueeHtml(d.brands) + "</div></div>" +
+      "</div></section>";
+  }
+  // главная карточка меняет вещь раз в NEW_EVERY (перекрёстное растворение двух слоёв фото, текст — коротким
+  // затуханием); только при движении, только пока блок на экране и вкладка видна (IntersectionObserver / visibilitychange);
+  // за экраном — пауза, бегущая строка тоже стоит (.off)
+  function newArm(root) {
+    (root || document).querySelectorAll(".nw").forEach(function (sec) {
+      if (sec._nw) return;
+      sec._nw = true;
+      var hero = sec.querySelector(".nw-hero");
+      sec._nwCodes = hero ? hero.getAttribute("data-cycle").split(",").filter(Boolean) : [];
+      sec._nwK = 0; sec._nwTok = 0; sec._nwOn = false;
+      if (!MO || !("IntersectionObserver" in window)) return;
+      new IntersectionObserver(function (en) {
+        var on = en[0].isIntersecting;
+        sec.classList.toggle("off", !on);
+        sec._nwOn = on;
+        if (on) newSchedule(sec); else clearTimeout(sec._nwT);
+      }, { rootMargin: "40px 0px" }).observe(sec);
+    });
+  }
+  function newSchedule(sec) {
+    clearTimeout(sec._nwT);
+    if (sec._nwCodes.length < 2 || !sec.isConnected) return;
+    sec._nwT = setTimeout(function () { newSwap(sec); }, NEW_EVERY);
+  }
+  function newSwap(sec) {
+    sec._nwT = 0;
+    var hero = sec.querySelector(".nw-hero");
+    if (!hero || !sec.isConnected) return;
+    if (!sec._nwOn || document.hidden || !sec.classList.contains("in")) { newSchedule(sec); return; }
+    var codes = sec._nwCodes, k = sec._nwK, p = null, tries = codes.length;
+    while (tries-- > 0) {
+      k = (k + 1) % codes.length;
+      var q = byId.get(codes[k]);
+      if (q && !q._out && goodImgs(q).length) { p = q; break; }
+    }
+    if (!p || k === sec._nwK) { newSchedule(sec); return; }
+    var imgs = hero.querySelectorAll(".media img"), cur = hero.querySelector(".media img.on"), nxt = cur === imgs[0] ? imgs[1] : imgs[0];
+    if (!cur || !nxt) return;
+    var src = goodImgs(p)[0], tok = ++sec._nwTok;
+    var show = function () {
+      if (tok !== sec._nwTok || !hero.isConnected) return;
+      sec._nwK = k;
+      nxt.classList.add("on"); cur.classList.remove("on");
+      hero.setAttribute("data-pid", p._code);
+      hero.querySelector(".media").setAttribute("data-mono", monogram(p._brand));
+      var a = hero.querySelector(".mcard-link");
+      a.setAttribute("href", "#/?p=" + encodeURIComponent(p._code));
+      a.setAttribute("data-open", p._code);
+      var copy = hero.querySelector(".nw-copy");
+      copy.classList.add("sw");
+      setTimeout(function () { copy.innerHTML = newCopyHtml(p); copy.classList.remove("sw"); }, 240);
+      newSchedule(sec);
+    };
+    var skip = function () { if (tok === sec._nwTok) newSchedule(sec); };
+    if (nxt.getAttribute("src") !== src) nxt.setAttribute("src", src);
+    if (nxt.complete && nxt.naturalWidth) { show(); return; }
+    if (nxt.decode) nxt.decode().then(show, skip);
+    else { nxt.onload = function () { nxt.onload = null; show(); }; nxt.onerror = function () { nxt.onerror = null; skip(); }; }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    document.querySelectorAll(".nw").forEach(function (sec) { if (sec._nw && sec._nwOn) newSchedule(sec); });
+  });
   // ленты — в простое браузера, каждая своей задачей (сортировка 150 тыс. — десятки мс)
   function runIdle(queue) {
     idle(function runQueue() {
@@ -5703,11 +5911,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function homeRails() {
     homePending = false;
     runIdle([
-      function () {
-        var html = freshRail(), top = $("railsTop");
-        var ids = function (h) { return (h.match(/data-pid="[^"]*"/g) || []).join(); };
-        if (ids(html) !== ids(top.innerHTML)) { top.innerHTML = html; top.querySelectorAll(".rv").forEach(function (el) { el.classList.add("in"); el._rv = true; }); initRails(top); }
-      },
+      function () { refreshRubrics($("railsTop"), "", ""); },
       function () { refreshRubrics($("seasonHome"), "", ""); },
       function () { refreshRubrics($("railsMore"), "", ""); },
       function () {
@@ -6152,19 +6356,25 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       return;
     }
     box.className = "view coll coll-" + name;
-    box.innerHTML = head + '<div class="coll-season"></div><div class="coll-rubs"></div><div class="coll-cats"></div>' + tail;
+    box.innerHTML = head + '<div class="coll-new"></div><div class="coll-season"></div><div class="coll-rubs"></div><div class="coll-cats"></div>' + tail;
     entryImgState(box);
     if (!READY) return;
-    renderSeason(box.querySelector(".coll-season"), origin, g);
     var rubs = box.querySelector(".coll-rubs"), list = RUBRICS[origin + "|" + g] || [];
-    // рубрики — по одной в простое браузера (каждая — проход по витрине и разметка)
-    runIdle(list.map(function (r) {
+    // «Новинки», сезон, рубрики — по одной задаче в простое браузера (каждая — проход по витрине и разметка)
+    runIdle([function () {
+      if (coll.page !== page || !box.isConnected) return;
+      var nw = box.querySelector(".coll-new");
+      nw.innerHTML = newHtml(origin, g); initRails(nw); newArm(nw);
+    }, function () {
+      if (coll.page !== page || !box.isConnected) return;
+      renderSeason(box.querySelector(".coll-season"), origin, g);
+    }].concat(list.map(function (r) {
       return function () {
         if (coll.page !== page || !rubs.isConnected) return;   // страница сменилась — старые задачи не нужны
         var html = rubricSection(r, origin, g);
         if (html) { rubs.insertAdjacentHTML("beforeend", html); initRails(rubs); }
       };
-    }).concat([function () {
+    })).concat([function () {
       if (coll.page !== page || !box.isConnected) return;
       renderCollCats(box.querySelector(".coll-cats"), origin, g);
     }]));
@@ -6187,25 +6397,32 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var ids = function (h) { return (h.match(/data-pid="[^"]*"/g) || []).join(); };
     var one = function (sec) {
       if (!sec.isConnected) return;
-      var id = sec.getAttribute("data-rk"), season = id === "season";
-      var r = season ? null : (RUBRICS[origin + "|" + g] || HOME_RUBRICS).filter(function (x) { return x.id === id; })[0];
-      if (!season && !r) return;
-      var html = season ? seasonHtml(sec.getAttribute("data-origin"), sec.getAttribute("data-gender")) : rubricSection(r, origin, g);
+      var id = sec.getAttribute("data-rk"), season = id === "season", nw = id === "new";
+      var r = season || nw ? null : (RUBRICS[origin + "|" + g] || HOME_RUBRICS).filter(function (x) { return x.id === id; })[0];
+      if (!season && !nw && !r) return;
+      var html = season ? seasonHtml(sec.getAttribute("data-origin"), sec.getAttribute("data-gender")) : nw ? newHtml(origin, g) : rubricSection(r, origin, g);
       if (!html) { sec.remove(); return; }
       if (ids(html) === ids(sec.outerHTML)) {
         var tmp2 = document.createElement("div"); tmp2.innerHTML = html;
         var a = sec.querySelector(".sec-tools a"), b = tmp2.querySelector(".sec-tools a");
         if (a && b) a.textContent = b.textContent;
+        if (nw) {      // «Новинки», те же вещи: обновить только подпись «за неделю» и бренды недели
+          var sp = sec.querySelector(".sec-head p"), sq = tmp2.querySelector(".sec-head p");
+          if (sp && sq && sp.innerHTML !== sq.innerHTML) sp.innerHTML = sq.innerHTML;
+          var mp = sec.querySelector(".nw-mq .ent-mq"), mq = tmp2.querySelector(".nw-mq .ent-mq");
+          if (mp && mq && mp.textContent !== mq.textContent) mp.innerHTML = mq.innerHTML;
+        }
         return;
       }
       var wasIn = sec.classList.contains("in"), parent = sec.parentNode;
       sec.outerHTML = html;
-      var fresh = parent.querySelector('.rub[data-rk="' + id + '"]');
+      var fresh = parent.querySelector('[data-rk="' + id + '"]');
       if (fresh && wasIn) { fresh.classList.add("in"); fresh._rv = true; }
       initRails(parent);
       if (season) seasonInd(fresh);
+      if (nw) newArm(parent);
     };
-    runIdle(Array.prototype.map.call(box.querySelectorAll(".rub[data-rk]"), function (sec) { return function () { one(sec); }; }).concat([function () {
+    runIdle(Array.prototype.map.call(box.querySelectorAll(".rub[data-rk], .nw[data-rk]"), function (sec) { return function () { one(sec); }; }).concat([function () {
       var cats = box.querySelector(".coll-cats");
       if (cats && cats.isConnected) renderCollCats(cats, origin, g);
     }]));
@@ -6389,7 +6606,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 
   /* ---------- окно товара ---------- */
   // pv.cur — открытый товар; pv.depth — сколько записей в истории добавили карточки (переходы по рекомендациям)
-  var pv = { cur: null, idx: 0, n: 0, depth: 0, lastFocus: null, backTimer: 0, raf: 0, recTimer: 0, tok: 0, size: "", qty: 1, added: false };
+  var pv = { cur: null, idx: 0, n: 0, depth: 0, lastFocus: null, backTimer: 0, recTimer: 0, tok: 0, size: "", qty: 1, added: false, fsHist: false, fsTimer: 0 };
 
   /* ---------- окно товара: размер, количество, «В корзину» ---------- */
   // вместо таблиц соответствия — живой ответ продавца: «Помочь с размером» открывает Telegram с кодом и названием вещи
@@ -6643,8 +6860,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.pvStage.classList.toggle("noimg", !pv.n);
     els.pvStage.setAttribute("data-mono", monogram(p._brand));
     if (!pv.n) exitFull();
+    galZoomReset(false);
     pvSet(Math.min(pv.idx, Math.max(pv.n - 1, 0)));
-    els.pvTrack.scrollLeft = pv.idx * els.pvTrack.clientWidth;
+    galPos(pv.idx, false);
   }
 
   function pvSet(i) {
@@ -6655,6 +6873,15 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.pvPrev.hidden = els.pvNext.hidden = !many;
     els.pvPrev.disabled = i <= 0;
     els.pvNext.disabled = i >= pv.n - 1;
+    // точки (во весь экран) — до 12 фото; соседние снимки — грузятся заранее (lazy → eager)
+    var dots = "";
+    if (many && pv.n <= 12) for (var d = 0; d < pv.n; d++) dots += d === i ? '<i class="on"></i>' : "<i></i>";
+    els.pvDots.innerHTML = dots;
+    var slides = els.pvTrack.children;
+    for (var j = Math.max(0, i - 1); j <= Math.min(pv.n - 1, i + 1); j++) {
+      var im = slides[j] && slides[j].querySelector("img");
+      if (im && im.loading === "lazy") im.loading = "eager";
+    }
     var thumbs = els.pvThumbs.children;
     for (var k = 0; k < thumbs.length; k++) {
       if (k === i) {
@@ -6667,23 +6894,210 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     }
   }
 
-  function pvGo(i, smooth) {
+  function pvGo(i, smooth, dur) {
     if (!pv.n) return;
     i = Math.max(0, Math.min(pv.n - 1, i));
+    if (i !== pv.idx) galZoomReset(false);
     pvSet(i);
-    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    els.pvTrack.scrollTo({ left: i * els.pvTrack.clientWidth, behavior: smooth && !reduce ? "smooth" : "auto" });
+    galPos(i, smooth && MO, dur);
   }
 
-  function pvOnScroll() {
-    if (pv.raf) return;
-    pv.raf = requestAnimationFrame(function () {
-      pv.raf = 0;
-      var w = els.pvTrack.clientWidth;
-      if (!w || !pv.n) return;
-      var i = Math.max(0, Math.min(pv.n - 1, Math.round(els.pvTrack.scrollLeft / w)));
-      if (i !== pv.idx) pvSet(i);
-    });
+  /* ---------- жесты галереи: свайп, щипок, двойной тап, свайп вниз во весь экран ----------
+     Только transform (лента — translate3d по X в процентах + сдвиг пальца в px; фото — translate + scale от угла 0 0),
+     запись в кадре (rAF), слушатели move — passive, замеры (ширина сцены, размер снимка) — один раз при касании,
+     will-change — только на время жеста (.drag / .zm). Пока фото увеличено, горизонтальный жест двигает снимок, а не ленту */
+  var gal = { ptrs: new Map(), w: 0, h: 0, axis: "", dx: 0, dy: 0, sx: 0, sy: 0, samples: [], moved: false, raf: 0, write: null,
+    z: { s: 1, tx: 0, ty: 0 }, img: null, box: null, pinch: null, pan0: null, tapT: 0, tapX: 0, tapY: 0, tapTimer: 0, endTimer: 0 };
+  function galPos(i, smooth, dur) {
+    var t = els.pvTrack;
+    clearTimeout(gal.endTimer);
+    t.classList.toggle("snap", !!smooth);
+    if (smooth) t.style.setProperty("--gal-d", Math.round(dur || 380) + "ms");
+    t.style.transform = "translate3d(" + (-i * 100) + "%, 0, 0)";
+    if (smooth) gal.endTimer = setTimeout(galSettle, (dur || 380) + 60); else galSettle();
+    els.pvStage.style.opacity = "";
+  }
+  function galSettle() { els.pvTrack.classList.remove("snap", "drag"); }
+  function galSlideImg() { var sl = els.pvTrack.children[pv.idx]; return sl ? sl.querySelector("img") : null; }
+  // замеры снимка в кадре (object-fit: contain): где лежит само изображение внутри слайда — для границ сдвига
+  function galMeasure() {
+    gal.w = els.pvStage.clientWidth; gal.h = els.pvStage.clientHeight;
+    var img = galSlideImg(), W = gal.w, H = gal.h, nw = img && img.naturalWidth, nh = img && img.naturalHeight;
+    gal.img = img;
+    if (!img || !nw || !nh || !W || !H) { gal.box = null; return; }
+    var r = nw / nh, iw, ih;
+    if (W / H > r) { ih = H; iw = H * r; } else { iw = W; ih = W / r; }
+    gal.box = { ox: (W - iw) / 2, oy: (H - ih) / 2, iw: iw, ih: ih };
+  }
+  function galClamp(z) {
+    var b = gal.box, W = gal.w, H = gal.h;
+    if (!b) return z;
+    var s = z.s, tx = z.tx, ty = z.ty;
+    if (b.iw * s <= W) tx = W / 2 - (b.ox + b.iw / 2) * s; else tx = Math.min(-b.ox * s, Math.max(W - (b.ox + b.iw) * s, tx));
+    if (b.ih * s <= H) ty = H / 2 - (b.oy + b.ih / 2) * s; else ty = Math.min(-b.oy * s, Math.max(H - (b.oy + b.ih) * s, ty));
+    return { s: s, tx: tx, ty: ty };
+  }
+  function galApplyZoom(z, anim) {
+    var img = gal.img || galSlideImg();
+    if (!img) return;
+    gal.z = z;
+    img.classList.toggle("snap", !!anim);
+    img.style.transform = z.s === 1 && !z.tx && !z.ty ? "" : "translate3d(" + z.tx.toFixed(1) + "px, " + z.ty.toFixed(1) + "px, 0) scale(" + z.s.toFixed(3) + ")";
+    els.pvTrack.classList.toggle("zoomed", z.s > 1.001);
+    if (anim) setTimeout(function () { img.classList.remove("snap", "zm"); }, 340);
+  }
+  function galZoomReset(anim) {
+    if (gal.z.s === 1 && !gal.z.tx && !gal.z.ty) { els.pvTrack.classList.remove("zoomed"); return; }
+    galApplyZoom({ s: 1, tx: 0, ty: 0 }, anim && MO);
+  }
+  // увеличить до s вокруг точки (fx, fy) в координатах слайда — точка под пальцем остаётся на месте
+  function galZoomTo(s, fx, fy, anim) {
+    var z = gal.z, k = s / z.s;
+    galApplyZoom(galClamp({ s: s, tx: fx - (fx - z.tx) * k, ty: fy - (fy - z.ty) * k }), anim);
+  }
+  function galFrame() {
+    gal.raf = 0;
+    var w = gal.write;
+    gal.write = null;
+    if (w) w();
+  }
+  function galWrite(fn) { gal.write = fn; if (!gal.raf) gal.raf = requestAnimationFrame(galFrame); }
+  function galRubber(d, w) { return d * (w ? Math.max(.18, 1 - Math.abs(d) / w) * .6 : .3); }
+  function galPt(e) { var r = els.pvStage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  function galDown(e) {
+    if (!pv.n || (e.pointerType === "mouse" && e.button !== 0)) return;
+    var t = els.pvTrack;
+    try { t.setPointerCapture(e.pointerId); } catch (x) { /* указатель уже ушёл */ }
+    gal.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (gal.ptrs.size === 1) {
+      galMeasure();                                    // один замер на жест (не в move)
+      gal.axis = ""; gal.dx = gal.dy = 0; gal.sx = e.clientX; gal.sy = e.clientY; gal.samples = [[performance.now(), e.clientX, e.clientY]];
+      gal.moved = false; gal.pinch = null; gal.pan0 = { tx: gal.z.tx, ty: gal.z.ty };
+      gal.type = e.pointerType;
+      clearTimeout(gal.endTimer);
+      t.classList.remove("snap"); t.classList.add("drag");
+      if (gal.img) { gal.img.classList.remove("snap"); if (gal.z.s > 1) gal.img.classList.add("zm"); }
+    } else if (gal.ptrs.size === 2) {
+      var pts = Array.from(gal.ptrs.values()), a = galPt({ clientX: pts[0].x, clientY: pts[0].y }), b = galPt({ clientX: pts[1].x, clientY: pts[1].y });
+      gal.pinch = { d0: Math.max(10, Math.hypot(b.x - a.x, b.y - a.y)), s0: gal.z.s, tx0: gal.z.tx, ty0: gal.z.ty, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+      gal.axis = "pinch"; gal.moved = true;
+      clearTimeout(gal.tapTimer); gal.tapT = 0;
+      if (gal.img) gal.img.classList.add("zm");
+      galWrite(function () { els.pvTrack.style.transform = "translate3d(" + (-pv.idx * 100) + "%, 0, 0)"; });
+    }
+  }
+  function galMove(e) {
+    var pt = gal.ptrs.get(e.pointerId);
+    if (!pt) return;
+    pt.x = e.clientX; pt.y = e.clientY;
+    if (gal.pinch && gal.ptrs.size >= 2) {
+      var pts = Array.from(gal.ptrs.values()), a = galPt({ clientX: pts[0].x, clientY: pts[0].y }), b = galPt({ clientX: pts[1].x, clientY: pts[1].y });
+      var P = gal.pinch, d = Math.hypot(b.x - a.x, b.y - a.y), s = Math.min(3.4, Math.max(.75, P.s0 * d / P.d0)), k = s / P.s0;
+      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      var z = { s: s, tx: mx - (P.cx - P.tx0) * k, ty: my - (P.cy - P.ty0) * k };
+      galWrite(function () { galApplyZoom(z, false); });
+      return;
+    }
+    if (gal.ptrs.size !== 1) return;
+    var dx = e.clientX - gal.sx, dy = e.clientY - gal.sy;
+    gal.dx = dx; gal.dy = dy;
+    var smp = gal.samples; smp.push([performance.now(), e.clientX, e.clientY]); if (smp.length > 6) smp.shift();
+    if (gal.z.s > 1.001) {                              // увеличено: палец двигает снимок (резинка за границей)
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) gal.moved = true;
+      var raw = { s: gal.z.s, tx: gal.pan0.tx + dx, ty: gal.pan0.ty + dy }, c = galClamp(raw);
+      var z2 = { s: raw.s, tx: c.tx + (raw.tx - c.tx) * .35, ty: c.ty + (raw.ty - c.ty) * .35 };
+      galWrite(function () { galApplyZoom(z2, false); });
+      return;
+    }
+    if (!gal.axis) {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      gal.axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+      gal.moved = true;
+      clearTimeout(gal.tapTimer);
+    }
+    var full = els.pvStage.classList.contains("full");
+    if (gal.axis === "x") {
+      var edge = (pv.idx === 0 && dx > 0) || (pv.idx === pv.n - 1 && dx < 0), sh = edge ? galRubber(dx, gal.w) : dx;
+      galWrite(function () { els.pvTrack.style.transform = "translate3d(calc(" + (-pv.idx * 100) + "% + " + sh.toFixed(1) + "px), 0, 0)"; });
+    } else if (full) {                                  // во весь экран: тянем вниз — закрыть
+      var sy = dy > 0 ? dy : dy * .2, op = Math.max(.25, 1 - Math.max(0, dy) / 520);
+      galWrite(function () {
+        els.pvTrack.style.transform = "translate3d(" + (-pv.idx * 100) + "%, " + sy.toFixed(1) + "px, 0)";
+        els.pvStage.style.opacity = op.toFixed(3);
+      });
+    }
+  }
+  function galUp(e) {
+    if (!gal.ptrs.has(e.pointerId)) return;
+    gal.ptrs.delete(e.pointerId);
+    try { els.pvTrack.releasePointerCapture(e.pointerId); } catch (x) { /* уже отпущен */ }
+    var now = performance.now();
+    if (gal.pinch) {
+      if (gal.ptrs.size >= 1) {                         // один палец остался — дальше это сдвиг увеличенного снимка
+        var rest = gal.ptrs.values().next().value;
+        gal.sx = rest.x; gal.sy = rest.y; gal.pan0 = { tx: gal.z.tx, ty: gal.z.ty }; gal.pinch = null; gal.axis = "pan";
+        if (gal.z.s < 1.05) galZoomReset(true); else galApplyZoom(galClamp(gal.z), true);
+        return;
+      }
+      gal.pinch = null;
+    }
+    if (gal.ptrs.size) return;
+    var full = els.pvStage.classList.contains("full"), t = els.pvTrack;
+    if (gal.z.s > 1.001 || gal.axis === "pan" || gal.axis === "pinch") {
+      if (gal.z.s < 1.05) galZoomReset(true); else galApplyZoom(galClamp(gal.z), true);
+      t.classList.remove("drag");
+      if (e.type === "pointerup" && !gal.moved) galTap(e, now);
+      return;
+    }
+    if (gal.axis === "x") {
+      var smp = gal.samples, a = smp[0], b = smp[smp.length - 1], dt = Math.max(1, b[0] - a[0]), v = (b[1] - a[1]) / dt;
+      var target = pv.idx, w = gal.w || 1;
+      if (gal.dx < -w * .22 || v < -.45) target++; else if (gal.dx > w * .22 || v > .45) target--;
+      target = Math.max(0, Math.min(pv.n - 1, target));
+      var left = Math.abs((target - pv.idx) * w - gal.dx), dur = Math.max(200, Math.min(440, left / Math.max(Math.abs(v), .9)));
+      pvGo(target, true, dur);
+      return;
+    }
+    if (gal.axis === "y" && full) {
+      var sm = gal.samples, a2 = sm[0], b2 = sm[sm.length - 1], vy = (b2[2] - a2[2]) / Math.max(1, b2[0] - a2[0]);
+      if (gal.dy > 90 || vy > .55) {
+        t.classList.add("snap"); t.style.setProperty("--gal-d", "220ms");
+        t.style.transform = "translate3d(" + (-pv.idx * 100) + "%, " + Math.round(gal.h || 600) + "px, 0)";
+        els.pvStage.classList.add("leave"); els.pvStage.style.opacity = "0";
+        gal.endTimer = setTimeout(function () { els.pvStage.classList.remove("leave"); requestUnfull(); }, 200);
+        return;
+      }
+      galPos(pv.idx, true, 300);
+      return;
+    }
+    t.classList.remove("drag");
+    if (gal.axis === "y" || e.type !== "pointerup" || gal.moved) { galPos(pv.idx, false); return; }
+    galTap(e, now);
+  }
+  // тап: второй за 320 мс рядом — двойной (2× вокруг точки / сброс); одиночный — во весь экран (палец — с паузой на
+  // ожидание второго, мышь — сразу)
+  function galTap(e, now) {
+    var pt = galPt(e);
+    if (gal.tapT && now - gal.tapT < 320 && Math.hypot(pt.x - gal.tapX, pt.y - gal.tapY) < 28) {
+      clearTimeout(gal.tapTimer); gal.tapT = 0;
+      if (gal.z.s > 1.001) galZoomReset(true);
+      else { gal.img = galSlideImg(); if (gal.img) gal.img.classList.add("zm"); galZoomTo(2, pt.x, pt.y, MO); }
+      return;
+    }
+    gal.tapT = now; gal.tapX = pt.x; gal.tapY = pt.y;
+    var act = function () { if (!els.pvStage.classList.contains("full")) enterFull(); };
+    clearTimeout(gal.tapTimer);
+    if (e.pointerType === "mouse") act();                  // мышь: сразу (второй клик за 320 мс всё равно засчитается двойным)
+    else gal.tapTimer = setTimeout(function () { gal.tapT = 0; act(); }, 300);
+  }
+  function galBind() {
+    var t = els.pvTrack;
+    t.addEventListener("pointerdown", galDown);
+    t.addEventListener("pointermove", galMove, { passive: true });
+    t.addEventListener("pointerup", galUp);
+    t.addEventListener("pointercancel", galUp);
+    t.addEventListener("lostpointercapture", function (e) { if (gal.ptrs.has(e.pointerId)) galUp({ pointerId: e.pointerId, type: "pointercancel", clientX: 0, clientY: 0, pointerType: "" }); });
+    t.addEventListener("dragstart", function (e) { e.preventDefault(); });
   }
 
   function pvOnImgError(e) {
@@ -6699,12 +7113,37 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 
   function toggleFull(on) {
     if (on && !pv.n) return;
+    if (els.pvStage.classList.contains("full") === !!on) return;
+    clearTimeout(pv.fsTimer);
+    galZoomReset(false);
     els.pvStage.classList.toggle("full", on);
+    els.pvStage.classList.remove("leave");
+    els.pvStage.style.opacity = "";
+    if (!on) pv.fsHist = false;
+    galPos(pv.idx, false);
     tgSoon();
-    requestAnimationFrame(function () { els.pvTrack.scrollLeft = pv.idx * els.pvTrack.clientWidth; });
     (on ? els.pvUnfull : els.pvClose).focus({ preventScroll: true });
   }
   function exitFull() { if (els.pvStage.classList.contains("full")) toggleFull(false); }
+  // во весь экран — своя запись в истории (state.fs поверх записи товара): «Назад» браузера / Telegram закрывает
+  // сначала просмотр; крестик и свайп вниз — тоже через history.back() (запись не остаётся), с запасным таймером
+  function enterFull() {
+    if (!pv.cur || !pv.n || els.pvStage.classList.contains("full")) return;
+    toggleFull(true);
+    try { history.pushState({ pv: pv.cur._code, d: pv.depth + 1, fs: 1 }, "", location.href); pv.depth++; pv.fsHist = true; }
+    catch (e) { pv.fsHist = false; }
+  }
+  function requestUnfull() {
+    if (!els.pvStage.classList.contains("full")) return;
+    var st = history.state;
+    if (pv.fsHist && st && st.fs) {
+      clearTimeout(pv.fsTimer);
+      pv.fsTimer = setTimeout(function () { if (els.pvStage.classList.contains("full")) toggleFull(false); }, 450);
+      history.back();
+      return;
+    }
+    toggleFull(false);
+  }
 
   function setInert(on) {
     document.querySelectorAll(".skip, .admin-note, .announce, .site-header, #main, .site-foot").forEach(function (el) {
@@ -6950,12 +7389,12 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       if (e.target.closest("[data-share]")) { shareProduct(pv.cur); return; }
       var th = e.target.closest(".pv-thumb");
       if (th) { pvGo(+th.getAttribute("data-n"), true); return; }
-      if (e.target.closest(".pv-slide")) toggleFull(!els.pvStage.classList.contains("full"));
     });
     els.pvPrev.addEventListener("click", function () { pvGo(pv.idx - 1, true); });
     els.pvNext.addEventListener("click", function () { pvGo(pv.idx + 1, true); });
-    els.pvUnfull.addEventListener("click", function () { toggleFull(false); });
-    els.pvTrack.addEventListener("scroll", pvOnScroll, { passive: true });
+    els.pvUnfull.addEventListener("click", function () { requestUnfull(); });
+    els.pvExpand.addEventListener("click", function () { enterFull(); });
+    galBind();
     els.pvTrack.addEventListener("error", pvOnImgError, true);
     els.pvThumbs.addEventListener("error", function (e) {
       // миниатюра — уменьшенный вариант; не открылся — исходный адрес, не открылся и он — фото битое
@@ -6964,7 +7403,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.pv.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (els.pvStage.classList.contains("full")) toggleFull(false); else requestClose();
+        if (els.pvStage.classList.contains("full")) requestUnfull(); else requestClose();
         return;
       }
       if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.altKey && !e.ctrlKey && !e.metaKey &&
@@ -7465,6 +7904,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         openProduct(p, true);
         var st = history.state;
         pv.depth = st && st.pv === p._code && st.d ? st.d : 0;
+        if (els.pvStage.classList.contains("full") && !(st && st.fs)) toggleFull(false);   // «Назад» из просмотра во весь экран
       } else if (!ALL) {
         // каталог ещё догружается: просим часть с этим товаром вне очереди и откроем его, как только придёт
         waitId = r.id.toUpperCase();
@@ -8639,7 +9079,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // через history.back()), иначе history.back(). С первой записи Mini App (tg0 — ставит скрипт в <head>) назад
   // некуда (а в веб-версии Telegram history.back() увёл бы чат) — на главную
   function tgBack() {
-    if (els.pvStage.classList.contains("full")) { toggleFull(false); return; }
+    if (els.pvStage.classList.contains("full")) { requestUnfull(); return; }
     if (pv.cur) { requestClose(); return; }
     if (els.filters.classList.contains("open")) { requestCloseSheet(); return; }
     if (!els.drawer.hidden) { requestCloseDrawer(); return; }
