@@ -118,7 +118,11 @@ img { display: block; max-width: 100%; }
 .wordmark { font: 400 26px/1 var(--font-display); letter-spacing: .02em; white-space: nowrap; padding-bottom: .08em; }
 .logo .tag { display: none; padding-left: 14px; margin-left: 4px; border-left: 1px solid var(--line); font-size: 12px; line-height: 1.25; color: var(--muted); max-width: 22ch; }
 @media (min-width: 900px) { .wordmark { font-size: 29px; } }
-@media (min-width: 1440px) { .site-header .logo .tag { display: block; } }
+/* слогана в шапке нет ни на какой ширине: вместе с девятью пунктами меню и поиском ему не хватает места даже в
+   ширине 1440 px (.wrap), и он наезжал на меню; слоган остаётся в подвале, в меню телефона и в заголовке окна.
+   Знак не сжимается (flex: none) — пункты меню никогда не накладываются на него */
+.site-header .logo { flex: none; }
+.site-header .logo .tag { display: none; }
 
 /* ---------- полоса объявления и шапка ---------- */
 .announce { background: var(--cobalt); color: var(--on-cobalt); font-size: 13px; line-height: 1.35; text-align: center; padding: 8px var(--gutter); }
@@ -132,12 +136,14 @@ img { display: block; max-width: 100%; }
 .hdr { height: 100%; display: flex; align-items: center; gap: 8px; }
 .hdr .logo { margin-right: auto; }
 .mainnav { display: none; }
-.mainnav a { position: relative; padding: 8px 0; color: var(--ink); text-decoration: none; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.mainnav a { position: relative; display: inline-flex; align-items: center; height: 100%; padding: 0; color: var(--ink); text-decoration: none; font-size: 14px; font-weight: 500; white-space: nowrap; }
 .mainnav a:hover { color: var(--cobalt); }
-.mainnav a[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--cobalt); }
+/* подчёркивание активного пункта лежит точно на нижней линии шапки (пункт — во всю высоту шапки) */
+.mainnav a[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--cobalt); }
 .mainnav a.sale { color: var(--cobalt); }
 .hsearch { display: none; position: relative; }
-.hsearch input { width: 220px; height: 38px; padding: 0 12px 0 36px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
+.hsearch { width: 220px; flex: 0 1 auto; min-width: 150px; }   /* поиск уступает место меню, а не наоборот */
+.hsearch input { width: 100%; height: 38px; padding: 0 12px 0 36px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
 .hsearch input::placeholder { color: var(--muted); }
 .hsearch > svg { position: absolute; left: 12px; top: 50%; margin-top: -8px; color: var(--muted); pointer-events: none; }
 /* «Написать» — только при настоящем контакте; на ширине < 430 px — значок без подписи (см. ниже), значок поиска виден всегда */
@@ -150,19 +156,19 @@ img { display: block; max-width: 100%; }
   .hdr-call { display: inline-flex; }
   .burger, .search-toggle { display: none !important; }
   .hdr { gap: 28px; }
-  .mainnav { display: flex; gap: 24px; }
+  .mainnav { display: flex; align-self: stretch; gap: 24px; }
   .hdr .logo { margin-right: 0; }
   .hsearch { display: block; margin-left: auto; }
   .hdr-contact { padding: 0 16px; gap: 8px; }
 }
 @media (min-width: 900px) and (max-width: 1359.98px) { .mainnav a.opt { display: none; } }
-@media (min-width: 900px) and (max-width: 1099.98px) { .hsearch input { width: 170px; } }
+@media (min-width: 900px) and (max-width: 1099.98px) { .hsearch { width: 170px; } }
 .msearch { position: absolute; left: 0; right: 0; top: 100%; padding: 10px var(--gutter); background: var(--paper); border-bottom: 1px solid var(--line); }
 .msearch form { display: flex; gap: 8px; }
 .msearch input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 16px; }
 .msearch form { position: relative; }
-@media (min-width: 1100px) { .hsearch input { width: 270px; } }
-@media (min-width: 1360px) { .hsearch input { width: 330px; } }
+@media (min-width: 1100px) { .hsearch { width: 270px; } }
+@media (min-width: 1360px) { .hsearch { width: 330px; } }
 /* подсказки под полем поиска: бренды, категории, «бренд · категория», последние запросы; строки 44 px */
 .sugg {
   position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); margin: 0; padding: 6px; list-style: none;
@@ -1610,13 +1616,31 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 }
 .ent-tr { background: #16110D; --veil: 22, 17, 13; --silk: #6CC8D2; }
 .ent-kb { position: absolute; inset: 0; z-index: 0; display: grid; grid-template-columns: repeat(12, 1fr); grid-template-rows: repeat(12, 1fr); gap: 0; pointer-events: none; }
-.ent-kb .fr { position: relative; overflow: hidden; background: #fff; border-radius: 4px; box-shadow: 0 40px 70px -30px rgba(0, 0, 0, .9); }
-.ent-kb .fr img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* рамка до фото — не серый ящик, а мягкий «шёлк» (размытые складки из градиентов) с бликом; фото проявляется, когда
+   загрузилось (.ld ставит entryImgState); второй снимок (img.b) включается в кен-бёрнс тоже только после загрузки */
+.ent-kb .fr { position: relative; overflow: hidden; border-radius: 4px; box-shadow: 0 40px 70px -30px rgba(0, 0, 0, .9);
+  background:
+    radial-gradient(90% 70% at 20% 10%, color-mix(in srgb, var(--silk) 38%, transparent), transparent 60%),
+    radial-gradient(70% 60% at 85% 80%, color-mix(in srgb, var(--silk) 22%, transparent), transparent 65%),
+    linear-gradient(160deg, color-mix(in srgb, var(--silk) 14%, transparent) 0%, transparent 45%, color-mix(in srgb, var(--silk) 10%, transparent) 100%),
+    #1B1813; }
+.ent-tr .ent-kb .fr { background-color: #141A1B; }
+.ent-kb .fr::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .09) 50%, transparent 70%); transform: translate3d(-100%, 0, 0); }
+.mo .ent-kb .fr:not(.on)::before { animation: shimmer 2.2s var(--ease-in-out) infinite; }
+.ent-kb .fr img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+.ent-kb .fr img.ld { opacity: 1; transition: opacity 700ms var(--ease-out); }
 .ent-kb .fr img.b { opacity: 0; }
+.ent-kb .fr.err img.b.ld { opacity: 1; }                      /* первый снимок не открылся — показываем второй */
+/* глубина: кадры чуть следуют за мышью (--px/--py ставит entryParallax на панель; --d — глубина рамки) */
+.ent-kb .fr { translate: calc(var(--px, 0) * var(--d, 18) * 1px) calc(var(--py, 0) * var(--d, 18) * .6px); transition: translate 900ms var(--ease-out); }
+.ent-kb .fr:nth-child(1) { --d: 14; } .ent-kb .fr:nth-child(2) { --d: 30; } .ent-kb .fr:nth-child(3) { --d: 22; }
 .ent-kb .fr:nth-child(1) { grid-column: 1 / 6; grid-row: 1 / 10; }
 .ent-kb .fr:nth-child(2) { grid-column: 6 / 10; grid-row: 2 / 8; }
 .ent-kb .fr:nth-child(3) { grid-column: 9 / 13; grid-row: 1 / 7; }
-.ent-kb .sk { background: rgba(255, 255, 255, .06); box-shadow: none; }
+.ent-kb .sk { box-shadow: none; }
+/* наведение на одну страну приглушает другую (слой с opacity, без фильтров) */
+.ent::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: #050507; opacity: 0; transition: opacity 900ms var(--ease-in-out); }
 .ent-veil { position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: linear-gradient(180deg, rgba(var(--veil), .12) 0%, rgba(var(--veil), .3) 40%, rgba(var(--veil), .9) 78%, rgba(var(--veil), .98) 100%); }
 .ent-copy { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 0 var(--gutter) 22px; }
@@ -1628,7 +1652,18 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 .ent-mq .mq span::after { content: "·"; padding-left: 1.4em; opacity: .55; }
 .mo .ent-mq .mq { animation: marq var(--marq, 60s) linear infinite; }
 .mo .entry.paused .ent-mq .mq { animation-play-state: paused; }
-.ent-title { display: inline-block; margin: 0; font: 500 clamp(58px, 12vw, 132px)/.92 var(--font-lux); letter-spacing: -.015em; color: inherit; text-decoration: none; }
+.ent-title { position: relative; display: inline-block; margin: 0; font: 500 clamp(58px, 12vw, 132px)/.92 var(--font-lux); letter-spacing: -.015em; color: inherit; text-decoration: none; }
+/* буквы названия поднимаются из-под шёлковой нити (entryLetters: .ch с --i), нить протягивается и тает */
+.ent-title .ch { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .14em; margin-bottom: -.14em; }
+.ent-title .ch > span { display: inline-block; }
+.ent-title::after { content: ""; position: absolute; left: 0; right: 0; bottom: .02em; height: 1px; background: var(--silk); opacity: 0; transform: scaleX(0); transform-origin: 0 50%; }
+.mo .entry.pre .ent-title .ch > span { transform: translate3d(0, 112%, 0); }
+.mo .entry.play .ent-title .ch > span, .mo .coll-hero .ent-title .ch > span { animation: ch-up 1s var(--ease-out) calc(var(--i, 0) * 60ms + 160ms) both; }
+.mo .entry.play .ent-tr .ent-title .ch > span { animation-delay: calc(var(--i, 0) * 60ms + 460ms); }
+.mo .entry.play .ent-title::after, .mo .coll-hero .ent-title::after { animation: thread 1.9s var(--ease-in-out) 40ms both; }
+.mo .entry.play .ent-tr .ent-title::after { animation-delay: 340ms; }
+@keyframes ch-up { from { transform: translate3d(0, 112%, 0); } to { transform: none; } }
+@keyframes thread { 0% { opacity: 0; transform: scaleX(0); } 20% { opacity: 1; } 55% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
 .ent-title:hover { color: var(--silk); }
 .ent-sub { margin: 10px 0 0; max-width: 46ch; font-size: clamp(15px, 1.5vw, 18px); line-height: 1.45; color: rgba(243, 239, 230, .78); }
 .ent-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
@@ -1649,13 +1684,15 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 @media (hover: hover) and (min-width: 900px) {
   .mo .ent { transition: flex-grow 1100ms var(--ease-in-out); }
   .mo .ent:hover { flex-grow: 1.45; }
-  .mo .ent-kb .fr { transition: transform 1100ms var(--ease-in-out); }
+  .mo .entry:hover .ent:not(:hover)::after { opacity: .42; }
+  .mo .ent-kb .fr { transition: transform 1100ms var(--ease-in-out), translate 900ms var(--ease-out); }
   .mo .ent:hover .ent-kb .fr { transform: scale(1.03); }
 }
 @media (hover: none) { .ent:active .ent-kb { transform: scale(.985); transition: transform var(--dur-2) var(--ease-out); } }
 /* кен-бёрнс: кадры медленно приближаются, второй снимок проступает раз в ~20 с; за экраном — пауза (.paused) */
-.mo .ent-kb .fr img { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate; }
-.mo .ent-kb .fr img.b { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate, xf calc(20s / var(--tempo, 1)) var(--ease-in-out) infinite; }
+.mo .ent-kb .fr img.ld { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate; }
+.mo .ent-kb .fr img.b.ld { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate, xf calc(20s / var(--tempo, 1)) var(--ease-in-out) infinite; }
+.mo .ent-kb .fr.err img.b.ld { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate; }
 .mo .ent-kb .fr:nth-child(2) img { animation-delay: -7s, 6s; }
 .mo .ent-kb .fr:nth-child(3) img { animation-delay: -14s, 12s; }
 .mo .ent-kb .fr:nth-child(1) img.b { animation-delay: 0s, 1s; }
@@ -1680,14 +1717,38 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 
 /* ---------- сезон: вкладки и лента ---------- */
 .season .sec-head { align-items: flex-start; }
-.stabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
-.stab { min-height: 44px; padding: 8px 18px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font: 500 15px/1.2 var(--font-ui); cursor: pointer; }
-.stab:hover { border-color: var(--ink); }
-.stab[aria-selected="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* вкладки сезонов: текст, под выбранной — шёлковая черта; при переключении черта переезжает (seasonInd: --x/--w, только transform) */
+.stabs { position: relative; display: flex; flex-wrap: wrap; gap: 0 22px; margin-top: 14px; }
+.stab { position: relative; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--muted); font: 500 16px/1.2 var(--font-ui); cursor: pointer; }
+.stab:hover { color: var(--ink); }
+.stab[aria-selected="true"] { color: var(--ink); }
+.stab::after { content: ""; position: absolute; left: 0; right: 0; bottom: 6px; height: 2px; background: var(--silk); opacity: 0; }
+.stabs:not(.has-ind) .stab[aria-selected="true"]::after { opacity: .95; }
+.stab-ind { position: absolute; left: 0; bottom: 6px; width: 100px; height: 2px; background: var(--silk); pointer-events: none; opacity: 0;
+  transform-origin: 0 50%; transform: translate3d(calc(var(--x, 0) * 1px), 0, 0) scaleX(calc(var(--w, 100) / 100)); }
+.stabs.has-ind .stab-ind { opacity: .95; }
+.mo .stabs.has-ind .stab-ind { transition: transform 480ms var(--ease-in-out); }
+.season-body { position: relative; }
+.season-body::after { content: ""; position: absolute; top: 0; bottom: 8px; left: calc(-1 * var(--gutter)); width: 2px; background: var(--silk); opacity: 0; pointer-events: none; }
+.season h2 .st-txt { display: inline-block; }
+/* смена сезона: старая лента схлопывается шторкой слева направо, заголовок уходит вверх; новая лента въезжает той же
+   шторкой с шёлковой кромкой, карточки — лесенкой справа, заголовок — снизу. clip-path учитывает вылет ленты в поля */
+.mo .season.swap .season-body { clip-path: inset(0 calc(-1 * var(--gutter)) 0 calc(100% + var(--gutter))); transition: clip-path 360ms var(--ease-in); }
+.mo .season.swap h2 .st-txt { opacity: 0; transform: translate3d(0, -12px, 0); transition: opacity 240ms var(--ease-in), transform 240ms var(--ease-in); }
+.mo .season.swapin .season-body { animation: season-in 760ms var(--ease-out) both; }
+.mo .season.swapin .season-body::after { animation: season-edge 760ms var(--ease-out) both; }
+.mo .season.swapin h2 .st-txt { animation: st-in 560ms var(--ease-out) 60ms both; }
+.mo .season.swapin .rk { animation: season-card 640ms var(--ease-out) calc(var(--k, 0) * 55ms + 80ms) both; }
+@keyframes season-in { from { clip-path: inset(0 calc(100% + var(--gutter)) 0 calc(-1 * var(--gutter))); } to { clip-path: inset(0 calc(-1 * var(--gutter)) 0 calc(-1 * var(--gutter))); } }
+@keyframes season-edge { 0% { opacity: 1; transform: translate3d(0, 0, 0); } 90% { opacity: 1; } 100% { opacity: 0; transform: translate3d(calc(var(--bw, 1000) * 1px), 0, 0); } }
+@keyframes st-in { from { opacity: 0; transform: translate3d(0, 14px, 0); } to { opacity: 1; transform: none; } }
+@keyframes season-card { from { opacity: 0; transform: translate3d(36px, 0, 0); } to { opacity: 1; transform: none; } }
 
 /* ---------- рубрики: блок во всю ширину, лента или мозаика ---------- */
 .rub { padding: 48px 0 12px; }
 .rub .sec-head { margin-bottom: 22px; }
+/* телефон: длинный заголовок рубрики («Зима: пальто, пуховики…») — «Смотреть все · N» переносится под него, а не уходит за край */
+@media (max-width: 899.98px) { .rub .sec-head { flex-wrap: wrap; } .rub .sec-head > div:first-child { flex: 1 1 100%; } }
 .mosaic { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
 .mosaic .mcard { flex: none; }
 .mosaic .mcard:first-child { grid-column: span 2; }
@@ -1709,34 +1770,101 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 }
 .mosaic > :nth-child(1) { --k: 0; } .mosaic > :nth-child(2) { --k: 1; } .mosaic > :nth-child(3) { --k: 2; } .mosaic > :nth-child(4) { --k: 3; }
 .mosaic > :nth-child(5) { --k: 4; } .mosaic > :nth-child(6) { --k: 5; } .mosaic > :nth-child(7) { --k: 6; } .mosaic > :nth-child(8) { --k: 7; }
-/* движение рубрик — по data-motion (одна система длительностей :root, только transform/opacity/clip-path; размытие ≤ 4px и коротко).
-   Общие правила лент выше (.rv .rail > *) для рубрик выключены: у каждой свой стиль. Всё только при html.mo */
+/* движение рубрик — по data-motion: у каждой рубрики своя «подпись» (только transform / opacity / clip-path, размытие ≤ 6 px и
+   коротко; всё — при html.mo, появление — IntersectionObserver → .in). Общие правила лент выше (.rv .rail > *) для рубрик
+   выключены. Лесенка — --k (номер карточки, см. .rail > :nth-child). Темп — --tempo (Италия медленнее, Турция быстрее).
+     tilt    — «Обувь»: карточки ставятся на полку — поворот rotateY −18° → 0 в перспективе, тень под ними оседает
+     heavy   — «Куртки и пальто»: тяжёлый вход — scale 1.06 → 1, из размытия в резкость, фото опускается сверху, цена последней
+     float   — «Кашемир и шерсть»: мягкое всплытие, затем каждая карточка едва покачивается (своя фаза --ph), тёплая виньетка
+     curtain — «Гардероб руководителя», «Костюмы»: фото раскрывается от середины, как занавес, колонка за колонкой;
+               текст выезжает из-под шёлковой линии
+     sway    — «Платья»: карточки покачиваются, как ткань (rotateZ ±3° с затуханием), фото открывается снизу
+     pop     — «Сумки и аксессуары»: быстрый упругий вход лесенкой, по фото один раз проходит блик
+     tick    — «Скидки от 50%»: быстрый въезд справа, цена отсчитывается вниз от старой (tickPrices), ярлык скидки раз пульсирует
+     season  — блок сезона: карточки въезжают справа; смена вкладки — шторка (см. .season.swap / .swapin) */
 .mo .rub .rail > *, .mo .rub .mosaic > * { opacity: 1; transform: none; }
 .mo .rub .rail > * .media, .mo .rub .mosaic > * .media { clip-path: none; }
 .mo .rub.in .rail > *, .mo .rub.in .mosaic > * { transition: none; }
 .mo .rub.in .rail > * .media, .mo .rub.in .mosaic > * .media { transition: transform var(--dur-2) var(--ease-out); }
-/* обувь: карточки чуть наклонены и выпрямляются */
-.mo .rub[data-motion="tilt"] .rk { opacity: 0; transform: rotate(-5deg) translate3d(0, 30px, 0) scale(.94); transform-origin: 50% 100%; }
-.mo .rub[data-motion="tilt"] .rk:nth-child(even) { transform: rotate(4deg) translate3d(0, 30px, 0) scale(.94); }
-.mo .rub.in[data-motion="tilt"] .rk { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out) calc(var(--k, 0) * 70ms), transform calc(1000ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 70ms); }
-/* верхняя одежда: тяжёлый медленный подъём, из размытия в резкость */
-.mo .rub[data-motion="fade"] .rk { opacity: 0; transform: translate3d(0, 44px, 0); filter: blur(4px); }
-.mo .rub.in[data-motion="fade"] .rk { opacity: 1; transform: none; filter: none; transition: opacity calc(1100ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 90ms), transform calc(1400ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 90ms), filter 500ms var(--ease-out) calc(var(--k, 0) * 90ms); }
-/* сумки, аксессуары, трикотаж: лёгкое всплытие лесенкой */
-.mo .rub[data-motion="float"] .rk, .mo .rub[data-motion="tick"] .rk { opacity: 0; transform: translate3d(0, 16px, 0) scale(.97); }
-.mo .rub.in[data-motion="float"] .rk, .mo .rub.in[data-motion="tick"] .rk { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out) calc(var(--k, 0) * 60ms), transform 700ms var(--ease-out) calc(var(--k, 0) * 60ms); }
-/* костюмы, платья: занавес — фото открывается снизу вверх, текст следом */
-.mo .rub[data-motion="curtain"] .rk .media { clip-path: inset(0 0 100% 0); }
-.mo .rub[data-motion="curtain"] .rk .media img { scale: 1.1; }
-.mo .rub[data-motion="curtain"] .rk .m-brand, .mo .rub[data-motion="curtain"] .rk .m-title, .mo .rub[data-motion="curtain"] .rk .m-price { opacity: 0; }
-.mo .rub.in[data-motion="curtain"] .rk .media { clip-path: inset(0); transition: clip-path calc(900ms * var(--tempo, 1)) var(--ease-in-out) calc(var(--k, 0) * 80ms), transform var(--dur-2) var(--ease-out); }
-.mo .rub.in[data-motion="curtain"] .rk .media img { scale: 1; transition: scale calc(1300ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 80ms), opacity var(--dur-3) var(--ease-out), transform var(--dur-4) var(--ease-out); }
-.mo .rub.in[data-motion="curtain"] .rk .m-brand, .mo .rub.in[data-motion="curtain"] .rk .m-title, .mo .rub.in[data-motion="curtain"] .rk .m-price { opacity: 1; transition: opacity var(--dur-4) var(--ease-out) calc(var(--k, 0) * 80ms + 300ms); }
-/* скидки: цена «отсчитывается» вниз от старой (tickPrices) */
+/* нить между секциями: вертикальная шёлковая линия «спускается» в секцию сверху, затем протягивается черта над заголовком */
+.rub .wrap { position: relative; }
+.rub .wrap::before { content: ""; position: absolute; left: var(--gutter); top: -58px; width: 1px; height: 40px; pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--silk)); opacity: .9; transform-origin: 50% 0; }
+.mo .rub .wrap::before { transform: scaleY(0); }
+.mo .rub.in .wrap::before { transform: scaleY(1); transition: transform 640ms var(--ease-in-out); }
+.mo .rub.in .sec-head h2::before { transition-delay: 520ms; }
+/* tilt — полка */
+.rub[data-motion="tilt"] .rail, .rub[data-motion="tilt"] .mosaic { perspective: 1100px; }
+.rub[data-motion="tilt"] .mcard-link { position: relative; isolation: isolate; }
+.rub[data-motion="tilt"] .mcard-link::before { content: ""; position: absolute; z-index: -1; left: 6%; right: 6%; top: 4%; aspect-ratio: 3 / 4; border-radius: 6px;
+  box-shadow: 0 34px 44px -18px rgba(0, 0, 0, .75); opacity: .35; }
+.mo .rub[data-motion="tilt"] .rk { opacity: 0; transform: rotateY(-18deg) translate3d(44px, 0, 0); transform-origin: 100% 50%; }
+.mo .rub[data-motion="tilt"] .mcard-link::before { opacity: 1; transform: translate3d(0, 18px, 0); }
+.mo .rub.in[data-motion="tilt"] .rk { opacity: 1; transform: none;
+  transition: opacity 520ms var(--ease-out) calc(var(--k, 0) * 95ms), transform calc(1150ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 95ms); }
+.mo .rub.in[data-motion="tilt"] .mcard-link::before { opacity: .35; transform: none;
+  transition: opacity 1400ms var(--ease-out) calc(var(--k, 0) * 95ms + 350ms), transform 1400ms var(--ease-out) calc(var(--k, 0) * 95ms + 350ms); }
+/* heavy — пальто опускается */
+.mo .rub[data-motion="heavy"] .rk { opacity: 0; transform: scale(1.06); transform-origin: 50% 0; filter: blur(6px); }
+.mo .rub[data-motion="heavy"] .rk .media { clip-path: inset(0 0 100% 0); }
+.mo .rub[data-motion="heavy"] .rk .m-price { opacity: 0; transform: translate3d(0, 6px, 0); }
+.mo .rub.in[data-motion="heavy"] .rk { opacity: 1; transform: none; filter: none;
+  transition: opacity 700ms var(--ease-out) calc(var(--k, 0) * 120ms), transform calc(1500ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 120ms), filter 620ms var(--ease-out) calc(var(--k, 0) * 120ms + 120ms); }
+.mo .rub.in[data-motion="heavy"] .rk .media { clip-path: inset(0); transition: clip-path calc(1300ms * var(--tempo, 1)) var(--ease-in-out) calc(var(--k, 0) * 120ms), transform var(--dur-2) var(--ease-out); }
+.mo .rub.in[data-motion="heavy"] .rk .m-price { opacity: 1; transform: none; transition: opacity 520ms var(--ease-out) calc(var(--k, 0) * 120ms + 1000ms), transform 520ms var(--ease-out) calc(var(--k, 0) * 120ms + 1000ms); }
+/* float — кашемир: всплытие, покачивание, тёплая виньетка */
+.rub[data-motion="float"] { position: relative; }
+.rub[data-motion="float"]::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(60% 75% at 50% 48%, color-mix(in srgb, var(--silk) 13%, transparent), transparent 75%); }
+.mo .rub[data-motion="float"]::before { opacity: 0; }
+.mo .rub.in[data-motion="float"]::before { opacity: 1; transition: opacity 1800ms var(--ease-out); }
+.mo .rub[data-motion="float"] .rk { opacity: 0; transform: translate3d(0, 28px, 0); }
+.mo .rub.in[data-motion="float"] .rk { opacity: 1; transform: none; transition: opacity 900ms var(--ease-out) calc(var(--k, 0) * 85ms), transform 1300ms var(--ease-out) calc(var(--k, 0) * 85ms); }
+.mo .rub.in[data-motion="float"] .mcard-link { animation: sway calc(var(--sd, 5s) / var(--tempo, 1)) var(--ease-in-out) calc(var(--ph, 0) * -6s) infinite alternate; }
+.mo .rub.off .mcard-link, .mo .rub[data-motion="float"]:not(.in) .mcard-link { animation-play-state: paused; }
+@keyframes sway { from { transform: translate3d(0, -4px, 0); } to { transform: translate3d(0, 4px, 0); } }
+/* curtain — занавес и текст из-под линии */
+.rub[data-motion="curtain"] .ln { display: block; height: 1px; margin-top: 10px; background: var(--silk); opacity: .8; transform-origin: 0 50%; }
+.rub[data-motion="curtain"] .rk .m-brand { margin-top: 7px; }
+.mo .rub[data-motion="curtain"] .ln { transform: scaleX(0); }
+.mo .rub[data-motion="curtain"] .rk .media { clip-path: inset(0 50% 0 50%); }
+.mo .rub[data-motion="curtain"] .rk .media img { scale: 1.12; }
+.mo .rub[data-motion="curtain"] .rk .m-brand, .mo .rub[data-motion="curtain"] .rk .m-title, .mo .rub[data-motion="curtain"] .rk .m-price { clip-path: inset(0 0 100% 0); transform: translate3d(0, 100%, 0); }
+.mo .rub.in[data-motion="curtain"] .rk .media { clip-path: inset(0); transition: clip-path calc(1100ms * var(--tempo, 1)) var(--ease-in-out) calc(var(--k, 0) * 110ms), transform var(--dur-2) var(--ease-out); }
+.mo .rub.in[data-motion="curtain"] .rk .media img { scale: 1; transition: scale calc(1600ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 110ms), opacity var(--dur-3) var(--ease-out), transform var(--dur-4) var(--ease-out); }
+.mo .rub.in[data-motion="curtain"] .ln { transform: scaleX(1); transition: transform 620ms var(--ease-in-out) calc(var(--k, 0) * 110ms + 380ms); }
+.mo .rub.in[data-motion="curtain"] .rk .m-brand, .mo .rub.in[data-motion="curtain"] .rk .m-title, .mo .rub.in[data-motion="curtain"] .rk .m-price { clip-path: inset(-4px 0 -4px 0); transform: none;
+  transition: clip-path 620ms var(--ease-out) calc(var(--k, 0) * 110ms + 560ms), transform 620ms var(--ease-out) calc(var(--k, 0) * 110ms + 560ms); }
+.mo .rub.in[data-motion="curtain"] .rk .m-title { transition-delay: calc(var(--k, 0) * 110ms + 640ms); }
+.mo .rub.in[data-motion="curtain"] .rk .m-price { transition-delay: calc(var(--k, 0) * 110ms + 720ms); }
+/* sway — платья: ткань покачивается, фото открывается снизу */
+.mo .rub[data-motion="sway"] .rk { opacity: 0; transform-origin: 50% 0; }
+.mo .rub[data-motion="sway"] .rk .media { clip-path: inset(100% 0 0 0); }
+.mo .rub.in[data-motion="sway"] .rk { opacity: 1; animation: sway-in calc(1500ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 95ms) both; }
+.mo .rub.in[data-motion="sway"] .rk:nth-child(even) { animation-name: sway-in-r; }
+.mo .rub.in[data-motion="sway"] .rk .media { clip-path: inset(0); transition: clip-path calc(1000ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 95ms + 90ms), transform var(--dur-2) var(--ease-out); }
+@keyframes sway-in { 0% { opacity: 0; transform: rotate(-3deg) translate3d(0, 26px, 0); } 50% { opacity: 1; transform: rotate(2.2deg) translate3d(0, 0, 0); } 78% { transform: rotate(-1deg); } 100% { opacity: 1; transform: none; } }
+@keyframes sway-in-r { 0% { opacity: 0; transform: rotate(3deg) translate3d(0, 26px, 0); } 50% { opacity: 1; transform: rotate(-2.2deg) translate3d(0, 0, 0); } 78% { transform: rotate(1deg); } 100% { opacity: 1; transform: none; } }
+/* pop — сумки: упругий вход и блик */
+.rub[data-motion="pop"] .gloss { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .6) 50%, transparent 62%); transform: translate3d(-110%, 0, 0); }
+.mo .rub[data-motion="pop"] .rk { opacity: 0; transform: scale(.82); }
+.mo .rub.in[data-motion="pop"] .rk { animation: pop-in 640ms var(--ease-spring) calc(var(--k, 0) * 55ms) both; }
+.mo .rub.in[data-motion="pop"] .gloss { animation: gloss 950ms var(--ease-in-out) calc(var(--k, 0) * 55ms + 520ms) forwards; }
+@keyframes pop-in { from { opacity: 0; transform: scale(.82); } to { opacity: 1; transform: none; } }
+@keyframes gloss { 0% { opacity: 1; transform: translate3d(-110%, 0, 0); } 100% { opacity: 1; transform: translate3d(110%, 0, 0); } }
+/* tick — скидки: въезд справа, отсчёт цены, пульс ярлыка */
+.mo .rub[data-motion="tick"] .rk { opacity: 0; transform: translate3d(56px, 0, 0); }
+.mo .rub.in[data-motion="tick"] .rk { opacity: 1; transform: none; transition: opacity 380ms var(--ease-out) calc(var(--k, 0) * 45ms), transform 540ms var(--ease-out) calc(var(--k, 0) * 45ms); }
+.mo .rub.in[data-motion="tick"] .rk .badge { animation: badge-pulse 720ms var(--ease-out) calc(var(--k, 0) * 45ms + 900ms) 1; }
+@keyframes badge-pulse { 0% { transform: scale(1); } 35% { transform: scale(1.3); } 100% { transform: scale(1); } }
 .rub[data-motion="tick"] .m-price .tk { display: inline-block; min-width: var(--w, auto); font-variant-numeric: tabular-nums; }
-.mo .rub[data-motion="tick"] .m-price .was { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: line-through; opacity: 0; transition: opacity var(--dur-4) var(--ease-out) 900ms; }
-.mo .rub.in[data-motion="tick"] .m-price .was { opacity: 1; }
 .rub[data-motion="tick"] .m-price .was { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: line-through; }
+.mo .rub[data-motion="tick"] .m-price .was { opacity: 0; transition: opacity var(--dur-4) var(--ease-out) 900ms; }
+.mo .rub.in[data-motion="tick"] .m-price .was { opacity: 1; }
+/* season — лента сезона: въезд справа лесенкой */
+.mo .rub[data-motion="season"] .rk { opacity: 0; transform: translate3d(40px, 0, 0); }
+.mo .rub.in[data-motion="season"] .rk { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out) calc(var(--k, 0) * 60ms), transform 800ms var(--ease-out) calc(var(--k, 0) * 60ms); }
 
 /* ---------- страница коллекции (#/it, #/tr) ---------- */
 .coll-hero { position: relative; display: flex; align-items: flex-end; min-height: 72vh; min-height: 72svh; overflow: hidden; background: #0B0B0E; color: #F3EFE6; isolation: isolate; --veil: 11, 11, 14; --silk: #D6BF8E; }
@@ -5376,6 +5504,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       if (e.target.getAttribute("data-motion") === "tick") tickPrices(e.target);
     });
   }, { rootMargin: "0px 0px -4% 0px" }) : null;
+  // бесконечное покачивание карточек «Кашемира» (float) — на паузе, пока блок за экраном (.off)
+  var swayIO = revealIO ? new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { e.target.classList.toggle("off", !e.isIntersecting); });
+  }, { rootMargin: "80px 0px" }) : null;
   function armReveal(nodes) {
     if (!revealOpen) return;                // заставка ещё закрывает страницу — включим всё разом после неё
     for (var i = 0; i < nodes.length; i++) {
@@ -5384,6 +5516,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       if (el._rv) continue;
       el._rv = true;
       revealIO.observe(el);
+      if (swayIO && el.getAttribute("data-motion") === "float") swayIO.observe(el);
     }
   }
 
@@ -5445,8 +5578,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var h = $("hero"), r = h.getBoundingClientRect(), k = Math.max(0, Math.min(1, -r.top / Math.max(1, r.height)));
     if (k === heroK) return;
     heroK = k;
-    // вход: коллажи отстают от прокрутки (только translate)
-    h.querySelectorAll(".ent-kb").forEach(function (m) { m.style.translate = "0 " + (k * 12).toFixed(2) + "%"; });
+    // вход: коллажи отстают от прокрутки (translate) и чуть наклоняются от зрителя (rotateX в перспективе)
+    h.querySelectorAll(".ent-kb").forEach(function (m) {
+      m.style.translate = "0 " + (k * 12).toFixed(2) + "%";
+      m.style.transform = k > 0.002 ? "perspective(1400px) rotateX(" + (k * 6).toFixed(2) + "deg)" : "";
+    });
   }
   var heroK = 0;
   function heroScroll() { if (!heroRaf) heroRaf = requestAnimationFrame(heroScrollFrame); }
@@ -5596,12 +5732,19 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   var GENDER_KEY = "shop.gender.v1";                     // последний выбор «Мужское / Женское» (для #/it без ?for=)
   // сезоны (Ташкент, UTC+5): месяц -> сезон. types — и рубрика «по сезону», и фильтр каталога ?season=;
   // shoes — летняя обувь по словам названия (сандалии, эспадрильи…)
+  // prefer — слова названия, которые для ленты сезона берутся первыми (осень — куртки и кардиганы, зима — пальто и пуховики:
+  // иначе у соседних сезонов с общими категориями лента была бы одна и та же); extra — категории вне types, из которых
+  // подходят только вещи с такими словами (летняя обувь — сандалии и эспадрильи, зимние аксессуары — шарфы и перчатки)
   var SEASONS = {
-    autumn: { title: "Осень", sub: "Куртки, пальто, свитеры", types: ["куртки и пальто", "свитеры и кардиганы"] },
-    winter: { title: "Зима", sub: "Пальто, пуховики, свитеры, толстовки", types: ["куртки и пальто", "свитеры и кардиганы", "толстовки"] },
-    spring: { title: "Весна", sub: "Рубашки, пиджаки, платья, обувь", types: ["рубашки", "пиджаки и костюмы", "платья", "обувь"] },
+    autumn: { title: "Осень", sub: "Куртки, пальто, свитеры", types: ["куртки и пальто", "свитеры и кардиганы"],
+      prefer: /куртк|тренч|бомбер|кардиган|джемпер|жилет/i },
+    winter: { title: "Зима", sub: "Пальто, пуховики, свитеры, толстовки", types: ["куртки и пальто", "свитеры и кардиганы", "толстовки"],
+      prefer: /пухов|пальто|парк|дублён|свитер|водолазк|худи|толстовк|шерст|кашемир/i, extra: { "аксессуары": /шарф|перчатк|шапк/i } },
+    spring: { title: "Весна", sub: "Рубашки, пиджаки, платья, обувь", types: ["рубашки", "пиджаки и костюмы", "платья", "обувь"],
+      prefer: /рубашк|блузк|пиджак|платье|кроссовк|лофер|мокасин|плащ|тренч/i },
     summer: { title: "Лето", sub: "Футболки и поло, шорты, платья, юбки, сандалии", types: ["футболки и поло", "шорты", "платья", "юбки"],
-      shoes: /сандал|босонож|шлёпан|шлепан|эспадриль|мюли|вьетнам|сабо|слайд/i }
+      prefer: /футболк|поло|шорт|топ|юбк|сандал|эспадриль|шлёпан|мюли|лён|льнян/i,
+      extra: { "обувь": /сандал|босонож|шлёпан|шлепан|эспадриль|мюли|вьетнам|сабо|слайд/i, "аксессуары": /солнцезащитн|панам|пляжн/i } }
   };
   var SEASON_ORDER = ["autumn", "winter", "spring", "summer"];
   function currentSeason() {
@@ -5612,7 +5755,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var S = SEASONS[s];
     if (!S) return true;
     if (S.types.indexOf(p._type) >= 0) return true;
-    return !!(S.shoes && p._type === "обувь" && S.shoes.test(p._title));
+    var x = S.extra && S.extra[p._type];
+    return !!(x && x.test(p._title));
   }
   // подписи основ kw (dict.kw) в пилюле фильтра «материал»
   var KW_LABEL = { "шерст": "шерсть", "кашемир": "кашемир", "меринос": "меринос", "альпак": "альпака", "кож": "кожа", "хлоп": "хлопок",
@@ -5623,7 +5767,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     "Gucci", "Dior", "Moorer", "Jacob Cohën", "Hackett", "Boggi Milano", "Emporio Armani", "Paul & Shark", "Gran Sasso",
     "Filippo De Laurentiis", "Tramarossa", "Harmont & Blaine", "Montecore"];
   // рубрики коллекций: ключ «страна|пол». f — фильтр: types (категории), kw (основы dict.kw — любая из), max (цена до, сум),
-  // min (скидка от, %), tier (только TIER_BRANDS). motion — tilt | fade | float | curtain | tick; layout — rail | mosaic.
+  // min (скидка от, %), tier (только TIER_BRANDS). motion — tilt | heavy | float | curtain | sway | pop | tick (CSS «движение рубрик»);
+  // layout — rail | mosaic.
   // Ссылка «Смотреть все» строится из f (кроме tier). Порядок — порядок на странице; редактировать можно свободно
   var RUBRIC_MIN = 6, RUBRIC_N = 8;
   var RUBRICS = {
@@ -5631,26 +5776,26 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       { id: "exec", title: "Гардероб руководителя", sub: "Костюмы, рубашки и обувь первых итальянских домов", f: { types: ["пиджаки и костюмы", "рубашки", "обувь"], tier: true }, motion: "curtain", layout: "mosaic" },
       { id: "shoes", title: "Обувь из Италии", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" },
       { id: "wool", title: "Кашемир и шерсть", sub: "Натуральные волокна — свитеры, пиджаки, пальто", f: { kw: ["кашемир", "шерст", "меринос", "альпак"] }, motion: "float", layout: "rail" },
-      { id: "outer", title: "Куртки и пальто", f: { types: ["куртки и пальто"] }, motion: "fade", layout: "mosaic" },
+      { id: "outer", title: "Куртки и пальто", f: { types: ["куртки и пальто"] }, motion: "heavy", layout: "mosaic" },
       { id: "sale", title: "Скидки от 50%", f: { min: 50 }, motion: "tick", layout: "rail" }
     ],
     "IT|women": [
-      { id: "dress", title: "Платья", f: { types: ["платья"] }, motion: "curtain", layout: "mosaic" },
-      { id: "bags", title: "Сумки и аксессуары", f: { types: ["сумки", "аксессуары"] }, motion: "float", layout: "rail" },
-      { id: "outer", title: "Верхняя одежда", f: { types: ["куртки и пальто"] }, motion: "fade", layout: "mosaic" },
+      { id: "dress", title: "Платья", f: { types: ["платья"] }, motion: "sway", layout: "mosaic" },
+      { id: "bags", title: "Сумки и аксессуары", f: { types: ["сумки", "аксессуары"] }, motion: "pop", layout: "rail" },
+      { id: "outer", title: "Верхняя одежда", f: { types: ["куртки и пальто"] }, motion: "heavy", layout: "mosaic" },
       { id: "shoes", title: "Обувь", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" },
       { id: "sale", title: "Скидки от 50%", f: { min: 50 }, motion: "tick", layout: "rail" }
     ],
     "TR|men": [
-      { id: "shirts", title: "Рубашки и поло до 1 млн", f: { types: ["рубашки", "футболки и поло"], max: 1000000 }, motion: "float", layout: "mosaic" },
+      { id: "shirts", title: "Рубашки и поло до 1 млн", f: { types: ["рубашки", "футболки и поло"], max: 1000000 }, motion: "pop", layout: "mosaic" },
       { id: "suits", title: "Костюмы", f: { types: ["пиджаки и костюмы"] }, motion: "curtain", layout: "rail" },
       { id: "shoes", title: "Обувь", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" },
       { id: "sale", title: "Скидки от 50%", f: { min: 50 }, motion: "tick", layout: "mosaic" }
     ],
     "TR|women": [
-      { id: "dress", title: "Платья и юбки", f: { types: ["платья", "юбки"] }, motion: "curtain", layout: "mosaic" },
-      { id: "outer", title: "Верхняя одежда", f: { types: ["куртки и пальто"] }, motion: "fade", layout: "rail" },
-      { id: "cheap", title: "До 700 000 сум", f: { max: 700000 }, motion: "float", layout: "mosaic" },
+      { id: "dress", title: "Платья и юбки", f: { types: ["платья", "юбки"] }, motion: "sway", layout: "mosaic" },
+      { id: "outer", title: "Верхняя одежда", f: { types: ["куртки и пальто"] }, motion: "heavy", layout: "rail" },
+      { id: "cheap", title: "До 700 000 сум", f: { max: 700000 }, motion: "pop", layout: "mosaic" },
       { id: "shoes", title: "Обувь", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" }
     ]
   };
@@ -5679,20 +5824,27 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   }
   // подбор: по порядку «Рекомендуем», не больше brandMax одного бренда, категории по очереди (если их несколько);
   // total — сколько вещей подходит всего (для «Смотреть все · N»). Один проход по витрине (~55 тыс.) — единицы мс
-  function pickRubric(test, n, types, brandMax) {
+  // prefer (RegExp по названию) — такие вещи берутся первыми (первый проход), остальные добирают ленту вторым проходом
+  function pickRubric(test, n, types, brandMax, prefer) {
     var list = sortedProducts("rec"), byType = types && types.length > 1 ? new Map() : null, cnt = new Map(), out = [], total = 0;
     var perType = byType ? Math.ceil(n / types.length) + 1 : n, bm = brandMax || 2;
-    for (var i = 0; i < list.length; i++) {
-      var p = list[i];
-      if (p._out) break;                     // распроданные — в конце списка
-      if (!test(p)) continue;
-      total++;
-      if (out.length >= n) continue;
-      var c = cnt.get(p._brand) || 0;
-      if (c >= bm) continue;
-      if (byType) { var t = byType.get(p._type) || 0; if (t >= perType) continue; byType.set(p._type, t + 1); }
-      cnt.set(p._brand, c + 1);
-      out.push(p);
+    var passes = prefer ? [prefer, null] : [null];
+    for (var pass = 0; pass < passes.length; pass++) {
+      var pf = passes[pass];
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i];
+        if (p._out) break;                     // распроданные — в конце списка
+        if (!test(p)) continue;
+        if (pass === 0) total++;
+        if (out.length >= n) { if (pass === 0) continue; break; }
+        if (pf && !pf.test(p._title)) continue;
+        if (pass > 0 && out.indexOf(p) >= 0) continue;
+        var c = cnt.get(p._brand) || 0;
+        if (c >= bm) continue;
+        if (byType) { var t = byType.get(p._type) || 0; if (t >= perType) continue; byType.set(p._type, t + 1); }
+        cnt.set(p._brand, c + 1);
+        out.push(p);
+      }
     }
     out.total = total;
     return out;
@@ -5702,9 +5854,20 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var f = r.f || {};
     return catHref({ origin: origin, gender: gender, types: f.types, kw: f.kw, to: f.max, disc: f.min, season: f.season });
   }
+  // карточка рубрики: .rk + что нужно её движению — float: своя фаза и период покачивания (по коду вещи — стабильно между
+  // перерисовками); curtain: шёлковая линия над текстом; pop: слой блика поверх фото
+  function rubCard(p, motion) {
+    var h = miniHtml(p).replace('class="mcard', 'class="mcard rk');
+    if (motion === "float") {
+      var z = hash32(p._code);
+      h = h.replace('<article class="mcard rk"', '<article class="mcard rk" style="--ph:' + ((z % 97) / 97).toFixed(2) + ';--sd:' + (4.2 + (z >> 7) % 23 / 10).toFixed(1) + 's"');
+    } else if (motion === "curtain") h = h.replace('</div><span class="m-brand">', '</div><i class="ln" aria-hidden="true"></i><span class="m-brand">');
+    else if (motion === "pop") h = h.replace('</div><span class="m-brand">', '<i class="gloss" aria-hidden="true"></i></div><span class="m-brand">');
+    return h;
+  }
   function rubricHtml(r, items, link) {
     var id = "rub" + hash32(r.id + r.title + (r.key || "")).toString(36);
-    var cards = items.map(function (p) { return miniHtml(p).replace('class="mcard', 'class="mcard rk'); }).join("");
+    var cards = items.map(function (p) { return rubCard(p, r.motion); }).join("");
     var total = items.total || items.length, more = total > items.length ? " · " + fmt(total) : "";
     var body = r.layout === "mosaic"
       ? '<div class="mosaic" role="list">' + cards + '<a class="m-cta" href="' + esc(link) + '"><span>Смотреть все' + more + "</span></a></div>"
@@ -5733,10 +5896,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       var was = Math.round(p._price / (1 - p._disc / 100) / 10000) * 10000;
       if (was <= p._price) return;
       el.innerHTML = '<span class="tk">' + fmt(p._price) + '</span> <span class="cur">сум</span><span class="was">' + fmt(was) + "</span>";
-      var tk = el.querySelector(".tk");
-      tk.style.setProperty("--w", tk.getBoundingClientRect().width + "px");
-      rows.push({ el: tk, from: was, to: p._price });
+      rows.push({ el: el.querySelector(".tk"), from: was, to: p._price });
     });
+    // ширина — по итоговой цене (соседи не дёргаются); сначала все замеры, потом все записи — одна компоновка, не восемь
+    var ws = rows.map(function (r) { return r.el.getBoundingClientRect().width; });
+    rows.forEach(function (r, i) { r.el.style.setProperty("--w", ws[i] + "px"); });
     if (!rows.length || document.hidden) return;
     var t0 = 0, dur = 1100, done = false;
     var finish = function () { if (done) return; done = true; rows.forEach(function (r) { r.el.textContent = fmt(r.to); }); };
@@ -5779,9 +5943,74 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return [0, 1, 2].map(function (i) {
       var a = pick[i] || pick[0], b = pick[i + 3];
       return '<span class="fr" data-pid="' + esc(a._code) + '"><img ' + imgAttrs(goodImgs(a)[0], cardSrc(goodImgs(a)[0])) + ' alt=""' +
-        (eager && i === 0 ? ' fetchpriority="high"' : ' loading="lazy"') + ' decoding="async" referrerpolicy="no-referrer">' +
+        ' loading="eager" fetchpriority="' + (eager && i === 0 ? "high" : "auto") + '" decoding="async" referrerpolicy="no-referrer">' +
         (b && MO ? '<img class="b" ' + imgAttrs(goodImgs(b)[0], cardSrc(goodImgs(b)[0])) + ' alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") + "</span>";
     }).join("");
+  }
+  // рамки коллажа: фото проявляется, когда загрузилось (.ld на img, .on на рамке); уже загруженное (кэш) — сразу.
+  // Все три первых снимка панели грузятся сразу (eager): ленивые ждали бы простоя главного потока при разборе каталога
+  // Первый снимок не открылся — следующее фото вещи, иначе рамка остаётся «шёлком» (.err: второй снимок становится главным)
+  function entryImgState(root) {
+    (root || document).querySelectorAll(".ent-kb img").forEach(function (img) {
+      if (img.complete && img.naturalWidth) { img.classList.add("ld"); img.parentNode.classList.add("on"); }
+    });
+  }
+  document.addEventListener("load", function (e) {
+    var img = e.target;
+    if (!img || img.tagName !== "IMG" || !img.parentNode || !img.parentNode.classList || !img.parentNode.classList.contains("fr")) return;
+    img.classList.add("ld");
+    img.parentNode.classList.add("on");                      // .on — у рамки (у img .ld снимает общий обработчик load)
+  }, true);
+  document.addEventListener("error", function (e) {
+    var img = e.target, fr = img && img.tagName === "IMG" && img.parentNode && img.parentNode.classList ? img.parentNode : null;
+    if (!fr || !fr.classList.contains("fr") || img.classList.contains("b") || !img.isConnected) return;
+    if (tryOrig(img)) return;
+    var p = byId.get(fr.getAttribute("data-pid") || "");
+    if (p) {
+      markBad(p, origSrc(img));
+      var good = goodImgs(p);
+      if (good.length) { img.classList.remove("ld"); setImg(img, good[0]); return; }
+    }
+    fr.classList.add("err");
+    img.remove();
+  }, true);
+  // буквы названия страны — по одной (поднимаются из-под шёлковой нити); доступное имя ссылки — прежний текст
+  function lettersHtml(text) {
+    return Array.from(text).map(function (ch, i) { return ch === " " ? " " : '<span class="ch" style="--i:' + i + '"><span>' + esc(ch) + "</span></span>"; }).join("");
+  }
+  function entryLetters(root) {
+    if (!MO) return;
+    (root || document).querySelectorAll(".ent-title").forEach(function (t) {
+      if (t.querySelector(".ch")) return;
+      var txt = t.textContent.trim();
+      t.setAttribute("aria-label", txt);
+      t.innerHTML = lettersHtml(txt);
+    });
+  }
+  // глубина: кадры панели чуть следуют за мышью (--px/--py на панели, −1…1; CSS сдвигает рамки на разную глубину)
+  function entryParallax(hero) {
+    if (!MO || !hero || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    var raf = 0, ev = null;
+    var frame = function () {
+      raf = 0;
+      if (!ev) return;
+      var ent = ev.target.closest ? ev.target.closest(".ent") : null;
+      hero.querySelectorAll(".ent").forEach(function (el) {
+        if (el !== ent) { el.style.setProperty("--px", 0); el.style.setProperty("--py", 0); return; }
+        var r = el.getBoundingClientRect();
+        el.style.setProperty("--px", (((ev.clientX - r.left) / Math.max(1, r.width)) * 2 - 1).toFixed(3));
+        el.style.setProperty("--py", (((ev.clientY - r.top) / Math.max(1, r.height)) * 2 - 1).toFixed(3));
+      });
+    };
+    hero.addEventListener("pointermove", function (e) {
+      if (e.pointerType !== "mouse") return;
+      ev = e;
+      if (!raf) raf = requestAnimationFrame(frame);
+    }, { passive: true });
+    hero.addEventListener("pointerleave", function () {
+      ev = null;
+      hero.querySelectorAll(".ent").forEach(function (el) { el.style.setProperty("--px", 0); el.style.setProperty("--py", 0); });
+    });
   }
   function marqueeHtml(brands) {
     var names = brands.slice(0, 24).map(function (b) { return "<span>" + esc(b[0]) + "</span>"; }).join("");
@@ -5802,6 +6031,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       el.hidden = !st.count;
       if (!st.count) return;
       el.querySelector(".ent-kb").innerHTML = collageHtml(o, "", o === "IT");
+      entryImgState(el);
       el.querySelector(".ent-mq").innerHTML = marqueeHtml(st.brands);
       el.querySelector("[data-sub]").textContent = originSub(st, "");
     });
@@ -5813,13 +6043,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var tabs = SEASON_ORDER.map(function (k) {
       return '<button type="button" class="stab" role="tab" data-season="' + k + '" aria-selected="' + (k === seasonSel ? "true" : "false") + '">' + esc(SEASONS[k].title) + "</button>";
     }).join("");
-    var r = { id: "season", title: S.title + ": " + S.sub.charAt(0).toLowerCase() + S.sub.slice(1), f: { season: seasonSel }, motion: "float", layout: "rail" };
-    var items = pickRubric(rubricTest(r.f, origin, gender), RUBRIC_N, S.types), link = rubricLink(r, origin, gender), id = "seasonTitle";
+    var r = { id: "season", title: S.title + ": " + S.sub.charAt(0).toLowerCase() + S.sub.slice(1), f: { season: seasonSel }, motion: "season", layout: "rail" };
+    var items = pickRubric(rubricTest(r.f, origin, gender), RUBRIC_N, S.types, origin === "TR" ? 3 : 2, S.prefer), link = rubricLink(r, origin, gender), id = "seasonTitle";
     var more = items.total > items.length ? " · " + fmt(items.total) : "";
-    var body = items.length >= RUBRIC_MIN ? '<div class="rail" role="list">' + items.map(function (p) { return miniHtml(p).replace('class="mcard', 'class="mcard rk'); }).join("") + "</div>"
+    var body = items.length >= RUBRIC_MIN ? '<div class="rail" role="list">' + items.map(function (p) { return rubCard(p, "season"); }).join("") + "</div>"
       : '<p class="coll-empty">В этом сезоне пока мало вещей — посмотрите другие вкладки.</p>';
-    return '<section class="rub season rv" data-motion="float" data-rk="season" data-origin="' + esc(origin || "") + '" data-gender="' + esc(gender || "") + '" aria-labelledby="' + id + '"><div class="wrap">' +
-      '<div class="sec-head"><div><h2 id="' + id + '">' + esc(r.title) + '</h2><p>Сейчас в Ташкенте — ' + esc(S.title.toLowerCase()) + '</p><div class="stabs" role="tablist">' + tabs + "</div></div>" +
+    return '<section class="rub season rv" data-motion="season" data-rk="season" data-origin="' + esc(origin || "") + '" data-gender="' + esc(gender || "") + '" aria-labelledby="' + id + '"><div class="wrap">' +
+      '<div class="sec-head"><div><h2 id="' + id + '"><span class="st-txt">' + esc(r.title) + '</span></h2><p>Сейчас в Ташкенте — ' + esc(S.title.toLowerCase()) + '</p><div class="stabs" role="tablist"><span class="stab-ind" aria-hidden="true"></span>' + tabs + "</div></div>" +
       '<div class="sec-tools"><a href="' + esc(link) + '">Смотреть все' + more + "</a>" +
       '<button type="button" class="rail-btn" data-rail="-1" aria-label="Прокрутить назад">' + ICON_PREV + '</button><button type="button" class="rail-btn" data-rail="1" aria-label="Прокрутить вперёд">' + ICON_NEXT + "</button></div></div>" +
       '<div class="season-body">' + body + "</div></div></section>";
@@ -5828,23 +6058,52 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (!root || !READY) return;
     root.innerHTML = seasonHtml(origin, gender);
     initRails(root);
+    seasonInd(root.querySelector(".season"));
   }
-  // смена вкладки: перерисовать только тело блока (лента появляется заново)
+  // черта под выбранной вкладкой: положение и ширина — переменными (--x, --w), двигается только transform
+  function seasonInd(sec) {
+    if (!sec) return;
+    var tabs = sec.querySelector(".stabs"), ind = sec.querySelector(".stab-ind"), cur = sec.querySelector('.stab[aria-selected="true"]');
+    if (!tabs || !ind || !cur || !tabs.isConnected) return;
+    var w = cur.offsetWidth;
+    if (!w) return;                                            // ещё не в потоке (скрытая страница) — черта статичная (::after)
+    ind.style.setProperty("--x", cur.offsetLeft);
+    ind.style.setProperty("--w", w);
+    tabs.classList.add("has-ind");
+  }
+  window.addEventListener("resize", debounce(function () { document.querySelectorAll(".season").forEach(seasonInd); }, 150));
+  // смена вкладки: лента перестраивается по фильтру сезона (категории + слова названия); при движении — старая лента
+  // схлопывается шторкой, заголовок уходит вверх, новая лента въезжает (CSS .season.swap / .swapin), черта переезжает
+  var seasonTimer = 0;
   document.addEventListener("click", function (e) {
     var tab = e.target.closest(".stab");
     if (!tab) return;
-    var sec = tab.closest(".season");
-    seasonSel = tab.getAttribute("data-season");
+    var sec = tab.closest(".season"), key = tab.getAttribute("data-season");
+    if (!sec || !SEASONS[key] || tab.getAttribute("aria-selected") === "true" && key === seasonSel) return;
+    seasonSel = key;
     sec.querySelectorAll(".stab").forEach(function (b) { b.setAttribute("aria-selected", b === tab ? "true" : "false"); });
+    seasonInd(sec);
     var tmp = document.createElement("div");
     tmp.innerHTML = seasonHtml(sec.getAttribute("data-origin"), sec.getAttribute("data-gender"));
-    var fresh = tmp.firstChild, body = sec.querySelector(".season-body");
-    sec.querySelector("h2").textContent = fresh.querySelector("h2").textContent;
-    sec.querySelector(".sec-tools a").outerHTML = fresh.querySelector(".sec-tools a").outerHTML;
-    body.innerHTML = fresh.querySelector(".season-body").innerHTML;
-    sec.classList.remove("in");            // лента появляется заново (как при прокрутке к блоку)
-    sec._rv = false; sec._ticked = false;
-    initRails(sec);
+    var fresh = tmp.firstChild, body = sec.querySelector(".season-body"), h2 = sec.querySelector("h2");
+    var swap = function () {
+      h2.innerHTML = fresh.querySelector("h2").innerHTML;
+      sec.querySelector(".sec-tools a").outerHTML = fresh.querySelector(".sec-tools a").outerHTML;
+      body.innerHTML = fresh.querySelector(".season-body").innerHTML;
+      initRails(sec);
+    };
+    clearTimeout(seasonTimer);
+    sec.classList.remove("swapin");
+    if (!MO || !sec.classList.contains("in") || !inView(sec) || document.hidden) { sec.classList.remove("swap"); swap(); return; }
+    sec.style.setProperty("--bw", body.clientWidth + 2 * (parseFloat(getComputedStyle(sec).getPropertyValue("--gutter")) || 16));
+    sec.classList.add("swap");
+    seasonTimer = setTimeout(function () {
+      swap();
+      sec.classList.remove("swap");
+      void sec.offsetWidth;                                    // перезапуск анимаций въезда
+      sec.classList.add("swapin");
+      seasonTimer = setTimeout(function () { sec.classList.remove("swapin"); }, 1400);
+    }, 380);
   });
   // вход: тап по панели (не по кнопке) — на страницу страны; выбор «Мужское / Женское» запоминается
   document.addEventListener("click", function (e) {
@@ -5877,7 +6136,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var head = '<section class="coll-hero" aria-labelledby="collTitle"><div class="ent-kb" aria-hidden="true">' +
       (READY ? collageHtml(origin, g, true) : '<span class="fr sk"></span><span class="fr sk"></span><span class="fr sk"></span>') + "</div>" +
       '<div class="ent-veil" aria-hidden="true"></div><div class="ent-copy wrap">' +
-      '<h1 class="ent-title" id="collTitle">' + esc(ORIGIN[origin]) + "</h1><p class=\"ent-sub\">" + esc(sub) + "</p>" +
+      '<h1 class="ent-title" id="collTitle"' + (MO ? ' aria-label="' + esc(ORIGIN[origin]) + '"' : "") + '>' + (MO ? lettersHtml(ORIGIN[origin]) : esc(ORIGIN[origin])) + "</h1><p class=\"ent-sub\">" + esc(sub) + "</p>" +
       '<div class="ent-mq" aria-hidden="true">' + (st ? marqueeHtml(st.brands) : "") + "</div></div></section>" +
       '<nav class="gsw" aria-label="Для кого"><div class="wrap">' +
       '<a href="' + collHref(name, "men") + '" data-g="men"' + (g === "men" ? ' aria-current="true"' : "") + ">Мужское</a>" +
@@ -5894,6 +6153,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     }
     box.className = "view coll coll-" + name;
     box.innerHTML = head + '<div class="coll-season"></div><div class="coll-rubs"></div><div class="coll-cats"></div>' + tail;
+    entryImgState(box);
     if (!READY) return;
     renderSeason(box.querySelector(".coll-season"), origin, g);
     var rubs = box.querySelector(".coll-rubs"), list = RUBRICS[origin + "|" + g] || [];
@@ -5943,6 +6203,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       var fresh = parent.querySelector('.rub[data-rk="' + id + '"]');
       if (fresh && wasIn) { fresh.classList.add("in"); fresh._rv = true; }
       initRails(parent);
+      if (season) seasonInd(fresh);
     };
     runIdle(Array.prototype.map.call(box.querySelectorAll(".rub[data-rk]"), function (sec) { return function () { one(sec); }; }).concat([function () {
       var cats = box.querySelector(".coll-cats");
@@ -8796,7 +9057,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       else window.removeEventListener("scroll", heroScroll);
     }).observe($("hero"));
     bindMagnet();
+    entryParallax($("hero"));
   }
+  entryLetters($("hero"));
   armReveal(document.querySelectorAll(".rv:not(.in)"));
   showView(parseRoute());
   tgBoot();                    // внутри Telegram — Mini App (кнопки, «Назад», тема); в браузере ничего не меняет
