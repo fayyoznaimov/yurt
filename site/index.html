@@ -4452,7 +4452,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   }
   function queryOk(p, Q) {
     var i;
-    if (Q.gender && p._gender && p._gender !== Q.gender) return false;     // унисекс — при любом поле
+    if (Q.gender && p._gender !== Q.gender) return false;     // без пола — только при выборе «Все»
     if (Q.colors && !Q.colors.has(p._cg)) return false;
     if (Q.sizes) {
       var z = p._zk, ok = false;
@@ -4742,8 +4742,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       if (!hit) m |= F_SIZE;
     }
     if (state.colors.size && !state.colors.has(p._cg)) m |= F_COLOR;
-    // товары без пола (унисекс) показываем при любом выборе
-    if (state.gender && p._gender && p._gender !== state.gender) return m | F_REST;
+    // товары без пола показываем только при выборе «Все»: у источника пол не указан, угадывать нельзя
+    if (state.gender && p._gender !== state.gender) return m | F_REST;
     if (state.origin && p._origin !== state.origin) return m | F_REST;
     if (state.season && !seasonOk(p, state.season)) return m | F_REST;
     if (state.kw.size) {                       // материал: любая из основ (kw=кашемир&kw=шерст)
@@ -5773,7 +5773,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function newPick(origin, gender) {
     var list = sortedProducts("new"), since = Date.now() - NEW_DAYS * 864e5;
     if (!list.length || !list[0]._seen) return null;
-    var ok = function (p) { return !p._out && p._imgs.length && p._seen > 0 && (!origin || p._origin === origin) && (!gender || !p._gender || p._gender === gender); };
+    var ok = function (p) { return !p._out && p._imgs.length && p._seen > 0 && (!origin || p._origin === origin) && (!gender || p._gender === gender); };
     var pool = [], cnt = new Map(), brands = new Map(), week = 0, i, p, c;
     for (i = 0; i < list.length; i++) {
       p = list[i];
@@ -6006,13 +6006,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // главная: одна рубрика на обе страны (ленты «Новинки» и «Бренды» — прежние)
   var HOME_RUBRICS = [{ id: "sale", title: "Скидки от 50%", sub: "Италия и Турция", f: { min: 50 }, motion: "tick", layout: "rail" }];
 
-  // проверка вещи под рубрику (страна и пол — снаружи; унисекс подходит любому полу)
+  // проверка вещи под рубрику (страна и пол — снаружи; вещь без пола — только в рубрики без пола)
   function rubricTest(f, origin, gender) {
     var kwSet = f.kw ? new Set(f.kw) : null, tier = f.tier ? new Set(TIER_BRANDS) : null;
     return function (p) {
       if (p._out || !p._imgs.length) return false;
       if (origin && p._origin !== origin) return false;
-      if (gender && p._gender && p._gender !== gender) return false;
+      if (gender && p._gender !== gender) return false;
       if (f.types && f.types.indexOf(p._type) < 0) return false;
       if (f.max && p._price > f.max) return false;
       if (f.min && p._disc < f.min) return false;
