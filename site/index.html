@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- шрифты не задерживают первый экран: до загрузки — системные -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Tenor+Sans&display=swap" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Tenor+Sans&display=swap"></noscript>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Tenor+Sans&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Tenor+Sans&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&display=swap"></noscript>
 <style>
 /* ---------- токены: риштанская керамика — фарфор, кобальт, чернила ---------- */
 :root {
@@ -155,7 +155,8 @@ img { display: block; max-width: 100%; }
   .hsearch { display: block; margin-left: auto; }
   .hdr-contact { padding: 0 16px; gap: 8px; }
 }
-@media (min-width: 900px) and (max-width: 1099.98px) { .mainnav a.opt { display: none; } .hsearch input { width: 170px; } }
+@media (min-width: 900px) and (max-width: 1359.98px) { .mainnav a.opt { display: none; } }
+@media (min-width: 900px) and (max-width: 1099.98px) { .hsearch input { width: 170px; } }
 .msearch { position: absolute; left: 0; right: 0; top: 100%; padding: 10px var(--gutter); background: var(--paper); border-bottom: 1px solid var(--line); }
 .msearch form { display: flex; gap: 8px; }
 .msearch input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 16px; }
@@ -1526,6 +1527,258 @@ html.tg .page { min-height: calc(var(--tg-vh, 100vh) * .62); }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
 html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; }
+
+/* ====================================================================
+   РЕДИЗАЙН — тёмная витрина (html.lux, ставит скрипт в <head>; ?light=1 — прежний светлый вид).
+   Токены те же, что выше, только значения тёмные: графит, слоновая кость, шёлковая нить (--silk).
+   Страница «Турция» (#/tr) внутри светлее и теплее — свои токены на .coll-tr. --tempo — темп движения (Италия 1, Турция .7)
+   ==================================================================== */
+:root.lux {
+  --paper: #0F0F12;
+  --surface: #18181D;
+  --soft: #141418;
+  --ink: #F3EFE6;
+  --muted: #A9A49A;
+  --line: #2A2A31;
+  --cobalt: #4B6BF5;
+  --cobalt-deep: #3A56D6;
+  --on-cobalt: #FFFFFF;
+  --link: #AEBBFF;
+  --media: #1C1C22;
+  --scrim: rgba(0, 0, 0, .66);
+  --shimmer: rgba(255, 255, 255, .06);
+  --shimmer-w: rgba(255, 255, 255, .06);
+  --silk: #D6BF8E;        /* шёлковая нить: подчёркивания, лента брендов, акценты */
+  --silk-ink: #16140F;
+  --font-lux: "Cormorant Garamond", "Tenor Sans", Georgia, "Times New Roman", serif;
+  --tempo: 1;
+  color-scheme: dark;
+}
+.lux .site-header { border-bottom-color: color-mix(in srgb, var(--line) 70%, transparent); }
+.lux .mainnav a[aria-current="page"]::after { background: var(--silk); }
+.lux .mainnav a:hover { color: var(--silk); }
+.lux .btn:hover { background: var(--silk); border-color: var(--silk); color: var(--silk-ink); }
+.lux .btn.ghost:hover:not(:disabled) { border-color: var(--silk); color: var(--ink); }
+.lux .sec-tools a:hover, .lux .tile:hover .tile-name, .lux .bm-track a:hover .bword, .lux .bgrid a:hover b, .lux .bgrid a:hover .bword { color: var(--silk); }
+@media (hover: hover) { .lux .mcard-link:hover .m-title, .lux .card:hover .title { color: var(--silk); } }
+.lux .sec-head h2::before { background: var(--silk); width: 48px; top: -16px; opacity: .9; }
+.lux #viewHome .sec-head h2, .lux #viewColl .sec-head h2 { font: 500 clamp(30px, 4.8vw, 50px)/1.05 var(--font-lux); letter-spacing: 0; }
+.lux #viewHome .sec-head p, .lux #viewColl .sec-head p { font-size: 15px; margin-top: 6px; }
+.lux .trust { border-color: var(--line); }
+.lux .trust-grid svg { color: var(--silk); }
+.lux .how { --how-bg: var(--surface); --acc: var(--silk); --acc-ink: var(--silk-ink); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.lux .how h2 { font-family: var(--font-lux); font-weight: 500; }
+.lux .site-foot { border-top: 1px solid var(--line); }
+.lux .sugg { box-shadow: 0 18px 40px -20px rgba(0, 0, 0, .8); }
+.lux .pl-rot, .lux .mark { color: var(--silk); }
+.lux .pl-word::after, .lux .pl-bar i, .lux .pl-line i { background: var(--silk); }
+.lux .admin-note { background: #3A2F00; color: #FFE28A; }
+/* копии тёмных правил (см. комментарий у токенов выше): в html.lux они действуют и при светлой системной теме */
+:where(.lux) .sw-dot { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+:where(.lux) .sw[aria-pressed="true"] .sw-dot { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22), 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+:where(.lux) .blogo.inv img { filter: grayscale(1) invert(1) brightness(1.05); }
+:where(.lux) .blogo.tile { background: #F1F2F5; border-radius: 6px; padding: 4px 8px; box-sizing: content-box; }
+:where(.lux) .bgrid a:hover .blogo.inv img, :where(.lux) .bgrid a:focus-visible .blogo.inv img { filter: grayscale(1) invert(1); }
+:where(.lux) .chip[aria-pressed="true"] .clogo.inv img { filter: grayscale(1); }
+:where(.lux) .pv-brand .pv-logo.inv img { filter: invert(1); }
+:where(.lux) .pv-sizes.need .sz { border-color: #FDBA74; box-shadow: 0 0 0 3px color-mix(in srgb, #FDBA74 22%, transparent); }
+:where(.lux) .pv-need { color: #FDBA74; }
+:where(.lux) .cart-line .cl-note { color: #FBBF24; }
+:where(.lux) .sum-box .warn { color: #FBBF24; }
+:where(.lux) .form .err { color: #FDBA74; } :where(.lux) .form [aria-invalid="true"] { border-color: #FDBA74; }
+:where(.lux) .sum-box { box-shadow: 0 18px 40px -28px rgba(0, 0, 0, .7); }
+:where(.lux) .media, :where(.lux) .pv-gallery, :where(.lux) .pv-thumb, :where(.lux) .gt-media { background: #fff; }
+:where(.lux) .media.ld, :where(.lux) .media.noimg, :where(.lux) .media.gsk, :where(.lux) .sk .media, :where(.lux) .card.sk .media, :where(.lux) .tile > .media:empty { background: var(--media); }
+:where(.lux) .pv-gallery .pv-thumbs { background: var(--paper); }
+/* страница «Турция»: светлее и теплее (слоновая кость, изникская бирюза), темп быстрее */
+.lux .coll-tr {
+  --paper: #F4EEE4; --surface: #FFFFFF; --soft: #ECE4D7; --ink: #1F1B17; --muted: #6B6358; --line: #DED5C6;
+  --cobalt: #1F3FBF; --cobalt-deep: #172F91; --link: #1F3FBF; --media: #ECE6DB; --scrim: rgba(20, 26, 46, .48);
+  --shimmer: rgba(255, 255, 255, .55); --shimmer-w: rgba(20, 26, 46, .05);
+  --silk: #0F6F7A; --silk-ink: #FFFFFF; --tempo: .7;
+  color-scheme: light; background: var(--paper); color: var(--ink);
+}
+.lux .coll-tr .btn:hover { background: var(--silk); border-color: var(--silk); color: #fff; }
+.lux .coll-it { --tempo: 1.15; }
+
+/* ---------- вход: Италия / Турция ---------- */
+.entry { position: relative; display: flex; flex-direction: column; background: var(--paper); overflow: hidden; }
+.ent {
+  position: relative; flex: 1 1 0; min-height: max(320px, 50vh); min-height: max(320px, 50svh); display: flex; align-items: flex-end;
+  overflow: hidden; color: #F3EFE6; background: #0B0B0E; isolation: isolate; cursor: pointer;
+  --veil: 11, 11, 14; --silk: #D6BF8E;
+}
+.ent-tr { background: #16110D; --veil: 22, 17, 13; --silk: #6CC8D2; }
+.ent-kb { position: absolute; inset: 0; z-index: 0; display: grid; grid-template-columns: repeat(12, 1fr); grid-template-rows: repeat(12, 1fr); gap: 0; pointer-events: none; }
+.ent-kb .fr { position: relative; overflow: hidden; background: #fff; border-radius: 4px; box-shadow: 0 40px 70px -30px rgba(0, 0, 0, .9); }
+.ent-kb .fr img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ent-kb .fr img.b { opacity: 0; }
+.ent-kb .fr:nth-child(1) { grid-column: 1 / 6; grid-row: 1 / 10; }
+.ent-kb .fr:nth-child(2) { grid-column: 6 / 10; grid-row: 2 / 8; }
+.ent-kb .fr:nth-child(3) { grid-column: 9 / 13; grid-row: 1 / 7; }
+.ent-kb .sk { background: rgba(255, 255, 255, .06); box-shadow: none; }
+.ent-veil { position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(var(--veil), .12) 0%, rgba(var(--veil), .3) 40%, rgba(var(--veil), .9) 78%, rgba(var(--veil), .98) 100%); }
+.ent-copy { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 0 var(--gutter) 22px; }
+.ent-mq { align-self: stretch; overflow: hidden; margin: 20px 0 0; padding-top: 12px; border-top: 1px solid rgba(243, 239, 230, .16); font: italic 500 17px/1 var(--font-lux); color: var(--silk); white-space: nowrap;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent 0, #000 6%, #000 94%, transparent); }
+.ent-mq:empty { display: none; }
+.ent-mq .mq { display: inline-flex; width: max-content; }
+.ent-mq .mq span { padding-right: 1.4em; }
+.ent-mq .mq span::after { content: "·"; padding-left: 1.4em; opacity: .55; }
+.mo .ent-mq .mq { animation: marq var(--marq, 60s) linear infinite; }
+.mo .entry.paused .ent-mq .mq { animation-play-state: paused; }
+.ent-title { display: inline-block; margin: 0; font: 500 clamp(58px, 12vw, 132px)/.92 var(--font-lux); letter-spacing: -.015em; color: inherit; text-decoration: none; }
+.ent-title:hover { color: var(--silk); }
+.ent-sub { margin: 10px 0 0; max-width: 46ch; font-size: clamp(15px, 1.5vw, 18px); line-height: 1.45; color: rgba(243, 239, 230, .78); }
+.ent-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.ent-cta .btn { min-height: 48px; padding: 12px 26px; font-size: 16px; background: #F3EFE6; border-color: #F3EFE6; color: #121216; }
+.ent-cta .btn.ghost { background: rgba(255, 255, 255, .04); color: #F3EFE6; border-color: rgba(243, 239, 230, .5); }
+.ent-cta .btn:hover { background: var(--silk); border-color: var(--silk); color: #121216; }
+.ent-cta .btn.ghost:hover:not(:disabled) { background: var(--silk); border-color: var(--silk); color: #121216; }
+@media (min-width: 900px) {
+  .entry { flex-direction: row; min-height: calc(100vh - var(--hdr)); min-height: calc(100svh - var(--hdr)); }
+  .ent { min-height: 0; }
+  .ent-copy { padding: 0 40px 44px; }
+  .ent-kb .fr:nth-child(1) { grid-column: 2 / 8; grid-row: 2 / 10; }
+  .ent-kb .fr:nth-child(2) { grid-column: 8 / 12; grid-row: 1 / 6; }
+  .ent-kb .fr:nth-child(3) { grid-column: 9 / 13; grid-row: 6 / 11; }
+  .ent-mq { font-size: 19px; }
+}
+/* наведение сдвигает границу между странами (мышь); касание — короткий отклик */
+@media (hover: hover) and (min-width: 900px) {
+  .mo .ent { transition: flex-grow 1100ms var(--ease-in-out); }
+  .mo .ent:hover { flex-grow: 1.45; }
+  .mo .ent-kb .fr { transition: transform 1100ms var(--ease-in-out); }
+  .mo .ent:hover .ent-kb .fr { transform: scale(1.03); }
+}
+@media (hover: none) { .ent:active .ent-kb { transform: scale(.985); transition: transform var(--dur-2) var(--ease-out); } }
+/* кен-бёрнс: кадры медленно приближаются, второй снимок проступает раз в ~20 с; за экраном — пауза (.paused) */
+.mo .ent-kb .fr img { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate; }
+.mo .ent-kb .fr img.b { animation: kb calc(22s / var(--tempo, 1)) var(--ease-in-out) infinite alternate, xf calc(20s / var(--tempo, 1)) var(--ease-in-out) infinite; }
+.mo .ent-kb .fr:nth-child(2) img { animation-delay: -7s, 6s; }
+.mo .ent-kb .fr:nth-child(3) img { animation-delay: -14s, 12s; }
+.mo .ent-kb .fr:nth-child(1) img.b { animation-delay: 0s, 1s; }
+.mo .entry.paused .ent-kb img { animation-play-state: paused; }
+/* первый показ (heroPlay → .play): кадры выезжают шторкой, текст — следом; Турция на четверть секунды позже */
+.mo .entry.pre .ent-kb .fr { clip-path: inset(100% 0 0 0); }
+.mo .entry.pre .ent-copy > * { opacity: 0; transform: translate3d(0, 18px, 0); }
+.mo .entry.play .ent-kb .fr { animation: art-in 1.1s var(--ease-out) both; }
+.mo .entry.play .ent-kb .fr:nth-child(2) { animation-delay: 120ms; }
+.mo .entry.play .ent-kb .fr:nth-child(3) { animation-delay: 220ms; }
+.mo .entry.play .ent-tr .ent-kb .fr { animation-delay: 260ms; }
+.mo .entry.play .ent-tr .ent-kb .fr:nth-child(2) { animation-delay: 380ms; }
+.mo .entry.play .ent-tr .ent-kb .fr:nth-child(3) { animation-delay: 480ms; }
+.mo .entry.play .ent-copy > * { opacity: 1; transform: none; transition: opacity 900ms var(--ease-out), transform 900ms var(--ease-out); }
+.mo .entry.play .ent-copy > :nth-child(2) { transition-delay: 90ms; }
+.mo .entry.play .ent-copy > :nth-child(3) { transition-delay: 180ms; }
+.mo .entry.play .ent-copy > :nth-child(4) { transition-delay: 270ms; }
+.mo .entry.play .ent-tr .ent-copy > * { transition-delay: 300ms; }
+.mo .entry.play .ent-tr .ent-copy > :nth-child(2) { transition-delay: 390ms; }
+.mo .entry.play .ent-tr .ent-copy > :nth-child(3) { transition-delay: 480ms; }
+.mo .entry.play .ent-tr .ent-copy > :nth-child(4) { transition-delay: 570ms; }
+
+/* ---------- сезон: вкладки и лента ---------- */
+.season .sec-head { align-items: flex-start; }
+.stabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.stab { min-height: 44px; padding: 8px 18px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font: 500 15px/1.2 var(--font-ui); cursor: pointer; }
+.stab:hover { border-color: var(--ink); }
+.stab[aria-selected="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* ---------- рубрики: блок во всю ширину, лента или мозаика ---------- */
+.rub { padding: 48px 0 12px; }
+.rub .sec-head { margin-bottom: 22px; }
+.mosaic { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+.mosaic .mcard { flex: none; }
+.mosaic .mcard:first-child { grid-column: span 2; }
+.mosaic .mcard:first-child .media { aspect-ratio: 4 / 3; }
+.mosaic .mcard:first-child .media img { object-fit: contain; padding: 3%; }
+.mosaic .mcard:first-child .m-title, .mosaic .mcard:first-child .m-brand { white-space: normal; }
+.m-cta { grid-column: span 2; display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--ink); text-decoration: none; font: 500 clamp(18px, 2.2vw, 24px)/1.2 var(--font-lux); text-align: center; }
+.m-cta:hover { border-color: var(--silk); color: var(--silk); }
+@media (min-width: 900px) {
+  .rub { padding: 64px 0 16px; }
+  .mosaic { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 18px; }
+  .mosaic .mcard:first-child { grid-column: span 2; grid-row: span 2; }
+  .mosaic .mcard:first-child .mcard-link { display: flex; flex-direction: column; height: 100%; }
+  .mosaic .mcard:first-child .media { flex: 1; aspect-ratio: auto; min-height: 0; }
+  .mosaic .mcard:first-child .media img { object-fit: cover; padding: 0; }
+  .mosaic .mcard:first-child .m-title { font-size: 16px; }
+  .m-cta { grid-column: span 1; align-items: flex-end; justify-content: flex-start; text-align: left; min-height: 0; padding: 20px; }
+}
+.mosaic > :nth-child(1) { --k: 0; } .mosaic > :nth-child(2) { --k: 1; } .mosaic > :nth-child(3) { --k: 2; } .mosaic > :nth-child(4) { --k: 3; }
+.mosaic > :nth-child(5) { --k: 4; } .mosaic > :nth-child(6) { --k: 5; } .mosaic > :nth-child(7) { --k: 6; } .mosaic > :nth-child(8) { --k: 7; }
+/* движение рубрик — по data-motion (одна система длительностей :root, только transform/opacity/clip-path; размытие ≤ 4px и коротко).
+   Общие правила лент выше (.rv .rail > *) для рубрик выключены: у каждой свой стиль. Всё только при html.mo */
+.mo .rub .rail > *, .mo .rub .mosaic > * { opacity: 1; transform: none; }
+.mo .rub .rail > * .media, .mo .rub .mosaic > * .media { clip-path: none; }
+.mo .rub.in .rail > *, .mo .rub.in .mosaic > * { transition: none; }
+.mo .rub.in .rail > * .media, .mo .rub.in .mosaic > * .media { transition: transform var(--dur-2) var(--ease-out); }
+/* обувь: карточки чуть наклонены и выпрямляются */
+.mo .rub[data-motion="tilt"] .rk { opacity: 0; transform: rotate(-5deg) translate3d(0, 30px, 0) scale(.94); transform-origin: 50% 100%; }
+.mo .rub[data-motion="tilt"] .rk:nth-child(even) { transform: rotate(4deg) translate3d(0, 30px, 0) scale(.94); }
+.mo .rub.in[data-motion="tilt"] .rk { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out) calc(var(--k, 0) * 70ms), transform calc(1000ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 70ms); }
+/* верхняя одежда: тяжёлый медленный подъём, из размытия в резкость */
+.mo .rub[data-motion="fade"] .rk { opacity: 0; transform: translate3d(0, 44px, 0); filter: blur(4px); }
+.mo .rub.in[data-motion="fade"] .rk { opacity: 1; transform: none; filter: none; transition: opacity calc(1100ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 90ms), transform calc(1400ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 90ms), filter 500ms var(--ease-out) calc(var(--k, 0) * 90ms); }
+/* сумки, аксессуары, трикотаж: лёгкое всплытие лесенкой */
+.mo .rub[data-motion="float"] .rk, .mo .rub[data-motion="tick"] .rk { opacity: 0; transform: translate3d(0, 16px, 0) scale(.97); }
+.mo .rub.in[data-motion="float"] .rk, .mo .rub.in[data-motion="tick"] .rk { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out) calc(var(--k, 0) * 60ms), transform 700ms var(--ease-out) calc(var(--k, 0) * 60ms); }
+/* костюмы, платья: занавес — фото открывается снизу вверх, текст следом */
+.mo .rub[data-motion="curtain"] .rk .media { clip-path: inset(0 0 100% 0); }
+.mo .rub[data-motion="curtain"] .rk .media img { scale: 1.1; }
+.mo .rub[data-motion="curtain"] .rk .m-brand, .mo .rub[data-motion="curtain"] .rk .m-title, .mo .rub[data-motion="curtain"] .rk .m-price { opacity: 0; }
+.mo .rub.in[data-motion="curtain"] .rk .media { clip-path: inset(0); transition: clip-path calc(900ms * var(--tempo, 1)) var(--ease-in-out) calc(var(--k, 0) * 80ms), transform var(--dur-2) var(--ease-out); }
+.mo .rub.in[data-motion="curtain"] .rk .media img { scale: 1; transition: scale calc(1300ms * var(--tempo, 1)) var(--ease-out) calc(var(--k, 0) * 80ms), opacity var(--dur-3) var(--ease-out), transform var(--dur-4) var(--ease-out); }
+.mo .rub.in[data-motion="curtain"] .rk .m-brand, .mo .rub.in[data-motion="curtain"] .rk .m-title, .mo .rub.in[data-motion="curtain"] .rk .m-price { opacity: 1; transition: opacity var(--dur-4) var(--ease-out) calc(var(--k, 0) * 80ms + 300ms); }
+/* скидки: цена «отсчитывается» вниз от старой (tickPrices) */
+.rub[data-motion="tick"] .m-price .tk { display: inline-block; min-width: var(--w, auto); font-variant-numeric: tabular-nums; }
+.mo .rub[data-motion="tick"] .m-price .was { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: line-through; opacity: 0; transition: opacity var(--dur-4) var(--ease-out) 900ms; }
+.mo .rub.in[data-motion="tick"] .m-price .was { opacity: 1; }
+.rub[data-motion="tick"] .m-price .was { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: line-through; }
+
+/* ---------- страница коллекции (#/it, #/tr) ---------- */
+.coll-hero { position: relative; display: flex; align-items: flex-end; min-height: 72vh; min-height: 72svh; overflow: hidden; background: #0B0B0E; color: #F3EFE6; isolation: isolate; --veil: 11, 11, 14; --silk: #D6BF8E; }
+.coll-tr .coll-hero { background: #16110D; --veil: 22, 17, 13; --silk: #6CC8D2; }
+.coll-hero .ent-copy { padding-bottom: 26px; }
+.coll-hero .ent-mq { margin-top: 16px; }
+.coll-hero .ent-title { font-size: clamp(64px, 13vw, 150px); cursor: default; }
+.coll-hero .ent-title:hover { color: inherit; }
+.coll-hero .ent-kb .fr:nth-child(1) { grid-column: 1 / 6; grid-row: 1 / 9; }
+.coll-hero .ent-kb .fr:nth-child(2) { grid-column: 6 / 10; grid-row: 2 / 8; }
+.coll-hero .ent-kb .fr:nth-child(3) { grid-column: 9 / 13; grid-row: 1 / 6; }
+@media (min-width: 900px) {
+  .coll-hero { min-height: calc(100vh - var(--hdr)); min-height: calc(100svh - var(--hdr)); }
+  .coll-hero .ent-copy { padding: 0 var(--gutter) 56px; }
+  .coll-hero .ent-kb .fr:nth-child(1) { grid-column: 7 / 11; grid-row: 2 / 11; }
+  .coll-hero .ent-kb .fr:nth-child(2) { grid-column: 11 / 13; grid-row: 1 / 6; }
+  .coll-hero .ent-kb .fr:nth-child(3) { grid-column: 11 / 13; grid-row: 6 / 10; }
+  .coll-hero .ent-veil { background: linear-gradient(90deg, rgba(var(--veil), .96) 0%, rgba(var(--veil), .7) 42%, rgba(var(--veil), .12) 100%), linear-gradient(180deg, rgba(var(--veil), 0) 60%, rgba(var(--veil), .8) 100%); }
+}
+.mo .coll-hero .ent-kb .fr { animation: art-in 1.1s var(--ease-out) both; }
+.mo .coll-hero .ent-kb .fr:nth-child(2) { animation-delay: 120ms; }
+.mo .coll-hero .ent-kb .fr:nth-child(3) { animation-delay: 220ms; }
+.mo .coll-hero .ent-copy > * { animation: ch-in 900ms var(--ease-out) both; }
+.mo .coll-hero .ent-copy > :nth-child(2) { animation-delay: 90ms; }
+.mo .coll-hero .ent-copy > :nth-child(3) { animation-delay: 180ms; }
+@keyframes ch-in { from { opacity: 0; transform: translate3d(0, 18px, 0); } }
+.gsw { position: sticky; top: var(--hdr); z-index: 20; background: var(--paper); background: color-mix(in srgb, var(--paper) 90%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.gsw .wrap { display: flex; align-items: center; gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+.gsw a { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 8px 18px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font: 500 16px/1.2 var(--font-ui); white-space: nowrap; }
+.gsw a:hover { border-color: var(--ink); }
+.gsw a[aria-current="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.gsw .gsw-n { margin-left: auto; display: none; color: var(--muted); font-size: 14px; }
+@media (min-width: 900px) { .gsw a { flex: 0 0 auto; min-width: 190px; } .gsw .gsw-n { display: block; } }
+.coll-cats { padding: 40px 0 8px; }
+.ccats { display: flex; flex-wrap: wrap; gap: 8px; }
+.ccat { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 15px; }
+.ccat:hover { border-color: var(--silk); color: var(--silk); }
+.ccat .n { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.coll-all { padding: 40px 0 64px; text-align: center; }
+.coll-all .btn { min-height: 56px; padding: 14px 34px; font-size: 17px; }
+.coll-all p { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
+.coll-empty { padding: 48px 0; color: var(--muted); }
 </style>
 <script>
 /* Telegram Mini App — раньше всех скриптов (до заставки и роутера). Telegram дописывает к адресу свои параметры:
@@ -1634,6 +1887,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   var rm = rmParam || !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
   if (rmParam) d.classList.add("rm");
   if (!rm) d.classList.add("mo");
+  // тёмная витрина (редизайн) — основной вид сайта; ?light=1 — прежняя светлая тема (отладка)
+  if (!/[?&]light=1(&|$)/.test(q)) d.classList.add("lux");
   // полная заставка — один раз на устройство (localStorage); дальше — только тонкая линия сверху.
   // Ссылка на товар (#/?p=КОД, старые #…&p=… и ?p=) — никогда не заставка: покупатель пришёл за вещью.
   // Если в прошлый раз всё было готово быстрее 300 мс (кэш) — без заставки
@@ -1865,8 +2120,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     <a class="logo" href="#/" data-logo aria-label="На главную"></a>
     <span class="demo" id="demoBadge" title="Настоящих товаров ещё нет — показаны примеры" hidden>демо</span>
     <nav class="mainnav" id="mainNav" aria-label="Разделы">
-      <a href="#/catalog?sort=new" data-nav="new">Новинки</a>
+      <a href="#/it" data-nav="it">Италия</a>
+      <a href="#/tr" data-nav="tr">Турция</a>
       <a href="#/catalog" data-nav="catalog">Каталог</a>
+      <a href="#/catalog?sort=new" data-nav="new" class="opt">Новинки</a>
       <a href="#/brands" data-nav="brands">Бренды</a>
       <a href="#/catalog?type=обувь" data-nav="type:обувь" class="opt">Обувь</a>
       <a href="#/catalog?type=аксессуары" data-nav="type:аксессуары" class="opt">Аксессуары</a>
@@ -1917,48 +2174,38 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 <main id="main" tabindex="-1">
   <!-- главная -->
   <div class="view" id="viewHome">
-    <section class="hero pre" id="hero" aria-labelledby="heroTitle">
-      <svg class="hero-pattern" viewBox="0 0 200 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round">
-        <path d="M-6 84 C 40 10, 92 8, 98 52 S 150 104, 206 18" stroke-width=".9" pathLength="1"/>
-        <path d="M-6 92 C 44 22, 98 20, 104 58 S 156 102, 206 30" stroke-width=".45" stroke-opacity=".6" pathLength="1"/>
-      </g></svg>
-      <div class="wrap hero-in">
-        <div class="hero-copy">
-          <p class="hero-eyebrow" id="heroEyebrow" hidden></p>
-          <h1 class="hero-title" id="heroTitle"></h1>
-          <p class="hero-text" id="heroText"></p>
-          <div class="hero-cta">
-            <a class="btn lg mag" href="#/catalog">Смотреть каталог</a>
+    <!-- вход: Италия / Турция. Кнопки — ссылки, работают до загрузки каталога; фото и бренды дорисует renderEntry -->
+    <section class="entry pre" id="hero" aria-label="Италия или Турция">
+      <div class="ent ent-it" id="entIT" data-href="#/it">
+        <div class="ent-kb" aria-hidden="true"><span class="fr sk"></span><span class="fr sk"></span><span class="fr sk"></span></div>
+        <div class="ent-veil" aria-hidden="true"></div>
+        <div class="ent-copy">
+          <a class="ent-title" href="#/it">Италия</a>
+          <p class="ent-sub" data-sub>Оригиналы итальянских домов со скидками</p>
+          <div class="ent-cta">
+            <a class="btn" href="#/it?for=men" data-g="men">Мужское</a>
+            <a class="btn ghost" href="#/it?for=women" data-g="women">Женское</a>
           </div>
-          <p class="hero-trust" id="heroTrust"></p>
-          <ul class="hero-stats" id="heroStats" aria-label="Каталог в цифрах"></ul>
+          <div class="ent-mq" aria-hidden="true"></div>
         </div>
-        <div class="hero-art" id="heroArt" aria-label="Вещи из каталога">
-          <div class="sk"></div><div class="sk"></div><div class="sk"></div>
+      </div>
+      <div class="ent ent-tr" id="entTR" data-href="#/tr">
+        <div class="ent-kb" aria-hidden="true"><span class="fr sk"></span><span class="fr sk"></span><span class="fr sk"></span></div>
+        <div class="ent-veil" aria-hidden="true"></div>
+        <div class="ent-copy">
+          <a class="ent-title" href="#/tr">Турция</a>
+          <p class="ent-sub" data-sub>Турецкие бренды по доступным ценам</p>
+          <div class="ent-cta">
+            <a class="btn" href="#/tr?for=men" data-g="men">Мужское</a>
+            <a class="btn ghost" href="#/tr?for=women" data-g="women">Женское</a>
+          </div>
+          <div class="ent-mq" aria-hidden="true"></div>
         </div>
       </div>
     </section>
 
-    <!-- «Мужское» / «Женское» — сразу под героем; ссылки работают и до загрузки каталога, фото дорисует renderGenderTiles -->
-    <section class="sec gsec rv" aria-label="Мужское и женское">
-      <div class="wrap">
-        <div class="gtiles" id="genderTiles">
-          <a class="gtile" href="#/catalog?for=men" data-g="men"><span class="gt-media"><span class="media gsk"></span></span><span class="gt-cap"><span><b>Мужское</b><span class="gt-n">Смотреть всё</span></span><span class="gt-go" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M3.5 9h11M10 4.5L14.5 9 10 13.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span></a>
-          <a class="gtile" href="#/catalog?for=women" data-g="women"><span class="gt-media"><span class="media gsk"></span></span><span class="gt-cap"><span><b>Женское</b><span class="gt-n">Смотреть всё</span></span><span class="gt-go" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M3.5 9h11M10 4.5L14.5 9 10 13.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span></a>
-        </div>
-      </div>
-    </section>
-
-    <section class="sec rv" aria-labelledby="catsTitle">
-      <div class="wrap">
-        <div class="sec-head"><h2 id="catsTitle">Категории</h2><div class="sec-tools"><a href="#/catalog">Весь каталог</a></div></div>
-        <div class="tiles" id="catTiles">
-          <div class="tile"><div class="media"></div></div><div class="tile"><div class="media"></div></div><div class="tile"><div class="media"></div></div>
-          <div class="tile"><div class="media"></div></div><div class="tile"><div class="media"></div></div><div class="tile"><div class="media"></div></div>
-        </div>
-        <button type="button" class="more-link cat-more" id="catMore" aria-controls="catTiles" aria-expanded="false">Все категории</button>
-      </div>
-    </section>
+    <!-- сезон (вкладки Осень / Зима / Весна / Лето) — renderSeason -->
+    <div id="seasonHome"></div>
 
     <div id="railsTop">
       <section class="sec rv"><div class="wrap"><div class="sec-head"><h2>Новинки</h2></div>
@@ -2012,6 +2259,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     </section>
   </div>
 
+  <!-- коллекции #/it и #/tr (renderCollection) -->
+  <div class="view coll" id="viewColl" hidden></div>
+
   <!-- каталог -->
   <div class="view" id="viewCatalog" hidden>
     <div class="wrap cat-head">
@@ -2040,6 +2290,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
           </fieldset>
           <fieldset class="group" id="gType"><legend>Категория</legend><div class="chips" id="fType"></div></fieldset>
           <fieldset class="group" id="gGender"><legend>Для кого</legend><div class="seg" id="fGender"></div></fieldset>
+          <fieldset class="group" id="gOrigin"><legend>Откуда</legend><div class="seg" id="fOrigin"></div></fieldset>
           <fieldset class="group" id="gSize">
             <legend>Размер</legend>
             <div class="chips sizes" id="fSize"></div>
@@ -2122,7 +2373,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       <p id="footAbout"></p>
     </div>
     <nav aria-labelledby="fCat"><h3 id="fCat">Каталог</h3><ul id="footCats">
-      <li><a href="#/catalog?sort=new">Новинки</a></li><li><a href="#/catalog">Весь каталог</a></li><li><a href="#/brands">Бренды</a></li><li><a href="#/catalog?disc=50">Скидки от 50%</a></li>
+      <li><a href="#/it">Италия</a></li><li><a href="#/tr">Турция</a></li><li><a href="#/catalog?sort=new">Новинки</a></li><li><a href="#/catalog">Весь каталог</a></li><li><a href="#/brands">Бренды</a></li><li><a href="#/catalog?disc=50">Скидки от 50%</a></li>
     </ul></nav>
     <nav aria-labelledby="fBuy"><h3 id="fBuy">Покупателям</h3><ul>
       <li><a href="#/delivery">Доставка</a></li><li><a href="#/payment">Оплата</a></li>
@@ -2279,7 +2530,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     filters: $("filters"), openFilters: $("openFilters"), closeFilters: $("closeFilters"), scrim: $("scrim"),
     fBrand: $("fBrand"), brandQ: $("brandQ"), brandMore: $("brandMore"), brandNone: $("brandNone"), fType: $("fType"), fGender: $("fGender"), fSize: $("fSize"), sizeMore: $("sizeMore"),
     sizeHint: $("sizeHint"), fColor: $("fColor"), gColor: $("gColor"), searchNote: $("searchNote"),
-    pmin: $("pmin"), pmax: $("pmax"), disc: $("disc"), sort: $("sort"), quick: $("quick"), catMore: $("catMore"),
+    pmin: $("pmin"), pmax: $("pmax"), disc: $("disc"), sort: $("sort"), quick: $("quick"), fOrigin: $("fOrigin"),
     resetSide: $("resetSide"), resetSheet: $("resetSheet"), applySheet: $("applySheet"),
     toolbar: $("toolbar"), count: $("resultCount"), activeCount: $("activeCount"), pills: $("pills"),
     grid: $("grid"), empty: $("empty"), more: $("more"), progress: $("progress"), moreBtn: $("moreBtn"),
@@ -2287,7 +2538,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     pv: $("pv"), pvBox: $("pvBox"), pvClose: $("pvClose"), pvStage: $("pvStage"), pvTrack: $("pvTrack"),
     pvPrev: $("pvPrev"), pvNext: $("pvNext"), pvUnfull: $("pvUnfull"), pvCounter: $("pvCounter"), pvBadge: $("pvBadge"),
     pvThumbs: $("pvThumbs"), pvInfo: $("pvInfo"),
-    viewHome: $("viewHome"), viewCatalog: $("viewCatalog"), viewPage: $("viewPage"),
+    viewHome: $("viewHome"), viewCatalog: $("viewCatalog"), viewPage: $("viewPage"), viewColl: $("viewColl"),
     drawer: $("drawer"), drawerPanel: $("drawerPanel"), drawerBody: $("drawerBody"), menuBtn: $("menuBtn"),
     mSearch: $("mSearch"), searchToggle: $("searchToggle"), hq: $("hq"), mq: $("mq"),
     announce: $("announce"), adminNote: $("adminNote")
@@ -2309,7 +2560,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   var state = freshState();
 
   function freshState() {
-    return { brands: new Set(), types: new Set(), gender: "", sizes: new Set(), colors: new Set(), pmin: null, pmax: null, disc: 0, sort: DEFAULT_SORT, q: "", soldout: false };
+    // origin — "IT" | "TR" (адрес origin=it|tr), season — ключ SEASONS (season=autumn…), kw — основы dict.kw (kw=кашемир&kw=шерст, любая из)
+    return { brands: new Set(), types: new Set(), gender: "", origin: "", season: "", kw: new Set(), sizes: new Set(), colors: new Set(), pmin: null, pmax: null, disc: 0, sort: DEFAULT_SORT, q: "", soldout: false };
   }
 
   /* ---------- утилиты ---------- */
@@ -2586,15 +2838,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var ann = str(CONTENT.announcement);
     els.announce.textContent = ann;
     els.announce.hidden = !ann;
-    var eb = $("heroEyebrow"), ebt = str(C("hero_eyebrow"));
-    eb.textContent = ebt;
-    eb.hidden = !ebt;
     heroPrep();
     PL.setWord(name);
     PL.setMark(logoSvg());
     applyFavicon();
-    $("heroText").textContent = C("hero_text");
-    $("heroTrust").innerHTML = trustShort().map(function (t) { return '<span class="ht">' + esc(t) + "</span>"; }).join('<span class="dot" aria-hidden="true"> · </span>');
     var tel = phoneHref(), hcall = $("hdrCall");
     hcall.hidden = !tel;
     if (tel) { hcall.href = tel; hcall.setAttribute("aria-label", "Позвонить: " + str(contacts().phone)); }
@@ -2760,7 +3007,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     $("footUpdated").textContent = SUMMARY.generated_at ? "Каталог обновлён " + SUMMARY.generated_at : "";
     if (READY) {
       var types = typeCounts().slice(0, 6);
-      $("footCats").innerHTML = '<li><a href="#/catalog?sort=new">Новинки</a></li>' + types.map(function (t) {
+      $("footCats").innerHTML = '<li><a href="#/it">Италия</a></li><li><a href="#/tr">Турция</a></li><li><a href="#/catalog?sort=new">Новинки</a></li>' + types.map(function (t) {
         return '<li><a href="' + esc(catHref({ type: t[0] })) + '">' + esc(cap(t[0])) + "</a></li>";
       }).join("") + '<li><a href="#/brands">Все бренды</a></li><li><a href="#/catalog?disc=50">Скидки от 50%</a></li>';
     }
@@ -2776,7 +3023,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     // поиск — первым (на телефоне он есть и значком в шапке)
     var html = '<form class="dsearch" role="search" data-dsearch><input type="search" name="q" placeholder="Например: Boss, кроссовки, белая рубашка" aria-label="Поиск по каталогу" autocomplete="off" spellcheck="false" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-expanded="false" data-sugg>' +
       '<button class="btn" type="submit">Найти</button></form>';
-    html += links([["Главная", "#/"], ["Как заказать", "#/", null, false, 'data-goto="steps"'], ["Корзина", "#/cart", cart.length ? cartPieces() + " шт." : null], ["Весь каталог", "#/catalog", READY ? fmt(availCount()) : null],
+    html += links([["Главная", "#/"], ["Италия", "#/it"], ["Турция", "#/tr"], ["Как заказать", "#/", null, false, 'data-goto="steps"'], ["Корзина", "#/cart", cart.length ? cartPieces() + " шт." : null], ["Весь каталог", "#/catalog", READY ? fmt(availCount()) : null],
       ["Мужское", catHref({ gender: "men" })], ["Женское", catHref({ gender: "women" })], ["Новинки", "#/catalog?sort=new"],
       ["Скидки от 50%", "#/catalog?disc=50"], ["Бренды", "#/brands", READY ? brandCounts().length : null]]);
     if (READY) {
@@ -3379,6 +3626,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     revalidateCart();
     idle(warmTokens);                         // основы для поиска у дошедших частей — в простое
     if (homePending && homeDone) homeRails();
+    idle(function () { if (ORIGIN_ROUTE[curView]) renderCollection(parseRoute()); });   // страница коллекции — по всему каталогу
     if (waitId) {
       var w = findProduct(waitId), id = waitId;
       waitId = "";
@@ -4029,9 +4277,14 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // ссылка на каталог: {type, brand, gender, sort, disc, from, to}; порядок параметров — как в filterParams
   function catHref(o) {
     var h = new URLSearchParams();
+    if (o.origin && ROUTE_OF[o.origin]) h.set("origin", ROUTE_OF[o.origin]);
     if (o.brand) h.append("brand", o.brand);
     if (o.type) h.append("type", o.type);
+    (o.types || []).forEach(function (t) { h.append("type", t); });
     if (o.gender && GENDERS[o.gender]) h.set("for", o.gender);
+    if (o.season && SEASONS[o.season]) h.set("season", o.season);
+    (o.kw || []).forEach(function (k) { h.append("kw", k); });
+    if (o.q) h.set("q", o.q);
     if (o.from) h.set("from", o.from);
     if (o.to) h.set("to", o.to);
     if (o.disc) h.set("disc", o.disc);
@@ -4213,6 +4466,14 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
         "><span>" + esc(o[1]) + "</span></label>";
     }).join("");
     $("gGender").hidden = options.genders.length < 2;
+    // «Откуда»: Италия / Турция — по странам, которые есть в данных (поле origin)
+    options.origins = ["IT", "TR"].filter(function (o) { return products.some(function (p) { return p._origin === o; }); });
+    var og = [["", "Все"]].concat(options.origins.map(function (x) { return [x, ORIGIN[x]]; }));
+    els.fOrigin.innerHTML = og.map(function (o) {
+      return '<label><input type="radio" name="origin" value="' + o[0] + '"' + (o[0] === "" ? " checked" : "") +
+        "><span>" + esc(o[1]) + "</span></label>";
+    }).join("");
+    $("gOrigin").hidden = options.origins.length < 2;
     // распроданные в выдаче — только по ссылке (?sold=1, пилюля «С распроданными»): переключателя в панели нет
 
     var t = totals();
@@ -4232,12 +4493,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // телефон: «Для кого» и «Категория» — над сеткой (#quick), вне панели; компьютер — в боковой колонке, как раньше.
   // Переезжают те же элементы: состояние, счётчики и обработчики общие
   function placeQuick() {
-    var gG = $("gGender"), gT = $("gType"), body = els.filters.querySelector(".sheet-body");
+    var gG = $("gGender"), gT = $("gType"), gO = $("gOrigin"), body = els.filters.querySelector(".sheet-body");
     if (mobile.matches) {
-      if (gG.parentNode !== els.quick) { els.quick.appendChild(gG); els.quick.appendChild(gT); revealPressedChip(); }
+      if (gG.parentNode !== els.quick) { els.quick.appendChild(gO); els.quick.appendChild(gG); els.quick.appendChild(gT); revealPressedChip(); }
     } else if (gG.parentNode !== body) {
       body.insertBefore(gT, $("gSize"));
       body.insertBefore(gG, $("gSize"));
+      body.insertBefore(gO, $("gSize"));
     }
   }
   // выбранная категория в ленте над сеткой — в поле зрения (лента прокручивается вбок)
@@ -4267,6 +4529,13 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (state.colors.size && !state.colors.has(p._cg)) m |= F_COLOR;
     // товары без пола (унисекс) показываем при любом выборе
     if (state.gender && p._gender && p._gender !== state.gender) return m | F_REST;
+    if (state.origin && p._origin !== state.origin) return m | F_REST;
+    if (state.season && !seasonOk(p, state.season)) return m | F_REST;
+    if (state.kw.size) {                       // материал: любая из основ (kw=кашемир&kw=шерст)
+      var kwHit = false, kw = p._kw;
+      for (i = 0; i < kw.length; i++) if (state.kw.has(kw[i])) { kwHit = true; break; }
+      if (!kwHit) return m | F_REST;
+    }
     if (state.pmin != null && p._price < state.pmin) return m | F_REST;
     if (state.pmax != null && p._price > state.pmax) return m | F_REST;
     if (state.disc && p._disc < state.disc) return m | F_REST;
@@ -4390,7 +4659,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
 
   function activeCount() {
     return state.brands.size + state.types.size + state.sizes.size + state.colors.size + (state.gender ? 1 : 0) +
-      (state.pmin != null ? 1 : 0) + (state.pmax != null ? 1 : 0) + (state.disc ? 1 : 0) + (state.q ? 1 : 0) + (state.soldout ? 1 : 0);
+      (state.origin ? 1 : 0) + (state.season ? 1 : 0) + (state.kw.size ? 1 : 0) + (state.pmin != null ? 1 : 0) + (state.pmax != null ? 1 : 0) + (state.disc ? 1 : 0) + (state.q ? 1 : 0) + (state.soldout ? 1 : 0);
   }
 
   function apply(opts) {
@@ -4419,19 +4688,25 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     return k >= 0 ? adj[k] + " " + t : GENDERS[g] + " · " + cap(t);
   }
   // заголовок каталога по выбору: одна категория — «Рубашки» (с полом — «Мужские рубашки»), один бренд — «Boss»
+  // страна (origin) — приставкой: «Италия · Мужские рубашки», «Турция · Осень», просто «Италия»
   function catTitleText() {
     var t = state.types.size === 1 ? Array.from(state.types)[0] : "";
     var b = state.brands.size === 1 ? Array.from(state.brands)[0] : "";
-    var g = state.gender, tt = t ? (g ? genderTypeTitle(g, t) : cap(t)) : "";
-    if (t && b && state.types.size + state.brands.size === 2) return tt + " " + b;
-    if (t && !state.brands.size) return tt;
-    if (b && !state.types.size) return g ? b + " · " + GENDERS[g] : b;
-    if (state.gender && activeCount() === 1) return GENDERS[state.gender];
-    if (state.sort === "new" && !activeCount()) return "Новинки";
-    if (state.disc >= 50 && activeCount() === 1) return "Скидки от " + state.disc + "%";
-    if (state.q && activeCount() === 1) return "Поиск: «" + state.q + "»";
-    return "Каталог";
+    var g = state.gender, tt = t ? (g ? genderTypeTitle(g, t) : cap(t)) : "", base = "";
+    var n = activeCount() - (state.origin ? 1 : 0), gs = g ? " · " + GENDERS[g] : "";
+    if (t && b && state.types.size + state.brands.size === 2) base = tt + " " + b;
+    else if (t && !state.brands.size) base = tt;
+    else if (b && !state.types.size) base = b + gs;
+    else if (state.season && !state.types.size && !state.brands.size && !state.kw.size) base = SEASONS[state.season].title + gs;
+    else if (state.kw.size && !state.types.size && !state.brands.size) base = cap(kwList(state.kw)) + gs;
+    else if (g && n === 1) base = GENDERS[g];
+    else if (state.sort === "new" && !n) base = "Новинки";
+    else if (state.disc >= 50 && n === 1) base = "Скидки от " + state.disc + "%";
+    else if (state.q && n === 1) base = "Поиск: «" + state.q + "»";
+    if (state.origin) return ORIGIN[state.origin] + (base ? " · " + base : "");
+    return base || "Каталог";
   }
+  function kwList(set) { return Array.from(set).map(kwLabel).join(", "); }
   function updateCatTitle() {
     var t = catTitleText();
     els.catTitle.textContent = t;
@@ -4601,7 +4876,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var add = function (label, kind, value) { pills.push({ label: label, kind: kind, value: value }); };
     state.brands.forEach(function (b) { add(b, "brand", b); });
     state.types.forEach(function (t) { add(cap(t), "type", t); });
+    if (state.origin) add(ORIGIN[state.origin], "origin", "");
     if (state.gender) add(GENDERS[state.gender], "gender", "");
+    if (state.season) add(SEASONS[state.season].title, "season", "");
+    if (state.kw.size) add(cap(kwList(state.kw)), "kw", "");
     state.sizes.forEach(function (s) { add("Размер " + s, "size", s); });
     state.colors.forEach(function (g) { add("Цвет: " + colorName(g), "color", String(g)); });
     if (state.pmin != null) add("от " + fmt(state.pmin) + " сум", "pmin", "");
@@ -4623,6 +4901,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     else if (kind === "size") state.sizes.delete(value);
     else if (kind === "color") state.colors.delete(+value);
     else if (kind === "gender") state.gender = "";
+    else if (kind === "origin") state.origin = "";
+    else if (kind === "season") state.season = "";
+    else if (kind === "kw") state.kw = new Set();
     else if (kind === "pmin") state.pmin = null;
     else if (kind === "pmax") state.pmax = null;
     else if (kind === "disc") state.disc = 0;
@@ -4645,6 +4926,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (els.disc.value !== String(state.disc)) els.disc.value = "0";
     els.sort.value = state.sort;
     els.fGender.querySelectorAll("input").forEach(function (r) { r.checked = r.value === state.gender; });
+    els.fOrigin.querySelectorAll("input").forEach(function (r) { r.checked = r.value === state.origin; });
   }
 
   function toggleSizes(open) {
@@ -4669,19 +4951,22 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       if (!name) name = "home";
     } else { name = "catalog"; query = h; }
     var redirect = false;
-    if (name !== "home" && name !== "catalog" && name !== "brands" && name !== "cart" && name !== "checkout" &&
+    if (name !== "home" && name !== "catalog" && name !== "brands" && name !== "cart" && name !== "checkout" && !ORIGIN_ROUTE[name] &&
         !(ADMIN && name === "admin/lookup") && !PAGES[name]) { name = "home"; redirect = true; }   // старые и неизвестные адреса (#/sizes и прочие) — на главную
     var params = new URLSearchParams(query);
     var id = (params.get("p") || "").trim();
     params.delete("p");
-    return { name: name, params: params, id: id, redirect: redirect, key: name + "?" + (name === "catalog" ? params.toString() : "") };
+    return { name: name, params: params, id: id, redirect: redirect, key: name + "?" + (name === "catalog" || ORIGIN_ROUTE[name] ? params.toString() : "") };
   }
 
   function filterParams() {
     var h = new URLSearchParams();
+    if (state.origin) h.set("origin", ROUTE_OF[state.origin]);
     state.brands.forEach(function (v) { h.append("brand", v); });
     state.types.forEach(function (v) { h.append("type", v); });
     if (state.gender) h.set("for", state.gender);
+    if (state.season) h.set("season", state.season);
+    state.kw.forEach(function (k) { h.append("kw", k); });
     state.sizes.forEach(function (v) { h.append("size", v); });
     state.colors.forEach(function (g) { h.append("color", colorName(g)); });
     if (state.pmin != null) h.set("from", state.pmin);
@@ -4722,6 +5007,11 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     h.getAll("color").forEach(function (v) { var c = colorIndex(v); if (c >= 0) st.colors.add(c); });
     var g = h.get("for");
     if (g && options.genders.indexOf(g) >= 0) st.gender = g;
+    var og = (h.get("origin") || "").toLowerCase();
+    if (ORIGIN_ROUTE[og]) st.origin = ORIGIN_ROUTE[og];
+    var se = (h.get("season") || "").toLowerCase();
+    if (SEASONS[se]) st.season = se;
+    h.getAll("kw").forEach(function (k) { k = k.trim().toLowerCase().slice(0, 24); if (k) st.kw.add(k); });
     st.pmin = digits(h.get("from"));
     st.pmax = digits(h.get("to"));
     var d = parseInt(h.get("disc"), 10);
@@ -5083,6 +5373,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       e.target.style.setProperty("--rv-d", Math.min(k, 7) * 55 + "ms");
       e.target.classList.add("in");
       revealIO.unobserve(e.target);
+      if (e.target.getAttribute("data-motion") === "tick") tickPrices(e.target);
     });
   }, { rootMargin: "0px 0px -4% 0px" }) : null;
   function armReveal(nodes) {
@@ -5100,6 +5391,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   var heroPlayed = false;
   function heroPrep() {
     var h = $("heroTitle"), txt = C("hero_title");
+    if (!h) return;                                   // вход «Италия / Турция» вместо героя: заголовка нет
     if (!MO || heroPlayed) { h.textContent = txt; return; }
     h.innerHTML = txt.split(/\s+/).filter(Boolean).map(function (w) { return '<span class="w"><span>' + esc(w) + "</span></span>"; }).join(" ");
   }
@@ -5110,7 +5402,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     if (curView !== "home" || PL.busy() && !document.documentElement.classList.contains("revealed")) return;
     heroPlayed = true;
     var top = null, ln = -1;
-    $("heroTitle").querySelectorAll(".w").forEach(function (w) {
+    document.querySelectorAll("#heroTitle .w").forEach(function (w) {
       var t = w.offsetTop;
       if (top === null || t > top + 4) { ln++; top = t; }
       w.style.setProperty("--ln", ln);
@@ -5124,7 +5416,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   // в фоновой вкладке (кадры не идут) цифры не останутся на нуле
   var heroCounted = false;
   function heroCount(delay) {
-    var bs = $("heroStats").querySelectorAll("b[data-n]");
+    var bs = document.querySelectorAll("#heroStats b[data-n]");
     if (heroCounted || !bs.length || !MO || !heroPlayed) return;
     heroCounted = true;
     if (document.hidden) return;                      // вкладка в фоне — сразу итоговые цифры (они уже в разметке)
@@ -5153,8 +5445,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var h = $("hero"), r = h.getBoundingClientRect(), k = Math.max(0, Math.min(1, -r.top / Math.max(1, r.height)));
     if (k === heroK) return;
     heroK = k;
-    h.querySelectorAll(".art .media").forEach(function (m) { m.style.translate = "0 " + (k * 9).toFixed(2) + "%"; m.style.scale = (1 + k * 0.05).toFixed(4); });
-    h.querySelector(".hero-pattern").style.translate = "0 " + (k * 70).toFixed(1) + "px";
+    // вход: коллажи отстают от прокрутки (только translate)
+    h.querySelectorAll(".ent-kb").forEach(function (m) { m.style.translate = "0 " + (k * 12).toFixed(2) + "%"; });
   }
   var heroK = 0;
   function heroScroll() { if (!heroRaf) heroRaf = requestAnimationFrame(heroScrollFrame); }
@@ -5234,46 +5526,17 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function renderHome() {
     if (!READY || homeDone) return;
     homeDone = true;
-    var pool = withPhoto(products);
-    var t = totals();
-    var bc = brandCounts();
-    $("heroStats").innerHTML = (t ? '<li><b data-n="' + t.count + '">' + fmt(t.count) + "</b><span>" + plural(t.count, ["вещь", "вещи", "вещей"]) + " в наличии</span></li>" : "") +
-      '<li><b data-n="' + bc.length + '">' + bc.length + "</b><span>" + plural(bc.length, ["бренд", "бренда", "брендов"]) + "</span></li>" +
-      (t && discShown(t.discount_max) > 0 ? '<li><b data-n="' + discShown(t.discount_max) + '" data-pre="до " data-suf="%">до ' + discShown(t.discount_max) + "%</b><span>скидки</span></li>" : "");
-    if (heroPlayed && curView === "home" && inView($("heroStats"))) heroCount(0);     // цифры пришли после показа героя
-
-    // герой: три вещи крупных брендов разных категорий, своё фото в приоритете; меняются раз в день
-    var top = new Set(bc.slice(0, 15).map(function (b) { return b[0]; }));
-    var cand = pool.filter(function (p) { return top.has(p._brand) && p._ni >= 2 && p._disc >= 25; })
-      .sort(function (a, b) { return (ownPhoto(b) - ownPhoto(a)) || a._rnd - b._rnd; });
-    var art = diversify(diversify(cand, 1, 40, function (p) { return p._type; }), 1, 3);
-    if (art.length < 3) art = diversify(pool.slice().sort(function (a, b) { return a._rnd - b._rnd; }), 1, 3);
-    $("heroArt").innerHTML = art.map(function (p, i) {
-      var imgs = goodImgs(p), img = imgs[0], second = MO ? imgs[1] : "";
-      return '<a class="art" href="#/?p=' + encodeURIComponent(p._code) + '" data-open="' + esc(p._code) + '" data-pid="' + esc(p._code) + '">' +
-        '<div class="media ld" data-mono="' + esc(monogram(p._brand)) + '"><img src="' + esc(img) + '" alt="' + esc(p._title) + '"' + (i === 0 ? ' fetchpriority="high"' : "") + ' decoding="async" referrerpolicy="no-referrer">' +
-        (second ? '<img class="b" data-src="' + esc(second) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">' : "") + "</div>" +
-        '<span class="cap"><b>' + esc(p._brand) + "</b>" + fmt(p._price) + " сум</span></a>";
-    }).join("");
-    // второй ракурс героя — из подробностей (в индексе только первое фото); успеют до heroSecond (через 1,8 с)
-    if (MO) art.forEach(function (p) {
-      if (p._full) return;
-      ensureDetail(p).then(function () {
-        var a = document.querySelector('#heroArt [data-pid="' + p._code + '"] .media'), imgs = goodImgs(p);
-        if (a && imgs[1] && !a.querySelector(".b")) a.insertAdjacentHTML("beforeend", '<img class="b" data-src="' + esc(imgs[1]) + '" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer">');
-      }, function () { /* без второго ракурса */ });
-    });
-    heroSecond();
-
-    renderGenderTiles(pool, top);
-    renderTiles(pool, false);
+    renderEntry();
     renderBrandGrid();
-
     armReveal(document.querySelectorAll("#viewHome .rv:not(.in)"));
-
-    // «Новинки» — сразу: в «голове» каталога (часть 0) есть самые новые вещи; остальные ленты — по всему каталогу
+    // сезон, «Новинки» и «Скидки» — в простое, каждая своей задачей; «голова» каталога (часть 0) уже содержит лучшее
+    // по r и самые новые вещи, после полной загрузки ленты тихо уточняются (homeRails)
     sortedProducts("new");      // сейчас (пока товаров — «голова»), дальше части вливаются слиянием
-    runIdle([function () { $("railsTop").innerHTML = freshRail(); initRails($("railsTop")); }]);
+    runIdle([
+      function () { renderSeason($("seasonHome"), "", ""); },
+      function () { $("railsTop").innerHTML = freshRail(); initRails($("railsTop")); },
+      function () { var m = $("railsMore"); m.innerHTML = HOME_RUBRICS.map(function (r) { return rubricSection(r, "", ""); }).join(""); initRails(m); }
+    ]);
     if (ALL) homeRails(); else homePending = true;
   }
   var homePending = false;
@@ -5288,90 +5551,6 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     }
     return railHtml({ title: "Новинки", sub: "Только что появились в каталоге", link: catHref({ sort: "new" }), items: fresh });
   }
-  // первые limit вещей с фото (и всех с той же скидкой на границе) по скидке — из отсортированного списка
-  // каталога; порядок внутри — byDisc (скидка, затем «число дня»). Вместо сортировки всего каталога
-  function topDisc(test, limit) {
-    var list = sortedProducts("disc"), out = [], last = null;
-    for (var i = 0; i < list.length; i++) {
-      var p = list[i];
-      if (p._out) break;                      // распроданные — в конце списка
-      if (!p._imgs.length || !test(p)) continue;
-      if (out.length >= limit && p._disc !== last) break;
-      out.push(p);
-      last = p._disc;
-    }
-    return keySort(out, function (p) { return -p._disc; }, function (p) { return p._rnd; });
-  }
-  // «Мужское» / «Женское»: до трёх вещей пола из характерных категорий (на телефоне видна первая), крупные бренды
-  // и своё фото — в приоритете, выбор меняется раз в день («число дня»). Один проход по витрине
-  var GENDER_ART = { men: ["пиджаки и костюмы", "куртки и пальто", "обувь"], women: ["платья", "сумки", "обувь"] };
-  function renderGenderTiles(pool, topBrands) {
-    // место в «Рекомендуем» (r) вместо «скидка от 30%»; «число дня» — смена выбора раз в сутки среди лучших
-    var best = new Map(), score = function (p) { return ownPhoto(p) * 2 + (topBrands.has(p._brand) ? 1 : 0) + (HAS_R ? p._r / R_MAX * 0.8 : p._disc >= 30 ? 0.5 : 0) + p._rnd * 0.4; };
-    for (var i = 0; i < pool.length; i++) {
-      var p = pool[i], types = GENDER_ART[p._gender];
-      if (!types || types.indexOf(p._type) < 0) continue;
-      var k = p._gender + "|" + p._type, cur = best.get(k);
-      if (!cur || score(p) > score(cur)) best.set(k, p);
-    }
-    document.querySelectorAll("#genderTiles .gtile").forEach(function (a) {
-      var g = a.getAttribute("data-g");
-      a.hidden = READY && options.genders.length > 0 && options.genders.indexOf(g) < 0;
-      var art = (GENDER_ART[g] || []).map(function (t) { return best.get(g + "|" + t); }).filter(Boolean);
-      a.querySelector(".gt-media").innerHTML = art.length ? art.map(function (p) {
-        return '<span class="media ld" data-pid="' + esc(p._code) + '" data-mono="' + esc(monogram(p._brand)) + '"><img src="' + esc(cardSrc(goodImgs(p)[0])) +
-          '" alt="" decoding="async" referrerpolicy="no-referrer"></span>';
-      }).join("") : '<span class="media noimg" data-mono="' + esc(GENDERS[g].charAt(0)) + '"></span>';
-    });
-  }
-  // под названием — сколько вещей (когда каталог пришёл целиком; до этого — «Смотреть всё»)
-  function genderTileCounts() {
-    var n = {};
-    availList().forEach(function (p) { if (p._gender) n[p._gender] = (n[p._gender] || 0) + 1; else n.u = (n.u || 0) + 1; });
-    document.querySelectorAll("#genderTiles .gtile").forEach(function (a) {
-      var g = a.getAttribute("data-g"), c = (n[g] || 0) + (n.u || 0);     // унисекс показывается в обоих
-      if (c) a.querySelector(".gt-n").textContent = fmt(c) + NBSP + plural(c, ["вещь", "вещи", "вещей"]);
-    });
-  }
-  function catMoreText() {
-    var open = $("catTiles").classList.contains("open");
-    els.catMore.textContent = open ? "Свернуть" : "Все категории";
-    els.catMore.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-  // категории: фото — первая вещь категории в «Рекомендуем» (без r — с большой скидкой), лучше со своим фото.
-  // Один проход вместо сортировки на каждый тип.
-  // onlyEmpty — каталог догрузился: дорисовать только плитки, которым в «голове» не нашлось фото
-  function renderTiles(pool, onlyEmpty) {
-    var tc = typeCounts().filter(function (x) { return x[1] >= 5; });
-    var bestOf = new Map();
-    for (var i = 0; i < pool.length; i++) {
-      var p = pool[i];
-      if (p._out || !p._imgs.length) continue;
-      var cur = bestOf.get(p._type);
-      if (!cur || ((ownPhoto(cur) - ownPhoto(p)) || byRec(p, cur)) < 0) bestOf.set(p._type, p);
-    }
-    var tile = function (x) {
-      var p = bestOf.get(x[0]);
-      var img = p ? goodImgs(p)[0] : "";
-      return '<a class="tile" href="' + esc(catHref({ type: x[0] })) + '"' + (p ? ' data-pid="' + esc(p._code) + '"' : "") + '>' +
-        '<div class="media' + (img ? " ld" : " noimg") + '" data-mono="' + esc(cap(x[0]).charAt(0)) + '">' + (img ? "<img " + imgAttrs(img, cardSrc(img)) + ' alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") + "</div>" +
-        '<span class="tile-name">' + esc(cap(x[0])) + '</span><span class="tile-n">' + items(x[1]) + "</span></a>";
-    };
-    var box = $("catTiles");
-    if (!onlyEmpty) {
-      box.innerHTML = tc.map(tile).join("");
-      // «Все категории»: на телефоне видны 9, на компьютере 12 — кнопка там, где часть спрятана
-      els.catMore.classList.toggle("m", tc.length > 9);
-      els.catMore.classList.toggle("d", tc.length > 12);
-      catMoreText();
-      return;
-    }
-    var els2 = box.querySelectorAll(".tile");
-    tc.forEach(function (x, i) {
-      var el = els2[i];
-      if (el && el.querySelector(".noimg") && bestOf.get(x[0])) el.outerHTML = tile(x);
-    });
-  }
   // ленты — в простое браузера, каждая своей задачей (сортировка 150 тыс. — десятки мс)
   function runIdle(queue) {
     idle(function runQueue() {
@@ -5384,29 +5563,391 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
       idle(runQueue);
     });
   }
+  // весь каталог пришёл: «Новинки», сезон и «Скидки» — по всему каталогу (тихо, без повторного появления)
   function homeRails() {
     homePending = false;
-    var more = $("railsMore");
-    var addRail = function (o) {
-      more.insertAdjacentHTML("beforeend", railHtml(o));
-      initRails(more);
-    };
-    var all = function () { return true; };
-    // главная короткая: одна лента «Лучшие скидки» (ленты по цене и по категориям убраны — категории есть плитками выше)
-    var q = [
+    runIdle([
       function () {
-        addRail({ title: "Лучшие скидки", sub: "Самые большие скидки прямо сейчас", link: catHref({ disc: 50 }), items: diversify(topDisc(all, 2000), 2, 16) });
-      },
-      function () {
-        // «Новинки» по всему каталогу: если в «голове» оказались не все самые новые — тихо заменить
         var html = freshRail(), top = $("railsTop");
         var ids = function (h) { return (h.match(/data-pid="[^"]*"/g) || []).join(); };
         if (ids(html) !== ids(top.innerHTML)) { top.innerHTML = html; top.querySelectorAll(".rv").forEach(function (el) { el.classList.add("in"); el._rv = true; }); initRails(top); }
-        renderTiles(products, true);
-        genderTileCounts();
+      },
+      function () { refreshRubrics($("seasonHome"), "", ""); },
+      function () { refreshRubrics($("railsMore"), "", ""); },
+      function () {
+        ["IT", "TR"].forEach(function (o) {
+          var el = $("ent" + o), st = originStats(o, "");
+          if (!el || !st.count) return;
+          el.querySelector("[data-sub]").textContent = originSub(st, "");
+          var mq = el.querySelector(".ent-mq .mq"), fresh = marqueeHtml(st.brands);
+          if (!mq || mq.textContent !== fresh.replace(/<[^>]+>/g, "")) el.querySelector(".ent-mq").innerHTML = fresh;
+        });
       }
-    ];
-    runIdle(q);
+    ]);
+  }
+
+  /* ====================================================================
+     ВИТРИНА (редизайн): вход «Италия / Турция», страницы коллекций #/it и #/tr (?for=men|women), сезоны, рубрики.
+     Всё — только из каталога: вещи в наличии с фото, по порядку «Рекомендуем» (r). Рубрика короче RUBRIC_MIN не показывается.
+     Конфигурация рубрик — RUBRICS (ниже), сезонов — SEASONS; стили появления — data-motion (CSS «движение рубрик»).
+     ==================================================================== */
+  var ORIGIN_ROUTE = { it: "IT", tr: "TR" };             // маршрут -> код страны в данных
+  var ROUTE_OF = { IT: "it", TR: "tr" };
+  var GENDER_KEY = "shop.gender.v1";                     // последний выбор «Мужское / Женское» (для #/it без ?for=)
+  // сезоны (Ташкент, UTC+5): месяц -> сезон. types — и рубрика «по сезону», и фильтр каталога ?season=;
+  // shoes — летняя обувь по словам названия (сандалии, эспадрильи…)
+  var SEASONS = {
+    autumn: { title: "Осень", sub: "Куртки, пальто, свитеры", types: ["куртки и пальто", "свитеры и кардиганы"] },
+    winter: { title: "Зима", sub: "Пальто, пуховики, свитеры, толстовки", types: ["куртки и пальто", "свитеры и кардиганы", "толстовки"] },
+    spring: { title: "Весна", sub: "Рубашки, пиджаки, платья, обувь", types: ["рубашки", "пиджаки и костюмы", "платья", "обувь"] },
+    summer: { title: "Лето", sub: "Футболки и поло, шорты, платья, юбки, сандалии", types: ["футболки и поло", "шорты", "платья", "юбки"],
+      shoes: /сандал|босонож|шлёпан|шлепан|эспадриль|мюли|вьетнам|сабо|слайд/i }
+  };
+  var SEASON_ORDER = ["autumn", "winter", "spring", "summer"];
+  function currentSeason() {
+    var m = new Date(Date.now() + 5 * 3600e3).getUTCMonth() + 1;
+    return m >= 9 && m <= 11 ? "autumn" : m === 12 || m <= 2 ? "winter" : m <= 5 ? "spring" : "summer";
+  }
+  function seasonOk(p, s) {
+    var S = SEASONS[s];
+    if (!S) return true;
+    if (S.types.indexOf(p._type) >= 0) return true;
+    return !!(S.shoes && p._type === "обувь" && S.shoes.test(p._title));
+  }
+  // подписи основ kw (dict.kw) в пилюле фильтра «материал»
+  var KW_LABEL = { "шерст": "шерсть", "кашемир": "кашемир", "меринос": "меринос", "альпак": "альпака", "кож": "кожа", "хлоп": "хлопок",
+    "шелк": "шёлк", "лен": "лён", "льн": "лён", "замш": "замша", "мохер": "мохер" };
+  function kwLabel(k) { return KW_LABEL[k] || k; }
+  // бренды «первого ряда» для «Гардероба руководителя» (только для подбора вещей рубрики; «Смотреть все» ведёт по категориям)
+  var TIER_BRANDS = ["Kiton", "Canali", "Giorgio Armani", "Tod's", "Boss", "Eleventy", "Barba Napoli", "Tombolini", "Doucal's", "Bally",
+    "Gucci", "Dior", "Moorer", "Jacob Cohën", "Hackett", "Boggi Milano", "Emporio Armani", "Paul & Shark", "Gran Sasso",
+    "Filippo De Laurentiis", "Tramarossa", "Harmont & Blaine", "Montecore"];
+  // рубрики коллекций: ключ «страна|пол». f — фильтр: types (категории), kw (основы dict.kw — любая из), max (цена до, сум),
+  // min (скидка от, %), tier (только TIER_BRANDS). motion — tilt | fade | float | curtain | tick; layout — rail | mosaic.
+  // Ссылка «Смотреть все» строится из f (кроме tier). Порядок — порядок на странице; редактировать можно свободно
+  var RUBRIC_MIN = 6, RUBRIC_N = 8;
+  var RUBRICS = {
+    "IT|men": [
+      { id: "exec", title: "Гардероб руководителя", sub: "Костюмы, рубашки и обувь первых итальянских домов", f: { types: ["пиджаки и костюмы", "рубашки", "обувь"], tier: true }, motion: "curtain", layout: "mosaic" },
+      { id: "shoes", title: "Обувь из Италии", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" },
+      { id: "wool", title: "Кашемир и шерсть", sub: "Натуральные волокна — свитеры, пиджаки, пальто", f: { kw: ["кашемир", "шерст", "меринос", "альпак"] }, motion: "float", layout: "rail" },
+      { id: "outer", title: "Куртки и пальто", f: { types: ["куртки и пальто"] }, motion: "fade", layout: "mosaic" },
+      { id: "sale", title: "Скидки от 50%", f: { min: 50 }, motion: "tick", layout: "rail" }
+    ],
+    "IT|women": [
+      { id: "dress", title: "Платья", f: { types: ["платья"] }, motion: "curtain", layout: "mosaic" },
+      { id: "bags", title: "Сумки и аксессуары", f: { types: ["сумки", "аксессуары"] }, motion: "float", layout: "rail" },
+      { id: "outer", title: "Верхняя одежда", f: { types: ["куртки и пальто"] }, motion: "fade", layout: "mosaic" },
+      { id: "shoes", title: "Обувь", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" },
+      { id: "sale", title: "Скидки от 50%", f: { min: 50 }, motion: "tick", layout: "rail" }
+    ],
+    "TR|men": [
+      { id: "shirts", title: "Рубашки и поло до 1 млн", f: { types: ["рубашки", "футболки и поло"], max: 1000000 }, motion: "float", layout: "mosaic" },
+      { id: "suits", title: "Костюмы", f: { types: ["пиджаки и костюмы"] }, motion: "curtain", layout: "rail" },
+      { id: "shoes", title: "Обувь", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" },
+      { id: "sale", title: "Скидки от 50%", f: { min: 50 }, motion: "tick", layout: "mosaic" }
+    ],
+    "TR|women": [
+      { id: "dress", title: "Платья и юбки", f: { types: ["платья", "юбки"] }, motion: "curtain", layout: "mosaic" },
+      { id: "outer", title: "Верхняя одежда", f: { types: ["куртки и пальто"] }, motion: "fade", layout: "rail" },
+      { id: "cheap", title: "До 700 000 сум", f: { max: 700000 }, motion: "float", layout: "mosaic" },
+      { id: "shoes", title: "Обувь", f: { types: ["обувь"] }, motion: "tilt", layout: "rail" }
+    ]
+  };
+  // главная: одна рубрика на обе страны (ленты «Новинки» и «Бренды» — прежние)
+  var HOME_RUBRICS = [{ id: "sale", title: "Скидки от 50%", sub: "Италия и Турция", f: { min: 50 }, motion: "tick", layout: "rail" }];
+
+  // проверка вещи под рубрику (страна и пол — снаружи; унисекс подходит любому полу)
+  function rubricTest(f, origin, gender) {
+    var kwSet = f.kw ? new Set(f.kw) : null, tier = f.tier ? new Set(TIER_BRANDS) : null;
+    return function (p) {
+      if (p._out || !p._imgs.length) return false;
+      if (origin && p._origin !== origin) return false;
+      if (gender && p._gender && p._gender !== gender) return false;
+      if (f.types && f.types.indexOf(p._type) < 0) return false;
+      if (f.max && p._price > f.max) return false;
+      if (f.min && p._disc < f.min) return false;
+      if (tier && !tier.has(p._brand)) return false;
+      if (f.season && !seasonOk(p, f.season)) return false;
+      if (kwSet) {
+        var ok = false, k = p._kw;
+        for (var i = 0; i < k.length; i++) if (kwSet.has(k[i])) { ok = true; break; }
+        if (!ok) return false;
+      }
+      return true;
+    };
+  }
+  // подбор: по порядку «Рекомендуем», не больше brandMax одного бренда, категории по очереди (если их несколько);
+  // total — сколько вещей подходит всего (для «Смотреть все · N»). Один проход по витрине (~55 тыс.) — единицы мс
+  function pickRubric(test, n, types, brandMax) {
+    var list = sortedProducts("rec"), byType = types && types.length > 1 ? new Map() : null, cnt = new Map(), out = [], total = 0;
+    var perType = byType ? Math.ceil(n / types.length) + 1 : n, bm = brandMax || 2;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (p._out) break;                     // распроданные — в конце списка
+      if (!test(p)) continue;
+      total++;
+      if (out.length >= n) continue;
+      var c = cnt.get(p._brand) || 0;
+      if (c >= bm) continue;
+      if (byType) { var t = byType.get(p._type) || 0; if (t >= perType) continue; byType.set(p._type, t + 1); }
+      cnt.set(p._brand, c + 1);
+      out.push(p);
+    }
+    out.total = total;
+    return out;
+  }
+  // ссылка «Смотреть все» рубрики — каталог с теми же фильтрами (origin, for, type, kw, to, disc, season)
+  function rubricLink(r, origin, gender) {
+    var f = r.f || {};
+    return catHref({ origin: origin, gender: gender, types: f.types, kw: f.kw, to: f.max, disc: f.min, season: f.season });
+  }
+  function rubricHtml(r, items, link) {
+    var id = "rub" + hash32(r.id + r.title + (r.key || "")).toString(36);
+    var cards = items.map(function (p) { return miniHtml(p).replace('class="mcard', 'class="mcard rk'); }).join("");
+    var total = items.total || items.length, more = total > items.length ? " · " + fmt(total) : "";
+    var body = r.layout === "mosaic"
+      ? '<div class="mosaic" role="list">' + cards + '<a class="m-cta" href="' + esc(link) + '"><span>Смотреть все' + more + "</span></a></div>"
+      : '<div class="rail" role="list">' + cards + "</div>";
+    return '<section class="rub rv" data-motion="' + esc(r.motion || "float") + '" data-rk="' + esc(r.id) + '" aria-labelledby="' + id + '"><div class="wrap">' +
+      '<div class="sec-head"><div><h2 id="' + id + '">' + esc(r.title) + "</h2>" + (r.sub ? "<p>" + esc(r.sub) + "</p>" : "") + "</div>" +
+      '<div class="sec-tools"><a href="' + esc(link) + '">Смотреть все' + more + "</a>" +
+      (r.layout !== "mosaic" ? '<button type="button" class="rail-btn" data-rail="-1" aria-label="Прокрутить назад">' + ICON_PREV + '</button><button type="button" class="rail-btn" data-rail="1" aria-label="Прокрутить вперёд">' + ICON_NEXT + "</button>" : "") +
+      "</div></div>" + body + "</div></section>";
+  }
+  // рубрика целиком: вещи, ссылка; "" — если вещей меньше RUBRIC_MIN
+  function rubricSection(r, origin, gender) {
+    // у Турции брендов мало (7) — до 3 вещей одного бренда, у Италии — до 2
+    var items = pickRubric(rubricTest(r.f || {}, origin, gender), RUBRIC_N, r.f && r.f.types, origin === "TR" ? 3 : 2);
+    if (items.length < RUBRIC_MIN) return "";
+    return rubricHtml(r, items, rubricLink(r, origin, gender));
+  }
+  // «Скидки»: цена отсчитывается вниз от старой (цена/(1−скидка)), только при движении; один раз на рубрику
+  function tickPrices(sec) {
+    if (!MO || sec._ticked) return;
+    sec._ticked = true;
+    var rows = [];
+    sec.querySelectorAll(".mcard[data-pid]").forEach(function (c) {
+      var p = byId.get(c.getAttribute("data-pid")), el = c.querySelector(".m-price");
+      if (!p || !el || p._disc <= 0 || el.querySelector(".tk")) return;
+      var was = Math.round(p._price / (1 - p._disc / 100) / 10000) * 10000;
+      if (was <= p._price) return;
+      el.innerHTML = '<span class="tk">' + fmt(p._price) + '</span> <span class="cur">сум</span><span class="was">' + fmt(was) + "</span>";
+      var tk = el.querySelector(".tk");
+      tk.style.setProperty("--w", tk.getBoundingClientRect().width + "px");
+      rows.push({ el: tk, from: was, to: p._price });
+    });
+    if (!rows.length || document.hidden) return;
+    var t0 = 0, dur = 1100, done = false;
+    var finish = function () { if (done) return; done = true; rows.forEach(function (r) { r.el.textContent = fmt(r.to); }); };
+    rows.forEach(function (r) { r.el.textContent = fmt(r.from); });
+    var guard = setTimeout(finish, dur + 500);              // вкладка ушла в фон — кадры не идут, итог ставит таймер
+    requestAnimationFrame(function tick(now) {
+      if (done) return;
+      if (!t0) t0 = now;
+      var k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      rows.forEach(function (r) { r.el.textContent = fmt(Math.round((r.from - (r.from - r.to) * e) / 1000) * 1000); });
+      if (k < 1) requestAnimationFrame(tick); else { clearTimeout(guard); finish(); }
+    });
+  }
+
+  if (window.__YL) window.__YL.tick = tickPrices;        // ?perf=1 / отладка: запустить отсчёт цен вручную
+
+  /* ---------- сводка по стране (и полу): число вещей, бренды по убыванию ---------- */
+  var _origStats = {};
+  function originStats(origin, gender) {
+    var key = origin + "|" + (gender || "") + "|" + products.length;
+    if (_origStats[key]) return _origStats[key];
+    var n = 0, brands = new Map(), types = new Map(), list = availList();
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (p._origin !== origin) continue;
+      if (gender && p._gender && p._gender !== gender) continue;
+      n++;
+      brands.set(p._brand, (brands.get(p._brand) || 0) + 1);
+      if (p._type && p._type !== OTHER) types.set(p._type, (types.get(p._type) || 0) + 1);
+    }
+    var sort = function (m) { return Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1] || (a[0] < b[0] ? -1 : 1); }); };
+    _origStats = {};                                   // кэш на одну сборку списка
+    return (_origStats[key] = { count: n, brands: sort(brands), types: sort(types) });
+  }
+  // кадры коллажа: 3 рамки, в каждой — две вещи (второй снимок проступает). Лучшие по r, разные бренды, своё фото — в приоритете
+  function collageHtml(origin, gender, eager) {
+    var pick = pickRubric(rubricTest({}, origin, gender), 9, null, 1).slice()
+      .sort(function (a, b) { return ownPhoto(b) - ownPhoto(a); });
+    if (!pick.length) return '<span class="fr sk"></span><span class="fr sk"></span><span class="fr sk"></span>';
+    return [0, 1, 2].map(function (i) {
+      var a = pick[i] || pick[0], b = pick[i + 3];
+      return '<span class="fr" data-pid="' + esc(a._code) + '"><img ' + imgAttrs(goodImgs(a)[0], cardSrc(goodImgs(a)[0])) + ' alt=""' +
+        (eager && i === 0 ? ' fetchpriority="high"' : ' loading="lazy"') + ' decoding="async" referrerpolicy="no-referrer">' +
+        (b && MO ? '<img class="b" ' + imgAttrs(goodImgs(b)[0], cardSrc(goodImgs(b)[0])) + ' alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : "") + "</span>";
+    }).join("");
+  }
+  function marqueeHtml(brands) {
+    var names = brands.slice(0, 24).map(function (b) { return "<span>" + esc(b[0]) + "</span>"; }).join("");
+    return '<div class="mq" style="--marq:' + Math.max(40, Math.min(24, brands.length) * 3.2) + 's">' + names + names + "</div>";
+  }
+  function originSub(st, gender) {
+    var top = st.brands.slice(0, 3).map(function (b) { return b[0]; }).join(", ");
+    return fmt(st.count) + NBSP + plural(st.count, ["вещь", "вещи", "вещей"]) + (gender ? "" : "") + (top ? " · " + top : "");
+  }
+
+  /* ---------- главная: вход и сезон ---------- */
+  function renderEntry() {
+    if (!READY) return;
+    ["IT", "TR"].forEach(function (o) {
+      var el = $("ent" + o);
+      if (!el) return;
+      var st = originStats(o, "");
+      el.hidden = !st.count;
+      if (!st.count) return;
+      el.querySelector(".ent-kb").innerHTML = collageHtml(o, "", o === "IT");
+      el.querySelector(".ent-mq").innerHTML = marqueeHtml(st.brands);
+      el.querySelector("[data-sub]").textContent = originSub(st, "");
+    });
+  }
+  var seasonSel = currentSeason();
+  // блок сезона: вкладки и рубрика по сезону (origin/gender — на странице коллекции; на главной — обе страны)
+  function seasonHtml(origin, gender) {
+    var S = SEASONS[seasonSel];
+    var tabs = SEASON_ORDER.map(function (k) {
+      return '<button type="button" class="stab" role="tab" data-season="' + k + '" aria-selected="' + (k === seasonSel ? "true" : "false") + '">' + esc(SEASONS[k].title) + "</button>";
+    }).join("");
+    var r = { id: "season", title: S.title + ": " + S.sub.charAt(0).toLowerCase() + S.sub.slice(1), f: { season: seasonSel }, motion: "float", layout: "rail" };
+    var items = pickRubric(rubricTest(r.f, origin, gender), RUBRIC_N, S.types), link = rubricLink(r, origin, gender), id = "seasonTitle";
+    var more = items.total > items.length ? " · " + fmt(items.total) : "";
+    var body = items.length >= RUBRIC_MIN ? '<div class="rail" role="list">' + items.map(function (p) { return miniHtml(p).replace('class="mcard', 'class="mcard rk'); }).join("") + "</div>"
+      : '<p class="coll-empty">В этом сезоне пока мало вещей — посмотрите другие вкладки.</p>';
+    return '<section class="rub season rv" data-motion="float" data-rk="season" data-origin="' + esc(origin || "") + '" data-gender="' + esc(gender || "") + '" aria-labelledby="' + id + '"><div class="wrap">' +
+      '<div class="sec-head"><div><h2 id="' + id + '">' + esc(r.title) + '</h2><p>Сейчас в Ташкенте — ' + esc(S.title.toLowerCase()) + '</p><div class="stabs" role="tablist">' + tabs + "</div></div>" +
+      '<div class="sec-tools"><a href="' + esc(link) + '">Смотреть все' + more + "</a>" +
+      '<button type="button" class="rail-btn" data-rail="-1" aria-label="Прокрутить назад">' + ICON_PREV + '</button><button type="button" class="rail-btn" data-rail="1" aria-label="Прокрутить вперёд">' + ICON_NEXT + "</button></div></div>" +
+      '<div class="season-body">' + body + "</div></div></section>";
+  }
+  function renderSeason(root, origin, gender) {
+    if (!root || !READY) return;
+    root.innerHTML = seasonHtml(origin, gender);
+    initRails(root);
+  }
+  // смена вкладки: перерисовать только тело блока (лента появляется заново)
+  document.addEventListener("click", function (e) {
+    var tab = e.target.closest(".stab");
+    if (!tab) return;
+    var sec = tab.closest(".season");
+    seasonSel = tab.getAttribute("data-season");
+    sec.querySelectorAll(".stab").forEach(function (b) { b.setAttribute("aria-selected", b === tab ? "true" : "false"); });
+    var tmp = document.createElement("div");
+    tmp.innerHTML = seasonHtml(sec.getAttribute("data-origin"), sec.getAttribute("data-gender"));
+    var fresh = tmp.firstChild, body = sec.querySelector(".season-body");
+    sec.querySelector("h2").textContent = fresh.querySelector("h2").textContent;
+    sec.querySelector(".sec-tools a").outerHTML = fresh.querySelector(".sec-tools a").outerHTML;
+    body.innerHTML = fresh.querySelector(".season-body").innerHTML;
+    sec.classList.remove("in");            // лента появляется заново (как при прокрутке к блоку)
+    sec._rv = false; sec._ticked = false;
+    initRails(sec);
+  });
+  // вход: тап по панели (не по кнопке) — на страницу страны; выбор «Мужское / Женское» запоминается
+  document.addEventListener("click", function (e) {
+    var g = e.target.closest("a[data-g]");
+    if (g) lsSet(GENDER_KEY, g.getAttribute("data-g"));
+    var ent = e.target.closest(".ent[data-href]");
+    if (!ent || e.target.closest("a, button") || e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    location.hash = ent.getAttribute("data-href");
+  });
+
+  /* ---------- страница коллекции ---------- */
+  var coll = { key: "", gender: "", origin: "" };
+  function collGender(params) {
+    var g = params.get("for");
+    if (g !== "men" && g !== "women") g = lsGet(GENDER_KEY) === "women" ? "women" : "men";
+    return g;
+  }
+  function collHref(name, gender) { return "#/" + name + (gender ? "?for=" + gender : ""); }
+  function renderCollection(r) {
+    var name = r.name, origin = ORIGIN_ROUTE[name], g = collGender(r.params);
+    var key = name + "|" + g + "|" + (READY ? products.length : "pre"), page = name + "|" + g;
+    coll.gender = g; coll.origin = origin;
+    if (key === coll.key) return;
+    // first — страница рисуется целиком (другая страна/пол или до этого были только заглушки до загрузки каталога)
+    var first = !(coll.full && coll.page === page);
+    coll.key = key; coll.page = page; coll.full = READY;
+    var box = els.viewColl, st = READY ? originStats(origin, g) : null;
+    var adj = g === "women" ? "Женская коллекция" : "Мужская коллекция";
+    var sub = st ? adj + " · " + fmt(st.count) + NBSP + plural(st.count, ["вещь", "вещи", "вещей"]) + " · " + st.brands.length + NBSP + plural(st.brands.length, ["бренд", "бренда", "брендов"]) : adj;
+    var head = '<section class="coll-hero" aria-labelledby="collTitle"><div class="ent-kb" aria-hidden="true">' +
+      (READY ? collageHtml(origin, g, true) : '<span class="fr sk"></span><span class="fr sk"></span><span class="fr sk"></span>') + "</div>" +
+      '<div class="ent-veil" aria-hidden="true"></div><div class="ent-copy wrap">' +
+      '<h1 class="ent-title" id="collTitle">' + esc(ORIGIN[origin]) + "</h1><p class=\"ent-sub\">" + esc(sub) + "</p>" +
+      '<div class="ent-mq" aria-hidden="true">' + (st ? marqueeHtml(st.brands) : "") + "</div></div></section>" +
+      '<nav class="gsw" aria-label="Для кого"><div class="wrap">' +
+      '<a href="' + collHref(name, "men") + '" data-g="men"' + (g === "men" ? ' aria-current="true"' : "") + ">Мужское</a>" +
+      '<a href="' + collHref(name, "women") + '" data-g="women"' + (g === "women" ? ' aria-current="true"' : "") + ">Женское</a>" +
+      '<span class="gsw-n">' + (st ? esc(ORIGIN[origin]) + " · " + esc(GENDERS[g]) : "") + "</span></div></nav>";
+    var all = catHref({ origin: origin, gender: g });
+    var tail = '<section class="coll-all"><div class="wrap"><a class="btn lg mag" href="' + esc(all) + '">Весь каталог ' + esc(ORIGIN[origin]) + " · " + esc(GENDERS[g]) + "</a>" +
+      (st ? "<p>" + fmt(st.count) + NBSP + plural(st.count, ["вещь", "вещи", "вещей"]) + " с фильтрами по категории, размеру и цене</p>" : "") + "</div></section>";
+    if (!first && READY) {
+      // та же страница, пришли новые части каталога: обновить только то, что изменилось (без повторного появления)
+      box.querySelector(".coll-hero .ent-sub").textContent = sub;
+      refreshRubrics(box, origin, g);
+      return;
+    }
+    box.className = "view coll coll-" + name;
+    box.innerHTML = head + '<div class="coll-season"></div><div class="coll-rubs"></div><div class="coll-cats"></div>' + tail;
+    if (!READY) return;
+    renderSeason(box.querySelector(".coll-season"), origin, g);
+    var rubs = box.querySelector(".coll-rubs"), list = RUBRICS[origin + "|" + g] || [];
+    // рубрики — по одной в простое браузера (каждая — проход по витрине и разметка)
+    runIdle(list.map(function (r) {
+      return function () {
+        if (coll.page !== page || !rubs.isConnected) return;   // страница сменилась — старые задачи не нужны
+        var html = rubricSection(r, origin, g);
+        if (html) { rubs.insertAdjacentHTML("beforeend", html); initRails(rubs); }
+      };
+    }).concat([function () {
+      if (coll.page !== page || !box.isConnected) return;
+      renderCollCats(box.querySelector(".coll-cats"), origin, g);
+    }]));
+    armReveal(box.querySelectorAll(".rv:not(.in)"));
+  }
+  // категории коллекции — чипы с числом вещей
+  function renderCollCats(root, origin, g) {
+    var st = originStats(origin, g), types = st.types.filter(function (t) { return t[1] >= 5; });
+    if (!root) return;
+    root.innerHTML = types.length ? '<div class="wrap"><div class="sec-head"><h2>Категории</h2></div><div class="ccats">' + types.map(function (t) {
+      return '<a class="ccat" href="' + esc(catHref({ origin: origin, gender: g, type: t[0] })) + '">' + esc(cap(t[0])) + '<span class="n">' + fmt(t[1]) + "</span></a>";
+    }).join("") + "</div></div>" : "";
+    root.classList.add("rv");
+    armReveal([root]);
+  }
+  // пришли части каталога: рубрики, у которых изменился набор вещей, перерисовываются на месте (без анимации), счётчики — тоже
+  // Каждая рубрика — своей задачей в простое (проход по витрине ~55 тыс. — десятки мс). Уже показанная рубрика
+  // перерисовывается сразу в показанном виде (.in), ещё не показанная — появится как обычно при прокрутке
+  function refreshRubrics(box, origin, g) {
+    var ids = function (h) { return (h.match(/data-pid="[^"]*"/g) || []).join(); };
+    var one = function (sec) {
+      if (!sec.isConnected) return;
+      var id = sec.getAttribute("data-rk"), season = id === "season";
+      var r = season ? null : (RUBRICS[origin + "|" + g] || HOME_RUBRICS).filter(function (x) { return x.id === id; })[0];
+      if (!season && !r) return;
+      var html = season ? seasonHtml(sec.getAttribute("data-origin"), sec.getAttribute("data-gender")) : rubricSection(r, origin, g);
+      if (!html) { sec.remove(); return; }
+      if (ids(html) === ids(sec.outerHTML)) {
+        var tmp2 = document.createElement("div"); tmp2.innerHTML = html;
+        var a = sec.querySelector(".sec-tools a"), b = tmp2.querySelector(".sec-tools a");
+        if (a && b) a.textContent = b.textContent;
+        return;
+      }
+      var wasIn = sec.classList.contains("in"), parent = sec.parentNode;
+      sec.outerHTML = html;
+      var fresh = parent.querySelector('.rub[data-rk="' + id + '"]');
+      if (fresh && wasIn) { fresh.classList.add("in"); fresh._rv = true; }
+      initRails(parent);
+    };
+    runIdle(Array.prototype.map.call(box.querySelectorAll(".rub[data-rk]"), function (sec) { return function () { one(sec); }; }).concat([function () {
+      var cats = box.querySelector(".coll-cats");
+      if (cats && cats.isConnected) renderCollCats(cats, origin, g);
+    }]));
   }
 
   /* ---------- страницы: бренды, информация, размеры ---------- */
@@ -6525,6 +7066,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     var n = siteName(), t;
     if (name === "catalog") t = titled(catTitleText());
     else if (name === "brands") t = titled("Бренды");
+    else if (ORIGIN_ROUTE[name]) t = titled(ORIGIN[ORIGIN_ROUTE[name]] + (coll.gender ? " · " + GENDERS[coll.gender] : ""));
     else if (name === "cart") t = titled("Корзина");
     else if (name === "checkout") t = titled("Оформление заказа");
     else if (name === "admin/lookup") t = titled("Разбор заказа");
@@ -6537,8 +7079,9 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   function markNav(r) {
     var key = r.name;
     if (r.name === "catalog") {
-      var types = r.params.getAll("type"), keys = Array.from(r.params.keys());
-      if (r.params.get("sort") === "new" && keys.length === 1) key = "new";
+      var types = r.params.getAll("type"), keys = Array.from(r.params.keys()), og = (r.params.get("origin") || "").toLowerCase();
+      if (ORIGIN_ROUTE[og]) key = og;                      // каталог одной страны — подсвечен её раздел
+      else if (r.params.get("sort") === "new" && keys.length === 1) key = "new";
       else if (r.params.get("disc") && keys.length === 1) key = "sale";
       else if (types.length === 1 && keys.length === 1) key = "type:" + types[0];
     }
@@ -6556,8 +7099,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     curView = name;
     els.viewHome.hidden = name !== "home";
     els.viewCatalog.hidden = name !== "catalog";
-    els.viewPage.hidden = name === "home" || name === "catalog";
+    els.viewColl.hidden = !ORIGIN_ROUTE[name];
+    els.viewPage.hidden = name === "home" || name === "catalog" || !!ORIGIN_ROUTE[name];
     if (name === "home") { renderHome(); heroPlay(); }
+    else if (ORIGIN_ROUTE[name]) renderCollection(r);
     else if (name === "catalog") boostCards();
     else if (name === "brands") renderBrandsPage();
     else if (name === "cart") renderCartPage();
@@ -6641,7 +7186,7 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     closeDrawer(false);
     if (r.redirect && r.name === curView) showView(r, true);
     if (r.name !== curView) showView(r);
-    else markNav(r);
+    else { markNav(r); if (ORIGIN_ROUTE[r.name]) { renderCollection(r); setTitleFor(r.name); } }   // та же коллекция, другой пол
     if (!READY) return;
     if (r.name === "catalog" && r.key !== lastFilterKey) {
       lastFilterKey = r.key;
@@ -6788,6 +7333,10 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.fGender.addEventListener("change", function (e) {
       state.gender = e.target.value || "";
       apply({ push: true });                // пол — тоже своя запись в истории; поиск и прочие фильтры — replaceState
+    });
+    els.fOrigin.addEventListener("change", function (e) {
+      state.origin = e.target.value || "";
+      apply({ push: true });
     });
     els.sizeMore.addEventListener("click", function () {
       toggleSizes(!sizesOpen);
@@ -8214,9 +8763,8 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
     els.grid.innerHTML = "";
     els.grid.removeAttribute("aria-busy");
     els.meta.textContent = "Каталог не загрузился. Обновите страницу через минуту.";
-    $("heroArt").innerHTML = "";
     $("railsTop").innerHTML = "";
-    $("catTiles").closest("section").hidden = true;
+    $("seasonHome").innerHTML = "";
     $("brandGrid").closest("section").hidden = true;
     if (ADMIN) {
       els.empty.innerHTML = "<h2>Нет данных</h2><p>Рядом с index.html нет products.js / products.json. Запустите <code>python run.py</code>. " +
@@ -8231,7 +8779,6 @@ html.rm *, html.rm *::before, html.rm *::after { transition-duration: 0s !import
   renderSortOptions();
   placeQuick();                // «Для кого» и категории: телефон — над сеткой, компьютер — в боковой колонке
   if (mobile.addEventListener) mobile.addEventListener("change", placeQuick); else mobile.addListener(placeQuick);
-  els.catMore.addEventListener("click", function () { $("catTiles").classList.toggle("open"); catMoreText(); });
   renderChrome();
   bindChrome();
   bindShop();
