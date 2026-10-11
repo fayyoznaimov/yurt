@@ -206,7 +206,7 @@
     "yoox_import": {
       "folder": "",
       "max_age_days": 3,
-      "stale_hide_days": 7,
+      "stale_hide_days": 14,
       "download_images": false,
       "max_images": 300,
       "max_pages_per_search": 200,
