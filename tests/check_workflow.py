@@ -231,11 +231,17 @@ def check(path: Path = WF) -> list[str]:
                              ("save", r"datastore\.py push"), ("deploy", r"deploy\.py")):
                 if re.search(pat, run):
                     order.append(key)
-        want = ["pull", "collect", "save", "deploy"]
-        seq = [k for k in order if k in want]
-        firsts = [seq.index(k) for k in want if k in seq]
-        if firsts != sorted(firsts) or len(firsts) != 4:
-            errs.append(f"{jname}: порядок шагов должен быть {want}, а он {seq}")
+        if "deploy" in order:
+            # задача, которая публикует: память → сборка → сохранение памяти → публикация
+            want = ["pull", "collect", "save", "deploy"]
+            seq = [k for k in order if k in want]
+            firsts = [seq.index(k) for k in want if k in seq]
+            if firsts != sorted(firsts) or len(firsts) != 4:
+                errs.append(f"{jname}: порядок шагов должен быть {want}, а он {seq}")
+        else:
+            # параллельная задача сбора: читает память, собирает, но ветку data и сайт не трогает
+            if order[:2] != ["pull", "collect"] or "save" in order:
+                errs.append(f"{jname}: задача сбора должна быть [pull, collect] без push/deploy, а она {order}")
     deploy = (ROOT / "deploy.py").read_text(encoding="utf-8")
     forbidden = re.search(r"FORBIDDEN\s*=\s*\[(.*?)\]", deploy, re.S).group(1)
     if "products-admin.js" not in forbidden:

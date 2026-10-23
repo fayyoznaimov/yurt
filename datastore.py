@@ -90,6 +90,10 @@ def bundle_files(root: Path = ROOT) -> list[Path]:
             out.append(data / name)
     out += sorted(p for p in data.glob("raw_*.json") if p.is_file())        # и raw_*.meta.json
     out += sorted(p for p in data.glob("akinon_*.json") if p.is_file())     # когда был полный проход по карте сайта
+    # выдача и проверенные размеры Trendyol / escarpe: без них каждый запуск в облаке начинал бы с нуля
+    for name in ("trendyol_listing.json", "trendyol_pdp_cache.json", "escarpe_listing.json", "escarpe_pdp_cache.json"):
+        if (data / name).is_file():
+            out.append(data / name)
     changes = sorted((data / "changes").glob("*.json")) if (data / "changes").is_dir() else []
     out += changes[-CHANGES_KEEP:]
     admin = root / "site" / "products-admin.js"     # закупочные данные распроданных карточек (?admin=1)
