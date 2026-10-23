@@ -132,7 +132,7 @@ jobs:
 
       - name: Уведомить о сбое запуска
         if: failure()
-        run: python notify.py "Сбой запуска GitHub Actions: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" || true
+        run: python notify.py "Сбой запуска GitHub Actions — $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" || true
 
       - name: Не дать GitHub выключить расписание
         # в публичном репозитории расписание отключается после 60 дней без активности
