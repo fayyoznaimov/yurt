@@ -7,6 +7,8 @@
 #                                        #   остальные, ~45 мин), сборка и публикация, если изменилось
 #   server/yurt-run.sh trendyol-listing  # каждую ночь (01:10): Trendyol — обход всей выдачи (~2 ч); товары по ней
 #                                        #   выйдут на сайт со следующей проверкой размеров
+#   server/yurt-run.sh escarpe           # каждый час (:35): escarpe.it — выдача раз в ~12 ч + страницы товаров по
+#                                        #   ярусам (≤ 40 мин), сборка и публикация, если изменилось
 #   server/yurt-run.sh yoox              # каждые 15 мин: если во «входящих» новый yoox_*.json — импорт, сборка, публикация
 #   server/yurt-run.sh fx                # раз в день 09:00 (Ташкент): пересчёт цен по свежему курсу ЦБ, публикация
 #   server/yurt-run.sh cleanup           # раз в неделю: старые журналы, файлы «входящих», фото ушедших товаров
@@ -26,8 +28,8 @@ set -uo pipefail
 
 JOB="${1:-}"
 case "$JOB" in
-  turkey-akinon|trendyol-pdp|trendyol-listing|yoox|fx|cleanup|update) ;;
-  *) echo "Использование: $0 turkey-akinon|trendyol-pdp|trendyol-listing|yoox|fx|cleanup|update" >&2; exit 2 ;;
+  turkey-akinon|trendyol-pdp|trendyol-listing|escarpe|yoox|fx|cleanup|update) ;;
+  *) echo "Использование: $0 turkey-akinon|trendyol-pdp|trendyol-listing|escarpe|yoox|fx|cleanup|update" >&2; exit 2 ;;
 esac
 
 APP_DIR="${YURT_APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -111,6 +113,12 @@ case "$JOB" in
     ;;
   trendyol-listing)
     "$PY" run.py --collect-only --only trendyol --trendyol-mode listing || fail "обход выдачи Trendyol завершился с ошибкой"
+    ;;
+  escarpe)
+    # выдача — если пора (listing_max_age_hours), потом страницы товаров по ярусам; источник со своим замком
+    "$PY" run.py --collect-only --only escarpe_it --mode auto || fail "сбор escarpe.it завершился с ошибкой"
+    build_and_deploy
+    notify --check
     ;;
   update)
     # вручную, когда таймеры Турции выключены (первый запуск): run.py собирает всё и держит data/run.lock часами

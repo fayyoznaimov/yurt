@@ -88,12 +88,12 @@ CLIENT_ORDER_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 UZ_FIRST_DIGITS = set("9876532")                           # первая цифра номера после +998
 INIT_DATA_MAX = 4096
 INIT_DATA_MAX_AGE = 24 * 3600
-VERIFY_SOURCES = {"trendyol", "pcardin_tr", "cacharel_tr"} # проверяются по ссылке автоматически
+VERIFY_SOURCES = {"trendyol", "pcardin_tr", "cacharel_tr", "escarpe_it"}   # проверяются по ссылке автоматически
 MANUAL_SOURCES = {"yoox", "yoox_import", "feed_yoox"}      # YOOX — только вручную, никаких запросов отсюда
 CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f​-‏  ‪-‮]")
 SOURCE_NAMES = {
     "yoox": "YOOX", "yoox_import": "YOOX", "trendyol": "Trendyol",
-    "pcardin_tr": "Pierre Cardin TR", "cacharel_tr": "Cacharel TR",
+    "pcardin_tr": "Pierre Cardin TR", "cacharel_tr": "Cacharel TR", "escarpe_it": "escarpe.it",
 }
 LANGS = {"ru", "uz", "en"}
 EVENT_MAX_BODY = 8 * 1024

@@ -9,6 +9,7 @@ SHELL=/bin/bash
 5 * * * *     set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh turkey-akinon    >/dev/null 2>&1
 20 * * * *    set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh trendyol-pdp     >/dev/null 2>&1
 10 1 * * *    set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh trendyol-listing >/dev/null 2>&1
+35 * * * *    set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh escarpe          >/dev/null 2>&1
 */15 * * * *  set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh yoox             >/dev/null 2>&1
 0 9 * * *     set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh fx               >/dev/null 2>&1
 30 4 * * 0    set -a; . /etc/yurt/yurt.env; set +a; /opt/yurt/app/server/yurt-run.sh cleanup          >/dev/null 2>&1

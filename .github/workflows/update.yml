@@ -11,7 +11,7 @@ name: "Каталог: обновление"
 
 on:
   schedule:
-    - cron: "5 1,7,13,19 * * *"     # каждые 6 часов: 06:05, 12:05, 18:05, 00:05 по Ташкенту (UTC+5)
+    - cron: "5 */3 * * *"           # каждые 3 часа (05:05, 08:05, … по Ташкенту, UTC+5); GitHub может задержать на 5–20 мин
   workflow_dispatch:
     inputs:
       mode:
@@ -49,7 +49,7 @@ jobs:
   update:
     if: github.event_name == 'workflow_dispatch' || vars.RUN_IN_ACTIONS == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330          # ночной обход выдачи Trendyol ~2 ч + проверка размеров + Pierre Cardin, Cacharel, escarpe
     env:
       DATA_KEY: ${{ secrets.DATA_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -108,6 +108,24 @@ jobs:
 
       - name: Сохранить память в ветку data
         run: python datastore.py push --by ci
+
+      - name: Страховка — каталог не уменьшился резко
+        # устарели файлы YOOX, источник отдал пустоту и т. п.: опубликованный сайт остаётся прежним
+        if: inputs.accept_drop != true
+        run: |
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          def count(p):
+              try: return int(json.loads(Path(p).read_text(encoding="utf-8"))["count"])
+              except Exception: return None
+          new, old = count("site/data/manifest.json"), count("_pages/data/manifest.json")
+          print(f"товаров: опубликовано {old}, собрано {new}")
+          if new is None or (old and new < old * 0.8):
+              print(f"::error title=Каталог уменьшился::{old} → {new} (больше 20%). Сайт не публикую. "
+                    f"Проверьте источники; принять падение — ручной запуск с галочкой accept_drop.")
+              sys.exit(1)
+          PY
 
       - name: Опубликовать сайт (gh-pages)
         run: python deploy.py --out _pages

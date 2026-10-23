@@ -261,7 +261,8 @@ def find_leak(*objs) -> str | None:
         def _fl(*xs):
             for x in xs:
                 low = json.dumps(x, ensure_ascii=False).lower() if not isinstance(x, str) else x.lower()
-                for sub in ("yoox", "trendyol", "akinon", "dsmcdn", "€", "₺", "себестоим", "марж", "закуп", "возврат"):
+                for sub in ("yoox", "trendyol", "akinon", "dsmcdn", "escarpe", "eobuwie", "modivo", "€", "₺", "себестоим",
+                            "марж", "закуп", "возврат"):
                     if sub in low:
                         return sub
             return None

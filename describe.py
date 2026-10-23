@@ -97,6 +97,10 @@ COLORS = _fk({
     "Senape": "горчичный",
     "Argento": "серебристый", "Oro": "золотистый", "Oro rosa": "розово-золотой", "Bronzo": "бронзовый",
     "Trasparente": "прозрачный", "Multicolore": "разноцветный",
+    # итальянский (escarpe.it: «Colore» и JSON-LD color страницы товара; «X scuro / chiaro» — см. COLOR_POSTFIX)
+    "Bianco sporco": "молочный", "Blu marino": "тёмно-синий", "Cognac": "коньячный", "Crema": "кремовый",
+    "Cachi": "хаки", "Incolore": "прозрачный",
+    "Verde bottiglia": "тёмно-зелёный", "Rosa cipria": "пудровый", "Oliva": "оливковый", "Menta": "мятный",
     # турецкий (Pierre Cardin, Cacharel, Trendyol)
     "Siyah": "чёрный", "Beyaz": "белый", "Kırık Beyaz": "молочный", "Lacivert": "тёмно-синий",
     "Koyu Lacivert": "тёмно-синий", "Açık Lacivert": "синий", "Gece Mavisi": "тёмно-синий",
@@ -133,6 +137,8 @@ COLORS = _fk({
 COLOR_GEN = {"хаки": "цвета хаки", "кэмел": "цвета кэмел", "индиго": "цвета индиго", "фуксия": "цвета фуксии"}
 # Приставки и суффиксы оттенка, если точного сочетания нет в COLORS: «Açık Bej», «Gri Melanj».
 COLOR_PREFIX = _fk({"Açık": "светло-", "Koyu": "тёмно-", "Chiaro": "светло-", "Scuro": "тёмно-"})
+# по-итальянски оттенок стоит после цвета: «Beige scuro», «Rosa chiaro» (если точного сочетания нет в COLORS)
+COLOR_POSTFIX = _fk({"scuro": "тёмно-", "scura": "тёмно-", "chiaro": "светло-", "chiara": "светло-"})
 COLOR_SUFFIX = _fk({"Melanj": " меланж", "Mélange": " меланж", "Melange": " меланж"})
 
 
@@ -156,6 +162,9 @@ def color_ru(raw) -> str | None:
     head, _, rest = s.partition(" ")
     if head in COLOR_PREFIX and rest in COLORS and re.fullmatch(r"[а-яё]+(ый|ий|ой)", COLORS[rest]):
         return COLOR_PREFIX[head] + COLORS[rest] + suffix
+    base, _, tail = s.rpartition(" ")
+    if tail in COLOR_POSTFIX and base in COLORS and re.fullmatch(r"[а-яё]+(ый|ий|ой)", COLORS[base]):
+        return COLOR_POSTFIX[tail] + COLORS[base] + suffix
     _miss("цвет", raw)
     return None
 
@@ -325,6 +334,15 @@ FIBRES = _fk({
     "Policloruro": ("ПВХ", "ПВХ"), "Hakiki Dana Deri": ("телячья кожа", "телячьей кожи"),
     "Lateks": ("латекс", "латекса"), "Elastan Spandeks": ("эластан", "эластана"),
     "Deri ve Tekstil": ("натуральная кожа и текстиль", "натуральной кожи и текстиля"), "Lattice": ("латекс", "латекса"),
+    # escarpe.it («Materiale esterno», JSON-LD material)
+    "Pelle fiore": ("натуральная кожа", "натуральной кожи"), "Pelle pieno fiore": ("натуральная кожа", "натуральной кожи"),
+    "Pelle naturale": ("натуральная кожа", "натуральной кожи"), "Pelle scamosciata": ("замша", "замши"),
+    "Pelle verniciata": ("лакированная кожа", "лакированной кожи"),
+    "Pelle ecologica": ("искусственная кожа", "искусственной кожи"),
+    "Materiale tessile": ("текстиль", "текстиля"), "Tessuto": ("текстиль", "текстиля"),
+    "Materia plastica": ("пластик", "пластика"),
+    "Imitazione pelle naturale": ("искусственная кожа", "искусственной кожи"),
+    "Imitazione pelle": ("искусственная кожа", "искусственной кожи"),
 })
 # Не волокна — «состав» с такими значениями просто не показываем (и не считаем непереведённым).
 NOT_FIBRES = {fold(x) for x in ("Belirtilmemiş", "Triko", "Kumaş", "Örgü", "Dokuma", "Diğer", "Karışık")}
@@ -397,13 +415,14 @@ def composition_text(parts) -> str | None:
 
 KIND_RULES = {
     "обувь": [
-        (r"sneaker|spor ayakkab|running|kosu ayakkab|trainer", "Кроссовки"),
+        (r"sneaker|spor ayakkab|running|kosu ayakkab|trainer|scarpe da ginnastica|scarpe sportive|scarpe da corsa",
+         "Кроссовки"),
         (r"loafer", "Лоферы"),
         (r"mocassin|mokasen|makosen|moccasin", "Мокасины"),
         (r"oxford", "Оксфорды"), (r"\bderby", "Дерби"),
         (r"stringat|francesin|lace-?up", "Туфли на шнурках"),
-        (r"stivalett|polacchin|\bbot\b|\bbotlar|chelsea|ankle boot|postal|desert boot", "Ботинки"),
-        (r"stival|cizme|\bboots?\b", "Сапоги"),
+        (r"stivalett|polacchin|\bbot\b|\bbotlar|chelsea|ankle boot|postal|desert boot|anfibi|scarponcin", "Ботинки"),
+        (r"stival|cizme|\bboots?\b|da neve|doposci|wellington", "Сапоги"),
         (r"espadril", "Эспадрильи"),
         (r"infradito|parmak arasi|flip-?flop", "Вьетнамки"),
         (r"pantofol|panduf|ev terlig", "Домашние тапочки"),
@@ -411,6 +430,7 @@ KIND_RULES = {
         (r"sandal", "Сандалии"),
         (r"\bmules?\b|zoccol|\bsabo", "Мюли"),
         (r"slip-?on", "Слипоны"),
+        (r"scarpe basse", "Туфли"),
         (r"klasik ayakkab|scarpe eleganti", "Классические туфли"),
         (r"decollet|stiletto|topuklu ayakkab", "Туфли на каблуке"),
         (r"ballerin|babet", "Балетки"),
@@ -420,18 +440,19 @@ KIND_RULES = {
         (r"zain|sirt canta|backpack|rucksack", "Рюкзак"),
         (r"marsupi|bel canta|bum bag|waist bag", "Поясная сумка"),
         (r"tracolla|postaci|capraz|messenger|omuz", "Сумка через плечо"),
-        (r"beauty case|makyaj|necessaire|kozmetik|tuvalet canta", "Косметичка"),
-        (r"portadocument|evrak|portfoy|laptop|briefcase", "Портфель"),
-        (r"borson|valig|trolley|bavul|valiz|seyahat|duffle|weekender", "Дорожная сумка"),
+        (r"beauty case|makyaj|necessaire|kozmetik|tuvalet canta|cosmetic|trucchi", "Косметичка"),
+        (r"portadocument|porta document|evrak|portfoy|laptop|briefcase|porta ?pc\b|porta ?computer"
+         r"|custodi\w* per (pc|computer|document)", "Портфель"),
+        (r"borson|valig|trolley|bavul|valiz|seyahat|duffle|weekend|da viaggio", "Дорожная сумка"),
         (r"shopper|\btote", "Сумка-шопер"),
         (r"clutch|pochette|el cantasi", "Клатч"),
     ],
     "нижнее бельё": [
         (r"mare|deniz sort|swim|mayo", "Плавательные шорты"),
         (r"pigiam|pijama", "Пижама"),
-        (r"calz|corap|\bsocks?\b", "Носки"),
+        (r"calz|corap|\bsocks?\b|pedulin", "Носки"),
         (r"boxer", "Трусы-боксеры"),
-        (r"\bslip|kulot|brief", "Трусы"),
+        (r"\bslip|kulot|brief|perizom|culotte|mutandin", "Трусы"),
         (r"canott|atlet|fanila|\btank", "Майка"),
         (r"t-?shirt|tisort|topwear|top & t", "Нательная футболка"),
         (r"accappatoi|bornoz|sabahlik|vestaglia", "Халат"),
@@ -448,7 +469,7 @@ KIND_RULES = {
         (r"canott|atlet|\btank|sleeveless|kolsuz", "Майка"),
         (r"\bcrop", "Кроп-топ"),
         (r"\btop\b|bustier|camisole|^body$", "Топ"),
-        (r"long ?sleeve|uzun kollu", "Лонгслив"),
+        (r"long ?sleeve|uzun kollu|maniche lunghe|manica lunga", "Лонгслив"),
     ],
     "пиджаки и костюмы": [
         (r"smok", "Смокинг"),
@@ -458,7 +479,7 @@ KIND_RULES = {
     "платья": [(r"tulum|jumpsuit|\btuta\b", "Комбинезон")],
     "юбки": [],
     "шорты": [
-        (r"mare|deniz|swim|mayo", "Плавательные шорты"),
+        (r"mare|deniz|swim|mayo|da bagno", "Плавательные шорты"),
         (r"(shorts?|sort) ?(e|&|/) ?bermuda", "Шорты"),
         (r"bermuda", "Бермуды"),
         (r"jean|denim", "Джинсовые шорты"),
@@ -488,12 +509,12 @@ KIND_RULES = {
         (r"cappott|palto|kaban|\bcoat\b|montgomery|caban", "Пальто"),
         (r"soprabit|pardesu|impermeab|yagmurluk|raincoat", "Плащ"),
         (r"jean|denim|kot ceket", "Джинсовая куртка"),
-        (r"\bderi\b|leather", "Кожаная куртка"),
+        (r"\bderi\b|leather|di pelle", "Кожаная куртка"),
     ],
     "брюки": [
         (r"chino", "Чиносы"),
         (r"cargo|kargo", "Брюки карго"),
-        (r"jogger|pantaloni felpa|esofman|sweatpant|track", "Спортивные брюки"),
+        (r"jogger|pantaloni felpa|esofman|sweatpant|track|della tuta|pantaloni sportivi", "Спортивные брюки"),
         (r"legging|tayt", "Леггинсы"),
     ],
     None: [(r"teli mare|havlu|towel", "Пляжное полотенце")],     # тип не определился
@@ -504,14 +525,14 @@ KIND_RULES = {
         (r"fazzolett|mendil|pocket square", "Нагрудный платок"),
         (r"sciarp|\batki|scarf|foulard|fular|\bsal\b|esarp|boyunluk", "Шарф"),
         (r"guant|eldiven|glove", "Перчатки"),
-        (r"portacart|kartlik|card ?holder", "Картхолдер"),
-        (r"portamonet|bozuk para", "Монетница"),
-        (r"portafogl|cuzdan|wallet", "Кошелёк"),
-        (r"portachiav|anahtarlik|key", "Брелок для ключей"),
+        (r"porta ?cart|kartlik|card ?holder|carte di credito", "Картхолдер"),
+        (r"porta ?monet|bozuk para", "Монетница"),
+        (r"portafogl|cuzdan|wallet|borsellin", "Кошелёк"),
+        (r"porta ?chiav|anahtarlik|key", "Брелок для ключей"),
         (r"montatur|\bframes?\b|optik", "Оправа для очков"),
         (r"occhial|gozluk|sunglass", "Солнцезащитные очки"),
-        (r"berrett|\bbere\b|beanie", "Шапка"),
-        (r"cappell|sapka|\bhats?\b|\bcaps?\b|kasket", "Головной убор"),
+        (r"berrett|\bbere\b|beanie|\bbasc[oh]", "Шапка"),
+        (r"cappell|sapka|\bhats?\b|\bcaps?\b|kasket|balaclava|visier", "Головной убор"),
         (r"kol dugme|gemell|cufflink", "Запонки"),
         (r"calz|corap|\bsocks?\b", "Носки"),
         (r"orolog|\bsaat|watch", "Часы"),
@@ -565,9 +586,13 @@ def _kind_text(p: dict) -> str:
         bits = [a.get("micro")] + _yoox_leaf_cats(a)
     elif src in ("pcardin_tr", "cacharel_tr"):
         bits = [a.get("filterable_product_type"), a.get("filterable_product_base_type"), p.get("title")]
+    elif src == "escarpe_it":
+        # «Stivaletti» (карточка) | последний узел крошек «Polacchine e chelsea boots» (в середине пути бывает
+        # «T-shirt e polo» — и у футболок, и у поло); без названия — в нём модель и цвет
+        bits = [p.get("category"), str(a.get("category_path") or "").split("/")[-1]]
     else:
         bits = [p.get("category"), a.get("category_path"), p.get("title")]
-    if src != "yoox":       # у YOOX категория = macro > micro, а macro («Completi e coordinati») сбивает
+    if src not in ("yoox", "escarpe_it"):   # у YOOX категория = macro > micro, а macro («Completi e coordinati») сбивает
         bits.append(p.get("category"))
     return fold(" | ".join(str(b) for b in bits if b))
 
@@ -783,6 +808,11 @@ TOPIC_KEYS = _fk({
     "Fantasia": "pattern", "Stampa": "pattern", "Vestibilità": "fit", "Lunghezza": "length", "Vita": "rise",
     "Punta": "toe", "Tacco": "heel", "Altezza tacco": "heel", "Suola": "sole", "Tasche": "pocket",
     "Cappuccio": "hood", "Fodera": "lining", "Fondo": "leg", "Gamba": "leg", "seasonality": "season",
+    # escarpe.it (страница товара: «Dettagli», «Materiale e cura»)
+    "Sistema di chiusura": "closure", "Tipo di punta": "toe", "Tipo di tacco": "heel_type",
+    "Altezza del tacco": "heel", "Materiale della suola": "sole", "Imbottitura": "lining",
+    "Materiale interno": "lining", "Uso sportivo": "style", "Stagione": "season", "Print": "pattern",
+    "Manica": "sleeve", "Dettagli decorativi": "detail",
 })
 # Свойства, которые сознательно не показываем (цвет и состав выводятся отдельно, остальное — служебное).
 SKIP_KEYS = {fold(k) for k in (
@@ -796,6 +826,11 @@ SKIP_KEYS = {fold(k) for k in (
     "integration_fabric_blends", "deri_bilgi", "elyaf_bilgi", "product_name_new",
     "composition", "colorLabel", "color", "mainMaterial", "macro", "micro", "modelGender", "modelName",
     "sizeCodes", "dynamicAttributes", "Categorie", "Lavaggio",
+    # escarpe.it: цвет и материал выводятся отдельно, остальное — служебное
+    "Colore", "Colore del produttore", "Materiale esterno", "Materiale", "Materiali", "Composizione", "material",
+    "Marca", "Nome prodotto", "Index", "Collezione", "Quantità di scomparti", "Lunghezza regolabile del cinturino",
+    "Rigidità", "Dimensioni", "Dimensione", "Larghezza", "Altezza", "Profondità",
+    "Possibilità di regolare le bretelle",
 )}
 # Значения, которые ничего не говорят покупателю — пропускаем в любой теме.
 IGNORE_VALUES = {fold(v) for v in (
@@ -854,6 +889,7 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Ceket Yaka": "Воротник с лацканами", "Çentik Yaka": "Воротник с лацканами", "Yarım Balıkçı Yaka": "Невысокое горло",
         "Kare Yaka": "Квадратный вырез", "Kayık Yaka": "Вырез-лодочка", "Collo a barca": "Вырез-лодочка",
         "U Yaka": "Глубокий круглый вырез", "Bebe Yaka": "Отложной воротник",
+        "Rotondo": "Круглый вырез", "A V": "V-образный вырез",
     },
     "sleeve": {
         "Kısa Kol": "Короткий рукав", "Kısa": "Короткий рукав", "Kısa Kollu": "Короткий рукав",
@@ -864,6 +900,7 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Truvakar Kol": "Рукав 3/4", "Truvakar": "Рукав 3/4", "3/4 Kol": "Рукав 3/4", "Maniche a 3/4": "Рукав 3/4",
         "Reglan Kol": "Рукав реглан", "Raglan": "Рукав реглан", "Maniche raglan": "Рукав реглан",
         "Düşük Omuz": "Спущенное плечо", "Düşük Kol": "Спущенное плечо", "Balon Kol": "Объёмный рукав",
+        "Manica corta": "Короткий рукав", "Manica lunga": "Длинный рукав", "Manica 3/4": "Рукав 3/4",
     },
     "pattern": {
         "Düz": "Однотонная расцветка", "Düz Renk": "Однотонная расцветка", "Tinta unita": "Однотонная расцветка",
@@ -892,6 +929,7 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Renkli": "Многоцветный узор",
         "Oduncu": "В клетку", "Armürlü": "Фактурное плетение (добби)", "Gofreli": "Вафельная фактура",
         "Oxford": "Ткань оксфорд", "Flanel": "Фланель", "Kadife": "Вельвет",
+        "Senza print": None,         # escarpe «Print: Senza print» — без принта, но не обязательно однотонная
     },
     "fabric": {
         "Örme": "Трикотаж", "Triko": "Трикотаж", "Denim": "Деним", "Pike": "Ткань пике",
@@ -916,6 +954,8 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Tokalı": "Застёжка на пряжку", "Fibbia": "Застёжка на пряжку",
         "Düğme ve Fermuar": "Молния и пуговицы", "Fermuar ve Düğme": "Молния и пуговицы",
         "Kruvaze": "Двубортная модель",
+        "Con cerniera": "Застёжка на молнию", "Con lacci": "На шнурках", "Con velcro": "На липучке",
+        "Con bottoni": "Застёжка на пуговицы", "Con fibbia": "Застёжка на пряжку",
     },
     "pocket": {
         "Cepsiz": "Без карманов", "Senza tasche": "Без карманов", "Cepli": "С карманами", "Con tasche": "С карманами",
@@ -930,7 +970,7 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
     },
     "length": {
         # «Boy: Uzun» у Trendyol стоит и у обычных футболок/брюк — ничего не значит (None = молча пропустить)
-        "Uzun": None, "Kısa": "Укороченная модель", "Crop": "Укороченная модель",
+        "Uzun": None, "classica": None, "Corta": "Укороченная модель", "Kısa": "Укороченная модель", "Crop": "Укороченная модель",
         "Cropped": "Укороченная модель", "Corto": "Укороченная модель", "Midi": "Длина миди",
         "Mini": "Длина мини", "Maxi": "Длина макси", "Maksi": "Длина макси",
     },
@@ -956,6 +996,8 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "İlkbahar": "Демисезонная модель", "Sonbahar": "Демисезонная модель",
         "İlkbahar/Sonbahar": "Демисезонная модель", "4 Mevsim": "Всесезонная модель",
         "Dört Mevsim": "Всесезонная модель", "Tüm Sezonlar": "Всесезонная модель", "All Season": "Всесезонная модель",
+        "Autunno/Inverno": "Сезон: осень–зима", "Autunno-Inverno": "Сезон: осень–зима",
+        "Primavera/Estate": "Сезон: весна–лето", "Primavera-Estate": "Сезон: весна–лето",
     },
     "heel": {
         "Düz": "Без каблука", "Topuksuz": "Без каблука", "Flat": "Без каблука", "Kısa Topuklu": "Низкий каблук",
@@ -965,12 +1007,16 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Düz Topuklu": "Плоская подошва", "Düz Taban": "Плоская подошва", "Düz": "Плоская подошва",
         "Dolgu Topuk": "Танкетка", "Dolgu": "Танкетка", "Zeppa": "Танкетка", "Kalın Topuk": "Устойчивый каблук",
         "Kalın Topuklu": "Устойчивый каблук", "İnce Topuk": "Тонкий каблук", "Platform": "На платформе",
+        "Senza tacco": "Без каблука", "Tacco a blocco": "Устойчивый каблук", "Tacco a spillo": "Тонкий каблук",
+        "Piatto": "Плоская подошва", "Plateau": "На платформе",
     },
     "toe": {
         "Yuvarlak Burun": "Круглый носок", "Yuvarlak": "Круглый носок", "Punta tonda": "Круглый носок",
         "Sivri Burun": "Острый носок", "Sivri": "Острый носок", "Punta a punta": "Острый носок",
         "Kare Burun": "Квадратный носок", "Kare": "Квадратный носок", "Punta quadrata": "Квадратный носок",
         "Açık Burun": "Открытый носок", "Badem Burun": "Миндалевидный носок",
+        "Arrotondata": "Круглый носок", "Rotonda": "Круглый носок", "A punta": "Острый носок",
+        "Appuntita": "Острый носок", "Quadrata": "Квадратный носок", "Aperta": "Открытый носок",
     },
     "sole": {
         "Kauçuk": "Резиновая подошва", "Kauçuk Taban": "Резиновая подошва", "Gomma": "Резиновая подошва",
@@ -979,6 +1025,8 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Poliüretan": "Полиуретановая подошва", "PU": "Полиуретановая подошва", "Poliuretano": "Полиуретановая подошва",
         "Deri": "Кожаная подошва", "Deri Taban": "Кожаная подошва", "Cuoio": "Кожаная подошва",
         "TPU": "Подошва из термополиуретана", "Düz Taban": "Плоская подошва", "Faylon": "Лёгкая подошва (филон)",
+        "Materia plastica": "Подошва из пластика", "Materiale sintetico": "Подошва из синтетического материала",
+        "Pelle": "Кожаная подошва",
     },
     "lining": {
         "Astarsız": "Без подкладки", "Senza fodera": "Без подкладки", "Yarım Astarlı": "Полуподкладка",
@@ -988,6 +1036,10 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Deri + Tekstil": "Подкладка из кожи и текстиля",
         "Kürklü": "Утеплённая подкладка", "Suni Kürk": "Утеплённая подкладка", "Polar": "Флисовая подкладка",
         "Polar Astarlı": "Флисовая подкладка",
+        # escarpe.it: «Imbottitura» (утепление) и «Materiale interno» (подкладка)
+        "Senza imbottitura": None, "Pelliccia naturale": "Утеплённая подкладка",
+        "Pelliccia sintetica": "Утеплённая подкладка", "Pelliccia ecologica": "Утеплённая подкладка",
+        "Pelle": "Кожаная подкладка", "Materiale tessile": "Текстильная подкладка", "Tessuto": "Текстильная подкладка",
     },
     "hood": {"Con cappuccio": "С капюшоном", "Kapüşonlu": "С капюшоном", "Var": "С капюшоном"},
     "style": {
@@ -996,6 +1048,7 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Klasik/Ofis": "Классический стиль", "Ofis": "Классический стиль", "İş": "Классический стиль",
         "Davet": "Для особых случаев", "Özel Gün": "Для особых случаев", "Plaj": "Пляжный стиль",
         "Sportswear": "Спортивный стиль", "Şık/Gece": "Для особых случаев",
+        "Da giorno": "Повседневный стиль", "Sportivo": "Спортивный стиль", "Elegante": "Классический стиль",
     },
     "detail": {
         "Logolu": "С логотипом", "Nakışlı": "С вышивкой", "Nakış": "С вышивкой", "Kapüşonlu": "С капюшоном",
@@ -1003,6 +1056,7 @@ TOPIC_VALUES = {t: _fk(d) for t, d in {
         "Aplikeli": "С аппликацией", "Baskılı": "С принтом", "Pileli": "Со складками", "Yırtmaçlı": "С разрезом",
         "Biyeli": "С контрастным кантом", "Dikiş Detaylı": "Декоративная строчка", "Düğmeli": "Застёжка на пуговицы",
         "Kemerli": "С ремнём в комплекте",
+        "Logo": "С логотипом", "Ricamo": "С вышивкой", "Applicazioni": "С аппликацией",
     },
     "silhouette": {"Oversize": "Оверсайз", "Slim": "Приталенный силуэт", "Fitted": "Приталенный силуэт",
                    "A Kesim": "А-силуэт", "Jogger": "Модель-джоггеры", "Jegging": "Джеггинсы",
@@ -1173,6 +1227,9 @@ def _composition_raw(p: dict) -> list:
     if src in ("pcardin_tr", "cacharel_tr"):
         return [a.get("integration_fabric_fiber"), a.get("integration_fabric_blends"),
                 a.get("filterable_fabric_blends"), _title_composition(p.get("title"))]
+    if src == "escarpe_it":           # одежда — состав; обувь и сумки — верх («Materiale esterno», JSON-LD material)
+        return [a.get("Composizione"), a.get("Materiale"), a.get("Materiali"), a.get("Materiale esterno"),
+                a.get("material")]
     return [a.get("Materyal Bileşeni"), a.get("Dış Materyal"), a.get("Saya Materyali"), a.get("Materyal"),
             _title_composition(p.get("title"))]
 
@@ -1191,6 +1248,8 @@ def _color_raw(p: dict) -> list:
         return [a.get("colorLabel")] + colors
     if src in ("pcardin_tr", "cacharel_tr"):
         return [a.get("filterable_detail_color")] + colors
+    if src == "escarpe_it":
+        return colors + [a.get("Colore")]
     return colors + [a.get("Renk"), a.get("ld_color")]
 
 

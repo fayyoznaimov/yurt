@@ -17,7 +17,7 @@ content.js / content.json (content.js пересобирается из content.
 логотипы брендов brands.json / brands.js / img/brands/ (brands.js пересобирается из brands.json) и фото img/p/.
 Старый products.json (весь каталог одним файлом, для открытия с диска) не публикуется — сайту он не нужен.
 Свой хост фото (IMG_BASE в окружении или manifest.img — сборка с токенами, см. img_map.py): img/p/ не публикуется,
-а если в публичных данных (products.*, data/**) остался адрес CDN магазина (yoox / akinon / dsmcdn) — публикация
+а если в публичных данных (products.*, data/**) остался адрес CDN магазина (yoox / akinon / dsmcdn / eobuwie) — публикация
 останавливается («Стоп: …»).
 Если раскладки data/ ещё нет (run.py старой версии), публикуются products.js / products.json как раньше.
 
@@ -67,9 +67,9 @@ OG_DESC_MAX = 200
 OG_FALLBACK_DESC = "Оригинальная брендовая одежда из Италии и Турции. Предоплата 50%, доставка до 10 дней."
 OG_FOOTER = "Оригиналы · предоплата 50% · доставка до 10 дней"
 # тексты превью видят все, кто получил ссылку: ни источников, ни закупочных валют
-UNSAFE_TEXT = re.compile(r"yoox|trendyol|akinon|dsmcdn|€|₺|\bTL\b|\bEUR\b|\bTRY\b|возврат", re.I)
+UNSAFE_TEXT = re.compile(r"yoox|trendyol|akinon|dsmcdn|escarpe|eobuwie|modivo|€|₺|\bTL\b|\bEUR\b|\bTRY\b|возврат", re.I)
 # свой хост фото (IMG_BASE): в публичных данных не должно остаться ни одного адреса CDN магазинов
-SHOP_HOST_RE = re.compile(rb"[a-z0-9.-]*(?:yoox|ynap|akinon|dsmcdn)[a-z0-9.-]*\.[a-z]{2,}", re.I)
+SHOP_HOST_RE = re.compile(rb"[a-z0-9.-]*(?:yoox|ynap|akinon|dsmcdn|escarpe|eobuwie|modivo)[a-z0-9.-]*\.[a-z]{2,}", re.I)
 META_RE = re.compile(r'[ \t]*<meta\s+(?:property|name)\s*=\s*["\'](?:og:|twitter:)[^>]*>[ \t]*\r?\n?', re.I)
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -246,7 +246,7 @@ def own_img_host(site: Path) -> bool:
 
 
 def shop_host_leaks(out: Path) -> list[str]:
-    """Публичные файлы данных, где остались адреса CDN магазинов (yoox / akinon / dsmcdn): «файл: хост»."""
+    """Публичные файлы данных, где остались адреса CDN магазинов (yoox / akinon / dsmcdn / eobuwie): «файл: хост»."""
     found = []
     files = [out / "products.js", out / "products.json", *(out / catalog_files.DATA_DIR).rglob("*.js*")]
     for p in files:

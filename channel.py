@@ -87,7 +87,8 @@ DOWNLOAD_HOSTS = (                # (окончание имени хоста, R
 NEVER_FETCH = ("yoox", "ynap")
 
 # Проверка на утечку источника и закупки перед любой отправкой (подпись, текст, кнопки, имена файлов).
-LEAK_SUBSTRINGS = ("yoox", "trendyol", "akinon", "dsmcdn", "€", "₺", "себестоим", "марж", "закуп", "возврат",
+LEAK_SUBSTRINGS = ("yoox", "trendyol", "akinon", "dsmcdn", "escarpe", "eobuwie", "modivo", "€", "₺", "себестоим", "марж",
+                   "закуп", "возврат",
                    "cost_uzs", "margin_uzs", "source_item_id", "price_now", "title_original")
 LEAK_TOKENS = (
     re.compile(r"(?<![a-z0-9_])(?:tl|eur|try)(?![a-z0-9_])", re.I),          # «TL», «EUR», «try» отдельным словом

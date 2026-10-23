@@ -9,7 +9,7 @@
 Свой сервер (server/yurt-run.sh) и GitHub Actions вызывают update.py --no-deploy и публикуют сами.
 
 Что делает один проход:
-  1. run.py --only pcardin_tr,cacharel_tr,trendyol (+ yoox_import, если в «Загрузках» появился файл
+  1. run.py --only pcardin_tr,cacharel_tr,trendyol,escarpe_it (+ yoox_import, если в «Загрузках» появился файл
      yoox_*.json новее data/raw_yoox_import.json). run.py сравнивает с прошлым запуском: распроданные
      помечаются «Нет в наличии», закончившиеся размеры — зачёркнуты, изменения — в data/changes/.
   2. deploy.py — только если в config.json → sync.auto_deploy = true (по умолчанию false).
@@ -32,7 +32,7 @@ import sync_state
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 LOGS = DATA / "logs"
-AUTO_SOURCES = ["pcardin_tr", "cacharel_tr", "trendyol"]   # собираются сами, без участия человека
+AUTO_SOURCES = ["pcardin_tr", "cacharel_tr", "trendyol", "escarpe_it"]   # собираются сами, без участия человека
 TASK_NAME = "YooxDeals Update"
 LOG_KEEP_DAYS = 30
 
@@ -45,6 +45,22 @@ elif hasattr(sys.stdout, "reconfigure"):
 
 def load_cfg() -> dict:
     return json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+
+
+def site_count() -> int | None:
+    """Сколько товаров в только что собранном сайте (site/data/manifest.json)."""
+    try:
+        return int(json.loads((ROOT / "site" / "data" / "manifest.json").read_text(encoding="utf-8"))["count"])
+    except Exception:
+        return None
+
+
+def last_deploy_count() -> int | None:
+    """Сколько товаров было в последней публикации, сделанной update.py."""
+    try:
+        return int(json.loads((DATA / "last_deploy_count.json").read_text(encoding="utf-8"))["count"])
+    except Exception:
+        return None
 
 
 def sync_opts(cfg: dict) -> dict:
@@ -183,7 +199,18 @@ def main() -> int:
             log("run.py завершился с ошибкой — сайт не публикую.")
             return rc
         if opts.get("auto_deploy") and not args.no_deploy:
+            # страховка без человека: каталог резко уменьшился (устарели файлы YOOX, сбой источника) — не публикуем
+            now_n = site_count()
+            prev_n = last_deploy_count()
+            max_drop = float(opts.get("max_publish_drop_pct", 20))
+            if prev_n and now_n is not None and now_n < prev_n * (1 - max_drop / 100):
+                log(f"!!! Каталог уменьшился с {prev_n} до {now_n} товаров (больше {max_drop:g}%) — сайт НЕ публикую. "
+                    f"Проверьте источники (YOOX: файлы старше source_opts.yoox_import.max_age_days скрываются). "
+                    f"Выложить всё равно: python deploy.py")
+                return 3
             rc = run_step(log, ["deploy.py"])
+            if rc == 0 and now_n is not None:
+                (DATA / "last_deploy_count.json").write_text(json.dumps({"count": now_n, "at": datetime.now().isoformat(timespec="seconds")}), encoding="utf-8")
         else:
             log("Публикация выключена (config.json → sync.auto_deploy = false). Выложить вручную: python deploy.py")
         return rc

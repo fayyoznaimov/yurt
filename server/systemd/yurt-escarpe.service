@@ -1,0 +1,23 @@
+# escarpe.it (Италия): наличие каждый час (server/yurt-run.sh escarpe): выдача брендов — если прошлому полному обходу
+# больше source_opts.escarpe_it.listing_max_age_hours (12 ч, ~5–10 мин), затем проверка страниц товаров по ярусам
+# (горячие / на сайте / остальные) не дольше pdp_budget_minutes (40 мин); сборка и публикация, если каталог изменился.
+# Свой замок задания (data/locks/job-escarpe.lock) и источника (data/collect_escarpe_it.lock): Турцию не ждёт.
+# Таймер — yurt-escarpe.timer. @USER@ и @APP@ подставляет server/setup.sh.
+[Unit]
+Description=yurt: escarpe.it — наличие (каждый час)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/yurt/yurt.env
+ExecStart=/usr/bin/env bash @APP@/server/yurt-run.sh escarpe
+TimeoutStartSec=100min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

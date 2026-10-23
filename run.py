@@ -9,6 +9,8 @@
     python run.py --collect-only --only pcardin_tr,cacharel_tr          # только собрать в data/raw_*.json
     python run.py --collect-only --only trendyol --trendyol-mode pdp    # проверка размеров Trendyol по ярусам
     python run.py --collect-only --only trendyol --trendyol-mode listing  # ночной обход выдачи Trendyol
+    python run.py --collect-only --only escarpe_it       # escarpe.it: выдача, если пора, + страницы товаров по ярусам
+    python run.py --collect-only --only escarpe_it --mode pdp   # --mode auto|listing|pdp — для trendyol и escarpe_it
     python run.py --offline --if-changed     # собрать сайт, только если данные источников / config.json изменились
 --collect-only не берёт общий замок data/run.lock (сбор идёт часами и не должен держать сборку сайта): у каждого
 источника свой замок data/collect_<источник>.lock, сайт и data/state.json он не трогает. Сборку делает
@@ -72,7 +74,9 @@ SYNC_DEFAULTS = {"keep_sold_out_days": 3, "auto_deploy": False, "every_hours": 6
 STATUS_RU = {"ok": "обновлён", "partial": "собран не полностью", "stale": "НЕ ОБНОВИЛСЯ — прошлые данные",
              "nodata": "новых данных нет — прошлые", "busy": "занят другим заданием — прошлые данные",
              "failed": "ошибка, данных нет", "raw": "из data/raw (не собирался)"}
-HOT_DAYS = 30            # «горячие» товары Trendyol: из заказов и корзин за столько дней (+ верх «Рекомендуем»)
+HOT_DAYS = 30            # «горячие» товары Trendyol / escarpe: из заказов и корзин за столько дней (+ верх «Рекомендуем»)
+# источники с выдачей и проверкой страниц товаров по ярусам: режимы auto / listing / pdp (--mode), горячие id
+MODE_SOURCES = ("trendyol", "escarpe_it")
 VOLATILE_KEYS = ("fetched_at",)   # поля строки источника, которые меняются каждый сбор и сайт не меняют
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -797,8 +801,20 @@ def hot_ids(cfg: dict, state: dict, source: str = "trendyol") -> set[str]:
     return out
 
 
+def listing_lock_name(source: str) -> str:
+    """Замок обхода выдачи источника с режимами: trendyol-listing (как раньше), escarpe_it-listing."""
+    return f"{source}-listing"
+
+
 def collect_lock_name(source: str, extra: dict) -> str:
-    return "trendyol-listing" if source == "trendyol" and extra.get("_mode") == "listing" else source
+    return listing_lock_name(source) if source in MODE_SOURCES and extra.get("_mode") == "listing" else source
+
+
+def source_mode(source: str, args) -> str:
+    """Режим источника с выдачей и страницами товаров: --trendyol-mode (только Trendyol, по-старому) важнее --mode."""
+    if source == "trendyol" and getattr(args, "trendyol_mode", None):
+        return args.trendyol_mode
+    return getattr(args, "mode", None) or "auto"
 
 
 def lock_busy(name: str) -> bool:
@@ -812,18 +828,19 @@ def lock_busy(name: str) -> bool:
     return True
 
 
-def source_extras(source: str, cfg: dict, state: dict, trendyol_mode: str = "auto") -> dict:
-    """Служебные настройки адаптеру от run.py (ключи на «_»): режим Trendyol, горячие и «на сайте» id, свой хост фото."""
+def source_extras(source: str, cfg: dict, state: dict, mode: str = "auto") -> dict:
+    """Служебные настройки адаптеру от run.py (ключи на «_»): режим (Trendyol, escarpe.it), горячие и «на сайте» id,
+    свой хост фото."""
     extra: dict = {}
-    if source == "trendyol":
-        extra["_mode"] = trendyol_mode
-        if trendyol_mode != "listing":
-            extra["_warm"] = sync_state.watched(state, "trendyol")
-            extra["_hot"] = hot_ids(cfg, state, "trendyol")
-            if lock_busy("trendyol-listing"):
+    if source in MODE_SOURCES:
+        extra["_mode"] = mode
+        if mode != "listing":
+            extra["_warm"] = sync_state.watched(state, product_source(source))
+            extra["_hot"] = hot_ids(cfg, state, product_source(source))
+            if lock_busy(listing_lock_name(source)):
                 extra["_listing_running"] = True
-                if trendyol_mode == "auto":
-                    extra["_mode"] = "pdp"                 # выдачу сейчас обходит ночное задание — берём сохранённую
+                if mode == "auto":
+                    extra["_mode"] = "pdp"                 # выдачу сейчас обходит отдельное задание — берём сохранённую
     if source == "yoox_import" and img_map.settings(cfg)["base"]:
         extra["_own_img_host"] = True                      # фото YOOX отдаёт свой хост по просмотрам — не скачиваем
     return extra
@@ -858,7 +875,7 @@ def collect_only(cfg: dict, sources: set[str], args) -> int:
     order = [s for s in cfg["sources"] if s in sources] + sorted(s for s in sources if s not in cfg["sources"])
     for s in order:
         t0 = time.time()
-        extra = source_extras(s, cfg, state, args.trendyol_mode)
+        extra = source_extras(s, cfg, state, source_mode(s, args))
         _, info = collect_locked(s, cfg, load_raw(s), sync_state.watched(state, product_source(s)),
                                  args.accept_drop, extra)
         print(f"[{s}] сбор: {STATUS_RU.get(info['status'], info['status'])}"
@@ -875,8 +892,11 @@ def main() -> None:
     ap.add_argument("--config", default=str(ROOT / "config.json"))
     ap.add_argument("--collect-only", action="store_true",
                     help="только собрать источники (--only) в data/raw_*.json, сайт не собирать (сервер: отдельные задания)")
-    ap.add_argument("--trendyol-mode", choices=("auto", "listing", "pdp"), default="auto",
-                    help="Trendyol: auto — как раньше; listing — только обход выдачи; pdp — только проверка размеров")
+    ap.add_argument("--mode", choices=("auto", "listing", "pdp"), default=None,
+                    help="источники с выдачей и страницами товаров (" + ", ".join(MODE_SOURCES) + "): auto — выдача, "
+                         "если пора, и проверка страниц товаров; listing — только обход выдачи; pdp — только проверка")
+    ap.add_argument("--trendyol-mode", choices=("auto", "listing", "pdp"), default=None,
+                    help="то же, что --mode, только для Trendyol (по-старому; важнее --mode)")
     ap.add_argument("--if-changed", action="store_true",
                     help="с --offline: собирать сайт, только если данные источников или config.json изменились")
     args = ap.parse_args()
@@ -926,7 +946,7 @@ def build(cfg: dict, sc: dict, sources: set[str], args) -> None:
         prev, sha, meta = load_raw_consistent(s)
         if s in sources and not args.offline:
             got, info = collect_locked(s, cfg, prev, sync_state.watched(state, psrc), args.accept_drop,
-                                       source_extras(s, cfg, state, getattr(args, "trendyol_mode", "auto")))
+                                       source_extras(s, cfg, state, source_mode(s, args)))
             info["changed"] = info["status"] in ("ok", "partial")
             # ok/partial — collect() только что записал raw; иначе строки — прошлые (из того, что прочитали выше)
             info["raw_sha1"] = sync_state.file_sha1(raw_path(s)) if info["changed"] else sha

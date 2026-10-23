@@ -40,3 +40,6 @@ _pages/
 # генерируется из content.json (content.py / deploy.py)
 site/content.js
 site/brands.js
+
+# сохранённые страницы источников — только локально (раскрывают источник)
+tests/fixtures/

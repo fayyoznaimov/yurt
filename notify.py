@@ -30,7 +30,7 @@ import requests
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 STATE = DATA / "notify_state.json"
-AUTO_SOURCES = ("pcardin_tr", "cacharel_tr", "trendyol")
+AUTO_SOURCES = ("pcardin_tr", "cacharel_tr", "trendyol", "escarpe_it")
 BAD = ("stale", "failed", "partial")
 
 if hasattr(sys.stdout, "reconfigure"):

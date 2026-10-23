@@ -3,6 +3,7 @@ ADAPTERS = {
     "pcardin_tr": ("sources.akinon", {"site": "pcardin_tr"}, "TR"),
     "cacharel_tr": ("sources.akinon", {"site": "cacharel_tr"}, "TR"),
     "trendyol": ("sources.trendyol", {}, "TR"),
+    "escarpe_it": ("sources.escarpe", {}, "IT"),     # escarpe.it (группа eobuwie): выдача + страницы товаров
     "yoox": ("sources.yoox", {}, "IT"),
     "yoox_import": ("sources.yoox_import", {}, "IT"),   # файлы от кнопки «Сохранить YOOX»
     # партнёрский фид (Awin и др.) — вместо yoox_import, когда будет доступ; не включать оба сразу

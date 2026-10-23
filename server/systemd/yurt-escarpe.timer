@@ -1,0 +1,12 @@
+# escarpe.it: каждый час в :35 (между заданиями Турции; сборка сайта всё равно идёт по одной — data/locks/site.lock).
+[Unit]
+Description=yurt: escarpe.it каждый час
+
+[Timer]
+OnCalendar=*-*-* *:35:00
+RandomizedDelaySec=3min
+Persistent=false
+Unit=yurt-escarpe.service
+
+[Install]
+WantedBy=timers.target

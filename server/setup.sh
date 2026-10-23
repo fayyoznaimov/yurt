@@ -32,8 +32,8 @@ ENV_FILE="$ENV_DIR/yurt.env"
 ENABLE_TIMERS="${ENABLE_TIMERS:-1}"
 ENABLE_ORDERS="${ENABLE_ORDERS:-1}"
 ENABLE_IMG="${ENABLE_IMG:-1}"
-# таймеры, которые включаются всегда (Турция — по отдельности: см. README «Расписание на сервере»)
-TIMERS="yurt-turkey-akinon.timer yurt-trendyol-pdp.timer yurt-trendyol-listing.timer yurt-yoox.timer yurt-fx.timer yurt-cleanup.timer"
+# таймеры, которые включаются всегда (Турция и escarpe.it — по отдельности: см. README «Расписание на сервере»)
+TIMERS="yurt-turkey-akinon.timer yurt-trendyol-pdp.timer yurt-trendyol-listing.timer yurt-escarpe.timer yurt-yoox.timer yurt-fx.timer yurt-cleanup.timer"
 
 say() { printf '\n== %s\n' "$*"; }
 as_user() { sudo -u "$YURT_USER" -H "$@"; }
@@ -186,10 +186,11 @@ cat <<EOF
 
 Готово. Дальше:
   1. Первый сбор сам начнётся по таймерам (Pierre Cardin / Cacharel — в :05 каждого часа, Trendyol — выдача ночью
-     в 01:10, размеры — каждый час в :20). Запустить сразу, не дожидаясь:
-       sudo systemctl start --no-block yurt-turkey-akinon.service yurt-trendyol-listing.service
-     смотреть журнал:  journalctl -u yurt-turkey-akinon -u yurt-trendyol-listing -u yurt-trendyol-pdp -f
-     (выдача Trendyol ~2 ч; товары Trendyol появятся на сайте после неё с первой проверкой размеров)
+     в 01:10, размеры — каждый час в :20, escarpe.it — каждый час в :35). Запустить сразу, не дожидаясь:
+       sudo systemctl start --no-block yurt-turkey-akinon.service yurt-trendyol-listing.service yurt-escarpe.service
+     смотреть журнал:  journalctl -u yurt-turkey-akinon -u yurt-trendyol-listing -u yurt-trendyol-pdp -u yurt-escarpe -f
+     (выдача Trendyol ~2 ч; товары Trendyol появятся на сайте после неё с первой проверкой размеров; escarpe.it —
+     порциями: за час проверяется ~700–1000 страниц товаров, весь каталог — за несколько часов)
   2. Данные YOOX: с компьютера —           python push_yoox.py   (кладёт файлы в $INBOX)
      или перенесите текущие данные с компьютера (см. README, «Свой сервер», шаг «Перенос данных»).
   3. Уведомления: впишите токен бота в $ENV_FILE и проверьте:

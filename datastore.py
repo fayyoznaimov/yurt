@@ -433,7 +433,7 @@ def cmd_summary(args) -> int:
             age_h = float("nan")
         rows.append(f"| {src} | {m.get('status')} | {ts} | {age_h:.0f} ч | {m.get('fetched')} | {m.get('rows')} | "
                     f"{len(m.get('gone_ids') or [])} | {str(m.get('note') or '')[:80]} |")
-        auto = src in ("pcardin_tr", "cacharel_tr", "trendyol")
+        auto = src in ("pcardin_tr", "cacharel_tr", "trendyol", "escarpe_it")
         if m.get("status") in ("stale", "failed", "partial"):
             warn.append(f"{src}: {m.get('status')} — {m.get('note') or ''}")
         elif auto and age_h == age_h and age_h > args.stale_hours:

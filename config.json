@@ -4,6 +4,7 @@
     "pcardin_tr",
     "cacharel_tr",
     "trendyol",
+    "escarpe_it",
     "yoox_import"
   ],
   "filters": {
@@ -82,6 +83,20 @@
       "only_with_sizes": true
     },
     "cacharel_tr": {
+      "discount_min": 0,
+      "genders": [],
+      "price_uzs_min": 0,
+      "price_uzs_max": 0,
+      "only_with_sizes": true
+    },
+    "escarpe_it": {
+      "brands": [
+        "Boss",
+        "EA7",
+        "Karl Lagerfeld",
+        "Michael Kors",
+        "Lacoste"
+      ],
       "discount_min": 0,
       "genders": [],
       "price_uzs_min": 0,
@@ -223,6 +238,69 @@
       "listing_max_age_hours": 20,
       "official_only": true
     },
+    "escarpe_it": {
+      "_help": "escarpe.it (sources/escarpe.py): brands — наше имя бренда -> marca: на сайте; sections — разделы /c/<путь>/marca:<бренд> (gender — пол раздела; без него пол со страницы товара; детское не берём). Выдача — не чаще раза в listing_max_age_hours, страницы товаров — ярусами как у Trendyol, не больше pdp_per_run и не дольше pdp_budget_minutes за запуск.",
+      "brands": {
+        "Boss": [
+          "boss"
+        ],
+        "EA7": [
+          "ea7_emporio_armani"
+        ],
+        "Karl Lagerfeld": [
+          "karl_lagerfeld"
+        ],
+        "Michael Kors": [
+          "michael_kors",
+          "michael_michael_kors"
+        ],
+        "Lacoste": [
+          "lacoste"
+        ]
+      },
+      "sections": [
+        {
+          "path": "uomo",
+          "gender": "men"
+        },
+        {
+          "path": "donna",
+          "gender": "women"
+        },
+        {
+          "path": "abbigliamento/abbigliamento-uomo",
+          "gender": "men"
+        },
+        {
+          "path": "abbigliamento/abbigliamento-donna",
+          "gender": "women"
+        },
+        {
+          "path": "accessori"
+        },
+        {
+          "path": "borse"
+        }
+      ],
+      "max_pages": 60,
+      "listing_delay": [
+        1.5,
+        3.0
+      ],
+      "pdp_delay": [
+        1.2,
+        2.0
+      ],
+      "listing_max_age_hours": 12,
+      "root_check": true,
+      "pdp_per_run": 1200,
+      "pdp_budget_minutes": 40,
+      "pdp_hot_hours": 3,
+      "pdp_warm_hours": 24,
+      "pdp_cold_hours": 168,
+      "pdp_hot_top": 300,
+      "carry_days": 3
+    },
     "yoox": {
       "brand_slugs": {
         "Emporio Armani": "emporio armani",
@@ -256,8 +334,8 @@
     },
     "yoox_import": {
       "folder": "",
-      "max_age_days": 14,
-      "stale_hide_days": 14,
+      "max_age_days": 30,
+      "stale_hide_days": 30,
       "download_images": false,
       "max_images": 300,
       "max_pages_per_search": 200,
@@ -465,7 +543,7 @@
         "Michael Kors Mens": "Michael Kors",
         "Michael Kors Collection": "Michael Kors"
       },
-      "carry_days": 14
+      "carry_days": 30
     }
   },
   "sync": {

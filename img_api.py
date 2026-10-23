@@ -2,7 +2,7 @@
 
     python img_api.py                       # служба (yurt-img): 127.0.0.1:8788, наружу — через Caddy / Cloudflare Tunnel
     python img_api.py --check               # настройки, карта, папка кэша (ничего не качает)
-    python img_api.py --prewarm --limit 2000  # заранее подготовить ПЕРВЫЕ фото Pierre Cardin / Cacharel / Trendyol
+    python img_api.py --prewarm --limit 2000  # заранее подготовить ПЕРВЫЕ фото Pierre Cardin / Cacharel / Trendyol / escarpe.it
                                               # (фото YOOX — никогда: только по просмотрам покупателей)
 
 Адрес фото: GET <IMG_BASE>/p/<токен>.<ширина>.webp, ширина 160 / 480 / 960. Токен (16 знаков) выдаёт сборка
@@ -64,6 +64,7 @@ HOSTS = (
     ("pcardin.akinoncloudcdn.com", "https://www.pierrecardin.com.tr/", 2.0),
     ("cacharel.akinoncloudcdn.com", "https://www.cacharel.com.tr/", 2.0),
     ("dsmcdn.com", "https://www.trendyol.com/", 2.0),
+    ("img.eobuwie.cloud", "https://escarpe.it/", 2.0),          # escarpe.it (sources/escarpe.py)
 )
 DASH_OK = ("akinoncloudcdn.com",)
 NEVER_PREWARM = ("yoox",)        # фото YOOX — только по просмотрам покупателей, заранее не качаются никогда
@@ -281,7 +282,7 @@ class ImgService:
 
     # --- заранее: первые фото турецких магазинов ---
     def prewarm(self, limit: int = 2000, say=print) -> dict:
-        """Первые фото (номер 0) товаров Pierre Cardin / Cacharel / Trendyol, которых ещё нет в кэше, — по порядку
+        """Первые фото (номер 0) товаров Pierre Cardin / Cacharel / Trendyol / escarpe.it, которых ещё нет в кэше, — по порядку
         витрины, с теми же лимитами на хост. YOOX не трогается никогда. 403/429 — хост до конца прогрева пропускается."""
         done = skipped = 0
         stopped: set[str] = set()
