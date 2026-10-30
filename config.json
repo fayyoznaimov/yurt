@@ -334,8 +334,8 @@
     },
     "yoox_import": {
       "folder": "",
-      "max_age_days": 30,
-      "stale_hide_days": 30,
+      "max_age_days": 45,
+      "stale_hide_days": 45,
       "download_images": false,
       "max_images": 300,
       "max_pages_per_search": 200,
@@ -543,7 +543,7 @@
         "Michael Kors Mens": "Michael Kors",
         "Michael Kors Collection": "Michael Kors"
       },
-      "carry_days": 30
+      "carry_days": 45
     }
   },
   "sync": {
