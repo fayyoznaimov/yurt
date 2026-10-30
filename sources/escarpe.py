@@ -768,10 +768,12 @@ class _Crawl:
                 else:
                     st.update(complete=True, reason=f"стр. {page}: новых товаров нет — выдача кончилась")
                 break
-            if n_cards < PAGE_SIZE:
-                st["complete"] = True                       # неполная страница — последняя
+            # На странице бывает 67–71 карточка вместо 72 (часть мест — реклама), поэтому «короткая страница —
+            # последняя» верно только когда число страниц неизвестно; при известном счётчике идём до конца по нему.
+            if total_pages is None and n_cards < PAGE_SIZE:
+                st["complete"] = True
                 break
-            if total_pages is not None and page >= total_pages and len(seen) >= (st["offer_count"] or 0):
+            if total_pages is not None and page >= total_pages:
                 st["complete"] = True
                 break
             if page >= self.max_pages:
