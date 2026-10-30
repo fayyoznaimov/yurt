@@ -774,8 +774,11 @@ class _Crawl:
                 st["complete"] = True
                 break
             if total_pages is not None and page >= total_pages:
-                st["complete"] = True
-                break
+                if page > total_pages or len(seen) >= (st["offer_count"] or 0):
+                    st["complete"] = True
+                    break
+                # на последней странице по счётчику собрано меньше обещанного — заглянуть на одну дальше
+                # (404 / перенаправление там = конец выдачи, см. выше)
             if page >= self.max_pages:
                 self.truncated = True
                 st["reason"] = f"ограничено max_pages={self.max_pages} (страниц {total_pages})"
