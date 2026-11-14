@@ -1,0 +1,329 @@
+{
+ "Armani Exchange": {
+  "logo": "img/brands/armani-exchange.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Armani_Exchange_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Bally": {
+  "logo": "img/brands/bally.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Bally_Logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Barba Napoli": {
+  "logo": "img/brands/barba-napoli.png",
+  "source": "https://www.barbanapoli.com/",
+  "license": "логотип с официального сайта бренда; товарный знак Barba Napoli",
+  "invert_ok": true
+ },
+ "Boggi Milano": {
+  "logo": "img/brands/boggi-milano.png",
+  "source": "https://commons.wikimedia.org/wiki/File:Logo_Boggi_Milano.png",
+  "license": "CC BY-SA 4.0 (Wikimedia Commons); trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Boss": {
+  "logo": "img/brands/boss.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Boss_logo_2021.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Bugatti": {
+  "logo": "img/brands/bugatti.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Bugatti_(Bekleidung)_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "C.P. Company": {
+  "logo": "img/brands/c-p-company.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:C.P._Company_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Cabani": {
+  "logo": "img/brands/cabani.png",
+  "source": "https://cabanishoes.com/",
+  "license": "логотип с официального сайта бренда (подпись WHOLESALE обрезана); товарный знак Cabani",
+  "invert_ok": true
+ },
+ "Cacharel": {
+  "logo": "img/brands/cacharel.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Cacharel_Logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Calvin Klein": {
+  "logo": "img/brands/calvin-klein.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Calvin_klein_logo_web23.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Calvin Klein Jeans": {
+  "logo": "img/brands/calvin-klein-jeans.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Calvin_Klein_Jeans_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Canali": {
+  "logo": "img/brands/canali.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Canali_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Diesel": {
+  "logo": "img/brands/diesel.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Diesel_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Dior": {
+  "logo": "img/brands/dior.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Dior_Logo_2022.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Dolce&Gabbana": {
+  "logo": "img/brands/dolce-and-gabbana.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Dolce_%26_Gabbana_-_logo_(Italy,_1985-).svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Doucal's": {
+  "logo": "img/brands/doucal-s.png",
+  "source": "https://www.doucals.com/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Dsquared2": {
+  "logo": "img/brands/dsquared2.png",
+  "source": "https://commons.wikimedia.org/wiki/File:DSQUARED2.png",
+  "license": "CC BY-SA 3.0 (Wikimedia Commons); trademark of the brand owner",
+  "invert_ok": true
+ },
+ "EA7": {
+  "logo": "img/brands/ea7.png",
+  "source": "https://commons.wikimedia.org/wiki/File:EA7.jpg",
+  "license": "CC BY 4.0 (Wikimedia Commons); trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Eleventy": {
+  "logo": "img/brands/eleventy.png",
+  "source": "https://www.eleventymilano.com/",
+  "license": "логотип с официального сайта бренда; товарный знак Eleventy",
+  "invert_ok": true
+ },
+ "Emporio Armani": {
+  "logo": "img/brands/emporio-armani.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Emporio_Armani_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Filippo De Laurentiis": {
+  "logo": "img/brands/filippo-de-laurentiis.svg",
+  "source": "https://www.filippodelaurentiis.it/",
+  "license": "логотип с официального сайта бренда; товарный знак Filippo De Laurentiis",
+  "invert_ok": true
+ },
+ "Giorgio Armani": {
+  "logo": "img/brands/giorgio-armani.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Giorgio_Armani.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Gran Sasso": {
+  "logo": "img/brands/gran-sasso.png",
+  "source": "https://shop.gransasso.it/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Gucci": {
+  "logo": "img/brands/gucci.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Gucci_Logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Guess": {
+  "logo": "img/brands/guess.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Guess_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Hackett": {
+  "logo": "img/brands/hackett.svg",
+  "source": "https://www.hackett.com/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Harmont & Blaine": {
+  "logo": "img/brands/harmont-and-blaine.png",
+  "source": "https://www.harmontblaine.com/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": false
+ },
+ "Hugo": {
+  "logo": "img/brands/hugo.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Hugo_logo_2021.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Jacob Cohën": {
+  "logo": "img/brands/jacob-cohen.svg",
+  "source": "https://www.jacobcohen.com/",
+  "license": "Logo from the brand's official website (inline SVG); trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Jacob Cohёn": {
+  "logo": "img/brands/jacob-cohen.svg",
+  "source": "https://www.jacobcohen.com/",
+  "license": "Logo from the brand's official website (inline SVG); trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Karl Lagerfeld": {
+  "logo": "img/brands/karl-lagerfeld.svg",
+  "source": "https://www.karllagerfeld.com/",
+  "license": "Logo from the brand's official website (inline SVG); trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Karl Lagerfeld Jeans": {
+  "logo": "img/brands/karl-lagerfeld.svg",
+  "source": "https://www.karllagerfeld.com/",
+  "license": "Logo from the brand's official website (inline SVG); trademark of the brand owner (nominative use only) (общий логотип Karl Lagerfeld)",
+  "invert_ok": true
+ },
+ "Kenzo": {
+  "logo": "img/brands/kenzo.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Kenzo_logo_(2022%E2%80%93present).svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Kip": {
+  "logo": "img/brands/kip.svg",
+  "source": "https://www.kip.com.tr/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": true
+ },
+ "Kiton": {
+  "logo": "img/brands/kiton.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Kiton_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Lacoste": {
+  "logo": "img/brands/lacoste.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Logo_Lacoste_2026.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Liu Jo Man": {
+  "logo": "img/brands/liu-jo-man.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Liu_Jo_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Lufian": {
+  "logo": "img/brands/lufian.png",
+  "source": "https://www.lufian.com/",
+  "license": "логотип с официального сайта бренда; товарный знак Lufian",
+  "invert_ok": true
+ },
+ "Michael Kors Mens": {
+  "logo": "img/brands/michael-kors-mens.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Michael_Kors_Logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Montecore": {
+  "logo": null
+ },
+ "Moorer": {
+  "logo": "img/brands/moorer.png",
+  "source": "https://www.moorer.clothing/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": false
+ },
+ "Moschino": {
+  "logo": "img/brands/moschino.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Moschino_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "On": {
+  "logo": "img/brands/on.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:On-cloud-logo-white-background.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Paul & Shark": {
+  "logo": "img/brands/paul-shark.jpg",
+  "source": "https://commons.wikimedia.org/wiki/File:PS_Logo.jpg",
+  "license": "CC BY-SA 4.0 (Wikimedia Commons); товарный знак Paul & Shark",
+  "invert_ok": false
+ },
+ "Pierre Cardin": {
+  "logo": "img/brands/pierre-cardin.png",
+  "source": "https://commons.wikimedia.org/wiki/File:Pierre_cardin_textlogo.png",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Polo Ralph Lauren": {
+  "logo": "img/brands/polo-ralph-lauren.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Ralph_Lauren_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Ramsey": {
+  "logo": "img/brands/ramsey.png",
+  "source": "https://commons.wikimedia.org/wiki/File:Ramsey-logo.png",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Tod's": {
+  "logo": "img/brands/tod-s.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Tods.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Tombolini": {
+  "logo": "img/brands/tombolini.png",
+  "source": "https://uomo.pittimmagine.com/108/exhibitors/T/tombolini",
+  "license": "логотип бренда со страницы участника Pitti Uomo; товарный знак Tombolini",
+  "invert_ok": true
+ },
+ "Tommy Hilfiger": {
+  "logo": "img/brands/tommy-hilfiger.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Tommy_hilfig_vectorlogo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": false
+ },
+ "Tramarossa": {
+  "logo": "img/brands/tramarossa.png",
+  "source": "https://www.tramarossa.it/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": false
+ },
+ "U.S. Polo Assn.": {
+  "logo": "img/brands/u-s-polo-assn.png",
+  "source": "https://uspoloassn.com/",
+  "license": "Logo from the brand's official website; trademark of the brand owner (nominative use only)",
+  "invert_ok": false
+ },
+ "Versace Jeans Couture": {
+  "logo": "img/brands/versace-jeans-couture.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Versace-3.svg",
+  "license": "Public domain (Wikimedia Commons), логотип Versace; товарный знак Gianni Versace S.r.l.",
+  "invert_ok": true
+ },
+ "Liu Jo": {
+  "logo": "img/brands/liu-jo-man.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Liu_Jo_logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ },
+ "Michael Kors": {
+  "logo": "img/brands/michael-kors-mens.svg",
+  "source": "https://commons.wikimedia.org/wiki/File:Michael_Kors_Logo.svg",
+  "license": "Public domain (text logo) on Wikimedia Commons; trademark of the brand owner",
+  "invert_ok": true
+ }
+}
